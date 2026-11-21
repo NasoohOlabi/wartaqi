@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { phoneSchema } from '../../shared/invitations'
-import { Auth } from '../auth'
+import { Auth, StudentRequestError } from '../auth'
 import { isBotRoute, type BotRoute } from '../routes'
 import { Storage } from '../storage'
 import type { createNavigation } from './navigation'
@@ -100,11 +100,25 @@ export function createUpdates(
     )
       return
     const chat = String(message.chat.id)
+    const phoneIssue = (en: string, ar: string) =>
+      language(chat) === 'ar'
+        ? `${ar}\n\nيمكنك أيضاً استخدام /linkaccount. سجّل الدخول ووافق في المتصفح، ثم أرسل الرمز من ثمانية أرقام هنا.`
+        : `${en}\n\nYou can also use /linkaccount. Sign in and approve in your browser, then paste the eight-digit code here.`
     const pendingPhone = z
       .object({ user: z.number(), message: z.number(), expected: z.string().optional() })
       .safeParse(store.get(`phone:${chat}`))
     if (message.contact) {
-      if (!pendingPhone.success) return
+      if (!pendingPhone.success) {
+        if (!auth.isLinked(chat))
+          await say(
+            chat,
+            phoneIssue(
+              'The phone sharing request expired. Use /sharephone to try again.',
+              'انتهت صلاحية طلب مشاركة الرقم. استخدم /sharephone للمحاولة مجدداً.',
+            ),
+          )
+        return
+      }
       if (
         pendingPhone.data.user !== message.from.id ||
         message.contact.user_id !== message.from.id ||
@@ -112,12 +126,19 @@ export function createUpdates(
         message.forward_date ||
         message.reply_to_message?.message_id !== pendingPhone.data.message
       ) {
+        await say(
+          chat,
+          phoneIssue(
+            'Share your own contact using the button below so Telegram can confirm it.',
+            'شارك رقمك من الزر أدناه حتى يتمكن تيليجرام من تأكيده.',
+          ),
+        )
         await requestPhone(chat, message.from.id, pendingPhone.data.expected)
         return
       }
-      const rawPhone = message.contact.phone_number
+      const rawPhone = message.contact.phone_number.trim()
       const phone = phoneSchema.safeParse(
-        /^[1-9][0-9]{6,14}$/.test(rawPhone) ? `+${rawPhone}` : rawPhone,
+        /^[1-9][0-9 ()-]{6,39}$/.test(rawPhone) ? `+${rawPhone}` : rawPhone,
       )
       if (
         !phone.success ||
@@ -126,10 +147,15 @@ export function createUpdates(
         store.delete(`phone:${chat}`)
         await api('sendMessage', {
           chat_id: chat,
-          text:
-            language(chat) === 'ar'
-              ? 'لم يتطابق الرقم. استخدم /menu أو /sharephone للمحاولة مجدداً.'
-              : 'The number did not match. Use /menu or /sharephone to try again.',
+          text: !phone.success
+            ? phoneIssue(
+                'Couldn’t read the number Telegram shared. Try /sharephone again.',
+                'تعذّرت قراءة الرقم الذي شاركه تيليجرام. جرّب /sharephone مجدداً.',
+              )
+            : phoneIssue(
+                'The shared number differs from the one you typed. Check the digits and use /menu to try again.',
+                'الرقم المُشارك يختلف عمّا كتبته. تحقق من الأرقام واستخدم /menu للمحاولة مجدداً.',
+              ),
           reply_markup: { remove_keyboard: true },
         })
         return
@@ -142,12 +168,19 @@ export function createUpdates(
       }).catch(() => {})
       try {
         await auth.loginPhone(chat, phone.data)
-      } catch {
+      } catch (error) {
+        const denied = error instanceof StudentRequestError && error.status === 403
         await say(
           chat,
-          language(chat) === 'ar'
-            ? 'يتطلب دخول الطالب رقمًا مؤكّدًا في وارتق يطابق رقم تيليجرام. للمعلّمين، استخدم /menu ثم «ربط الحساب».'
-            : 'Student phone sign-in requires a verified Wartaq number matching your Telegram number. Teachers can use /menu then Link account.',
+          denied
+            ? phoneIssue(
+                'Phone sign-in requires an approved student account with a verified number. Teachers use browser linking.',
+                'يتطلب الدخول بالهاتف حساب طالب معتمداً برقم مؤكد. يدخل المعلمون بربط الحساب عبر المتصفح.',
+              )
+            : phoneIssue(
+                'Phone sign-in is temporarily unavailable. Try /sharephone again.',
+                'تعذر تسجيل الدخول بالهاتف مؤقتاً. حاول مجدداً باستخدام /sharephone.',
+              ),
         )
         return
       }
@@ -177,6 +210,10 @@ export function createUpdates(
       return
     }
     if (pendingPhone.success && !text.startsWith('/') && !(hadPendingCode && isBrowserCode)) {
+      await say(
+        chat,
+        phoneIssue('Use the button to share your number.', 'استخدم الزر لمشاركة رقمك.'),
+      )
       await requestPhone(chat, message.from.id, pendingPhone.data.expected)
       return
     }
@@ -190,9 +227,10 @@ export function createUpdates(
       if (!phone.success) {
         await say(
           chat,
-          language(chat) === 'ar'
-            ? 'أدخل رقم هاتف صحيحاً مع رمز البلد، مثل +963912345678، أو استخدم /sharephone.'
-            : 'Enter a valid phone number with country code, such as +963912345678, or use /sharephone.',
+          phoneIssue(
+            'Check the digits and try again. Syrian mobile numbers can start with 09 or +9639.',
+            'تحقق من الأرقام وحاول مجدداً. يمكن أن تبدأ الأرقام السورية بـ 09 أو +9639.',
+          ),
         )
         return
       }
@@ -203,9 +241,14 @@ export function createUpdates(
       await say(
         chat,
         language(chat) === 'ar'
-          ? 'الرمز غير صحيح أو انتهت صلاحيته. حاول مجدداً، أو استخدم /cancel ثم /start لبدء الربط من جديد.'
-          : 'That code is incorrect or expired. Try again, or use /cancel then /start to link again.',
+          ? 'الرمز غير صحيح أو انتهت صلاحيته. حاول مجدداً، أو استخدم /cancel ثم /linkaccount لبدء الربط من جديد.'
+          : 'That code is incorrect or expired. Try again, or use /cancel then /linkaccount to link again.',
       )
+      return
+    }
+    if (command === '/linkaccount') {
+      await dismissPhone()
+      await show(chat, message.from.id, { route: 'sys.linkaccount' })
       return
     }
     if (command === '/sharephone') {
@@ -242,8 +285,8 @@ export function createUpdates(
       await say(
         chat,
         language(chat) === 'ar'
-          ? '/menu القائمة، /sharephone مشاركة رقم الهاتف، /cancel إلغاء، /language اللغة، /unlink إلغاء الربط'
-          : '/menu opens the menu, /sharephone shares your phone, /cancel cancels, /language changes language, /unlink disconnects.',
+          ? '/menu القائمة، /linkaccount ربط الحساب عبر المتصفح، /sharephone مشاركة رقم الهاتف، /cancel إلغاء، /language اللغة، /unlink إلغاء الربط'
+          : '/menu opens the menu, /linkaccount links through your browser, /sharephone shares your phone, /cancel cancels, /language changes language, /unlink disconnects.',
       )
       return
     }

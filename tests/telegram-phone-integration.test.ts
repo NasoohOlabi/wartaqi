@@ -59,16 +59,16 @@ integration('phone credentials allow only current verified students and revoke',
     [studentId],
   )
   await pool.query(
-    "INSERT INTO app_accounts (auth_user_id, role, student_id, verified_phone, invitation_requires_setup, invitation_request_id) VALUES ($1, 'student', $2, '+12025550790', true, gen_random_uuid())",
-    [user, studentId],
+    "INSERT INTO app_accounts (auth_user_id, role, student_id, verified_phone, invitation_requires_setup, invitation_request_id) VALUES ($1, 'student', $2, $3, true, gen_random_uuid())",
+    [user, studentId, '+963995120034'],
   )
   await pool.query(
     "INSERT INTO teachers (id, auth_user_id, name, access_mode) VALUES ($1, $2, 'Synthetic staff', 'read_write')",
     [teacherId, staff],
   )
   await pool.query(
-    "INSERT INTO app_accounts (auth_user_id, role, teacher_id, verified_phone) VALUES ($1, 'teacher', $2, '+12025550792')",
-    [staff, teacherId],
+    "INSERT INTO app_accounts (auth_user_id, role, teacher_id, verified_phone) VALUES ($1, 'teacher', $2, $3)",
+    [staff, teacherId, '+963995120035'],
   )
   await pool.query("INSERT INTO courses (id, name) VALUES ($1, 'Synthetic course')", [courseId])
   await pool.query(
@@ -91,15 +91,15 @@ integration('phone credentials allow only current verified students and revoke',
       headers: { authorization, 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
-  expect((await post({ action: 'login', phone: '+12025550790' }, 'Bearer invalid')).status).toBe(
-    401,
-  )
+  expect((await post({ action: 'login', phone: '0995120034' }, 'Bearer invalid')).status).toBe(401)
   expect((await post({ action: 'login', phone: '+12025550791' })).status).toBe(403)
-  expect((await post({ action: 'login', phone: '+12025550792' })).status).toBe(403)
+  for (const phone of ['0995120035', '+963 995 120 035']) {
+    expect((await post({ action: 'login', phone })).status).toBe(403)
+  }
   const signin = await fetch(`${started.origin}/api/auth/sign-in/phone`, {
     method: 'POST',
     headers: { origin: started.origin, 'content-type': 'application/json' },
-    body: JSON.stringify({ phone: '+12025550790', password }),
+    body: JSON.stringify({ phone: '0995 120 034', password }),
   })
   expect(signin.status).toBe(200)
   const cookie = signin.headers
@@ -111,7 +111,7 @@ integration('phone credentials allow only current verified students and revoke',
     headers: { cookie: cookie ?? '', 'x-user-id': user },
   })
   expect(browserAttendance.status).toBe(403)
-  const response = await post({ action: 'login', phone: '+12025550790' })
+  const response = await post({ action: 'login', phone: '+963 995 120 034' })
   expect(response.status).toBe(200)
   const { token } = z.object({ token: z.string() }).parse(await response.json())
   const attendance = await post({ action: 'attendance', token })
