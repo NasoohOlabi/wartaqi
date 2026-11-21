@@ -606,7 +606,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     'Synthetic Student',
   )
   await account.locator('select').nth(1).selectOption(studentId)
-  await account.getByRole('button', { name: 'Save role' }).click()
+  await account.getByRole('button', { name: 'Save account' }).click()
   await expect(page.getByRole('status')).toHaveText('Saved.')
   expect(posts[0]).toEqual({
     path: '/api/admin/accounts/grant',
@@ -623,11 +623,13 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     Object.assign(savedTeacher ?? {}, { verifiedPhone })
     return route.fulfill({ json: board })
   })
-  const verifyPhone = teacher.getByRole('button', {
-    name: 'Confirm phone number after asking directly',
-  })
+  const verifyPhone = teacher.getByRole('button', { name: 'Confirm phone' })
   await expect(verifyPhone).toBeDisabled()
-  await teacher.getByLabel('Sign-in phone number').fill(verifiedPhone)
+  const phoneInput = teacher.getByLabel('Sign-in phone number')
+  await phoneInput.fill(verifiedPhone)
+  await phoneInput.press('Enter')
+  expect(posts).toHaveLength(1)
+  expect(verification).toBeUndefined()
   await verifyPhone.click()
   await expect(teacher.locator('summary')).toContainText(verifiedPhone)
   expect(verification).toEqual({
@@ -651,6 +653,20 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
   for (const locale of ['English', 'العربية']) {
     await clickAccountAction(page, locale)
     const arabic = locale === 'العربية'
+    await page.emulateMedia({ colorScheme: arabic ? 'dark' : 'light' })
+    const saveTeacher = teacher.getByRole('button', {
+      name: arabic ? 'حفظ بيانات المعلم' : 'Save teacher',
+    })
+    for (const width of testInfo.project.name === 'mobile' ? [320, 390] : [1440]) {
+      await page.setViewportSize({ width, height: 900 })
+      await expect(saveTeacher).toBeVisible()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      )
+    }
+    await teacher.screenshot({
+      path: `.artifacts/verification/settings-teacher-${testInfo.project.name}-${arabic ? 'ar' : 'en'}.png`,
+    })
     const reset = teacher.getByRole('button', {
       name: arabic ? 'إعادة تعيين كلمة المرور' : 'Reset password',
     })
@@ -713,16 +729,20 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
   }
   expect(resetRequests).toEqual([{ authUserId: teacherId }, { authUserId: teacherId }])
   await clickAccountAction(page, 'English')
+  await page.emulateMedia({ colorScheme: 'light' })
   await expect(teacher.getByLabel('Access')).toHaveCount(0)
-  await teacher.getByRole('button', { name: 'Save role' }).click()
+  const expires = '2099-05-18T16:00'
+  await teacher.getByLabel('Name', { exact: true }).fill('Updated Synthetic Teacher')
+  await teacher.getByLabel('Expires (optional)').fill(expires)
+  await teacher.getByRole('button', { name: 'Save teacher' }).click()
   await expect.poll(() => posts.length).toBe(2)
   expect(posts[1]).toEqual({
     path: '/api/admin/accounts/grant',
     body: {
       role: 'teacher',
       authUserId: teacherId,
-      name: 'Synthetic Teacher',
-      expiresAt: null,
+      name: 'Updated Synthetic Teacher',
+      expiresAt: await page.evaluate((value) => new Date(value).toISOString(), expires),
     },
   })
   await page

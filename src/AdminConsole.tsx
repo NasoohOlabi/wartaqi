@@ -4,7 +4,7 @@ import { formatLevel } from './levelFormat'
 import { PhoneNumber } from './PhoneNumber'
 import { TableHeader, TableToolbar } from './DataTable'
 import { useDataTable } from './useDataTable'
-import { Copy, RefreshCw } from 'lucide-react'
+import { ChevronDown, Copy, RefreshCw } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { z } from 'zod'
 import {
@@ -415,6 +415,7 @@ function AccountForm({
     | { kind: 'done'; credentials: z.infer<typeof neonAdminGeneratedPasswordResetResponseSchema> }
   >({ kind: 'idle' })
   const resetButton = useRef<HTMLButtonElement>(null)
+  const phoneId = useId()
   const [studentId, setStudentId] = useState(account.studentId ?? '')
   const [expires, setExpires] = useState(() => {
     if (!account.expiresAt) return ''
@@ -440,10 +441,7 @@ function AccountForm({
       <summary>
         <span>
           <strong dir="auto">{account.name}</strong>
-          <span dir="ltr">
-            {account.verifiedPhone || (ar ? 'رقم الهاتف غير متاح' : 'Phone unavailable')}
-          </span>
-          <span>
+          <span className="role-account-meta">
             {account.role === 'administrator'
               ? ar
                 ? 'مسؤول'
@@ -461,27 +459,33 @@ function AccountForm({
                     : 'Pending approval'}
             {' · '}
             {account.active ? (ar ? 'نشط' : 'Active') : ar ? 'غير نشط' : 'Inactive'}
+            <bdi dir={account.verifiedPhone ? 'ltr' : 'auto'}>
+              {account.verifiedPhone || (ar ? 'رقم الهاتف غير متاح' : 'Phone unavailable')}
+            </bdi>
           </span>
         </span>
-        <span className="role-manage">{ar ? 'إدارة' : 'Manage'}</span>
+        <span className="role-manage">
+          {ar ? 'إدارة' : 'Manage'}
+          <ChevronDown size={16} aria-hidden="true" />
+        </span>
       </summary>
-      <form
-        className="role-editor"
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (saving) return
-          const expiresAt = expires ? new Date(expires).toISOString() : null
-          const input =
-            role === 'administrator'
-              ? { role, authUserId: account.authUserId, name }
-              : role === 'teacher'
-                ? { role, authUserId: account.authUserId, name, expiresAt }
-                : { role, authUserId: account.authUserId, studentId, expiresAt }
-          const parsed = neonAdminGrantSchema.safeParse(input)
-          if (parsed.success) void save('/api/admin/accounts/grant', parsed.data)
-        }}
-      >
-        <div className="role-fields">
+      <div className="account-editor">
+        <form
+          className="account-details role-fields"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (saving) return
+            const expiresAt = expires ? new Date(expires).toISOString() : null
+            const input =
+              role === 'administrator'
+                ? { role, authUserId: account.authUserId, name }
+                : role === 'teacher'
+                  ? { role, authUserId: account.authUserId, name, expiresAt }
+                  : { role, authUserId: account.authUserId, studentId, expiresAt }
+            const parsed = neonAdminGrantSchema.safeParse(input)
+            if (parsed.success) void save('/api/admin/accounts/grant', parsed.data)
+          }}
+        >
           <label>
             {ar ? 'الدور' : 'Role'}
             <select
@@ -530,56 +534,73 @@ function AccountForm({
               />
             </label>
           )}
-        </div>
-        <label>
-          {ar ? 'رقم هاتف الدخول' : 'Sign-in phone number'}
-          <input
-            type="tel"
-            dir="ltr"
-            value={verifiedPhone}
-            onChange={(event) => setVerifiedPhone(event.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          className="secondary"
-          disabled={saving || !account.active || !verifiedPhone.trim()}
-          onClick={() =>
-            void save('/api/admin/accounts/verify-phone', {
-              authUserId: account.authUserId,
-              phone: verifiedPhone,
-              phoneConfirmed: true,
-            })
-          }
-        >
-          {ar ? 'أكد رقم الهاتف بعد السؤال مباشرة' : 'Confirm phone number after asking directly'}
-        </button>
-        <div className="role-actions">
-          <button className="primary" disabled={saving}>
-            {ar ? 'حفظ الدور' : 'Save role'}
+          <button type="submit" className="primary" disabled={saving}>
+            {role === 'teacher'
+              ? ar
+                ? 'حفظ بيانات المعلم'
+                : 'Save teacher'
+              : ar
+                ? 'حفظ الحساب'
+                : 'Save account'}
           </button>
-          <button
-            ref={resetButton}
-            type="button"
-            className="secondary"
-            disabled={saving || !account.verifiedPhone}
-            onClick={() => void resetPassword()}
-          >
-            {ar ? 'إعادة تعيين كلمة المرور' : 'Reset password'}
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            disabled={saving || !account.active}
-            onClick={() =>
-              void save(
-                '/api/admin/accounts/disable',
-                neonAdminDisableSchema.parse({ authUserId: account.authUserId }),
-              )
-            }
-          >
-            {ar ? 'تعطيل الوصول' : 'Disable access'}
-          </button>
+        </form>
+        <div className="account-access">
+          <div className="account-phone">
+            <label htmlFor={phoneId}>{ar ? 'رقم هاتف الدخول' : 'Sign-in phone number'}</label>
+            <p className="muted" id={`${phoneId}-help`}>
+              {ar
+                ? 'تحقق من الرقم مع صاحب الحساب قبل تأكيده.'
+                : 'Check the number with the account holder before confirming.'}
+            </p>
+            <div className="account-phone-controls">
+              <input
+                id={phoneId}
+                type="tel"
+                dir="ltr"
+                value={verifiedPhone}
+                onChange={(event) => setVerifiedPhone(event.target.value)}
+              />
+              <button
+                type="button"
+                className="secondary"
+                aria-describedby={`${phoneId}-help`}
+                disabled={saving || !account.active || !verifiedPhone.trim()}
+                onClick={() =>
+                  void save('/api/admin/accounts/verify-phone', {
+                    authUserId: account.authUserId,
+                    phone: verifiedPhone,
+                    phoneConfirmed: true,
+                  })
+                }
+              >
+                {ar ? 'تأكيد الرقم' : 'Confirm phone'}
+              </button>
+            </div>
+          </div>
+          <div className="account-access-actions">
+            <button
+              ref={resetButton}
+              type="button"
+              className="secondary"
+              disabled={saving || !account.verifiedPhone}
+              onClick={() => void resetPassword()}
+            >
+              {ar ? 'إعادة تعيين كلمة المرور' : 'Reset password'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={saving || !account.active}
+              onClick={() =>
+                void save(
+                  '/api/admin/accounts/disable',
+                  neonAdminDisableSchema.parse({ authUserId: account.authUserId }),
+                )
+              }
+            >
+              {ar ? 'تعطيل الوصول' : 'Disable access'}
+            </button>
+          </div>
         </div>
         {reset.kind === 'failed' && (
           <p role="alert">
@@ -588,7 +609,7 @@ function AccountForm({
               : 'The reset could not be confirmed. The password may have changed. Try again.'}
           </p>
         )}
-      </form>
+      </div>
     </details>
   )
   return (
