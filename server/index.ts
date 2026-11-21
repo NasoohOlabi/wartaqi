@@ -352,7 +352,7 @@ async function telegramStudent(request: Request) {
            WHERE a.verified_phone = $1 AND a.active
              AND (a.expires_at IS NULL OR a.expires_at > now())
              AND ((a.role = 'student' AND s.active) OR
-               ($2::boolean AND a.role = 'teacher' AND NOT a.invitation_requires_setup AND t.active AND (t.expires_at IS NULL OR t.expires_at > now())))
+               ($2::boolean AND a.role = 'teacher' AND t.active AND (t.expires_at IS NULL OR t.expires_at > now())))
            FOR UPDATE OF a`,
         [input.data.phone, input.data.action === 'login-phone'],
       )

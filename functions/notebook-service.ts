@@ -953,11 +953,7 @@ export function createHandler(
           await db.query('COMMIT')
           return reply({ saved: true, sessionRevoked: !!newPassword && !sessionId })
         }
-        if (
-          invitationProfile?.requiresSetup &&
-          path !== '/api/me' &&
-          telegramCredential?.role !== 'student'
-        )
+        if (invitationProfile?.requiresSetup && path !== '/api/me' && !telegramCredential)
           throw new HttpError(403)
         if (account.role === 'student') {
           if (!account.student_id) throw new HttpError(403)
@@ -1069,7 +1065,13 @@ export function createHandler(
         if (path === '/api/me') {
           await db.query('COMMIT')
           return reply({
-            account: { ...teacher, ...(invitationProfile ? { invitationProfile } : {}) },
+            account: {
+              ...teacher,
+              // The phone grant does not expose website credential setup to the bot.
+              ...(invitationProfile && telegramCredential?.role !== 'teacher'
+                ? { invitationProfile }
+                : {}),
+            },
             teacher,
           })
         }

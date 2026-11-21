@@ -56,8 +56,9 @@ integration('phone grants follow verified Student and Teacher access and revoke'
   })
   server = started.child
   const password = randomBytes(32).toString('hex')
+  const staffPassword = randomBytes(32).toString('hex')
   const user = await createIdentity(pool, 'Synthetic student', password)
-  const staff = await createIdentity(pool, 'Synthetic staff', randomBytes(32).toString('hex'))
+  const staff = await createIdentity(pool, 'Synthetic staff', staffPassword)
   ids.push(user, staff)
   await pool.query(
     "INSERT INTO students (id, name, whatsapp) VALUES ($1, 'Synthetic student', '+12025550791')",
@@ -72,7 +73,7 @@ integration('phone grants follow verified Student and Teacher access and revoke'
     [teacherId, staff],
   )
   await pool.query(
-    "INSERT INTO app_accounts (auth_user_id, role, teacher_id, verified_phone) VALUES ($1, 'teacher', $2, $3)",
+    "INSERT INTO app_accounts (auth_user_id, role, teacher_id, verified_phone, invitation_requires_setup, invitation_request_id) VALUES ($1, 'teacher', $2, $3, true, gen_random_uuid())",
     [staff, teacherId, '+963995120035'],
   )
   await pool.query("INSERT INTO courses (id, name) VALUES ($1, 'Synthetic course')", [courseId])
@@ -168,6 +169,12 @@ integration('phone grants follow verified Student and Teacher access and revoke'
   expect(tools).toContain('get_notebook')
   expect(tools).toContain('sync_attendance')
   expect(tools).not.toContain('grant_account')
+  expect(tools).not.toContain('update_invitation_profile')
+  const teacherAccount = await rpc(teacherGrant, 'tools/call', {
+    name: 'get_account',
+    arguments: {},
+  })
+  expect(JSON.stringify(await teacherAccount.json())).not.toContain('invitationProfile')
   const notebook = await rpc(teacherGrant, 'tools/call', { name: 'get_notebook', arguments: {} })
   expect(notebook.status).toBe(200)
   const notebookBody = JSON.stringify(await notebook.json())
@@ -212,17 +219,21 @@ integration('phone grants follow verified Student and Teacher access and revoke'
     arguments: { input: { name: 'Updated synthetic staff' } },
   })
   expect(JSON.stringify(await renamed.json())).toContain('Updated synthetic staff')
-  await pool.query(
-    'UPDATE app_accounts SET invitation_requires_setup = true, invitation_request_id = gen_random_uuid() WHERE auth_user_id = $1',
-    [staff],
-  )
-  expect((await post({ action: 'login-phone', phone: '0995120035' })).status).toBe(403)
-  const pending = await rpc(teacherGrant, 'tools/call', { name: 'get_notebook', arguments: {} })
-  expect(JSON.stringify(await pending.json())).toContain('isError')
-  await pool.query(
-    'UPDATE app_accounts SET invitation_requires_setup = false WHERE auth_user_id = $1',
-    [staff],
-  )
+  const staffSignin = await fetch(`${started.origin}/api/auth/sign-in/phone`, {
+    method: 'POST',
+    headers: { origin: started.origin, 'content-type': 'application/json' },
+    body: JSON.stringify({ phone: '0995120035', password: staffPassword }),
+  })
+  expect(staffSignin.status).toBe(200)
+  const staffCookie = staffSignin.headers
+    .getSetCookie()
+    .find((value) => value.startsWith('better-auth.session_token='))
+    ?.split(';')[0]
+  expect(staffCookie).toBeDefined()
+  const browserNotebook = await fetch(`${started.origin}/api/notebook`, {
+    headers: { cookie: staffCookie ?? '', 'x-user-id': staff },
+  })
+  expect(browserNotebook.status).toBe(403)
   await pool.query('UPDATE teachers SET active = false WHERE id = $1', [teacherId])
   expect((await rpc(teacherGrant, 'tools/list')).status).toBe(403)
   await pool.query('UPDATE teachers SET active = true WHERE id = $1', [teacherId])
