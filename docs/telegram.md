@@ -2,9 +2,9 @@
 
 Open [@WartaqBot](https://t.me/WartaqBot) in a private chat and tap **Start**.
 
-The private chat asks for your phone number. Enter it, then tap **Share my phone** to confirm it with Telegram. Syrian mobile numbers can use `09` or `+9639`. Send `/sharephone` to open the sharing button directly. Open the bot keyboard beside the message field if the button is hidden. The bot opens **My attendance** when the Telegram number matches the administrator-verified sign-in number on the approved Student account linked to the course record.
+The private chat asks for your phone number. Enter it, then tap **Share my phone** to confirm it with Telegram. Syrian mobile numbers can use `09` or `+9639`. Send `/sharephone` to open the sharing button directly. Open the bot keyboard beside the message field if the button is hidden. The Telegram number must match the administrator-verified sign-in number on an approved Teacher or Student account. Teachers who have finished Wartaq account setup open the Teacher menu. Students open **My attendance**.
 
-If you have trouble confirming your number, or you use a Teacher or Administrator account, send `/linkaccount`. Tap **Link account** to open Wartaq in your browser, sign in and approve the connection. On the confirmation page, choose **Copy code**, then **Open Telegram**. Paste the eight digits into the same private chat and send them within five minutes. Returning to the bot or changing its language keeps the pending link. To discard it, use `/cancel`.
+If you have trouble confirming your number, need to finish Teacher account setup, or use an Administrator account, send `/linkaccount`. Tap **Link account** to open Wartaq in your browser, sign in and approve the connection. On the confirmation page, choose **Copy code**, then **Open Telegram**. Paste the eight digits into the same private chat and send them within five minutes. Returning to the bot or changing its language keeps the pending link. To discard it, use `/cancel`.
 
 Choose a task from the buttons under the message. Type a reply when a screen asks for a name, date, grade or note. The bot follows Telegram's language on first use. The language button switches between Arabic and English. Use the Telegram menu to reopen the notebook, cancel an action or disconnect.
 
@@ -17,7 +17,7 @@ Choose a task from the buttons under the message. Type a reply when a screen ask
 | Accounts           | Administrators can search accounts, review access and invite someone after confirming their number. The invitation button opens the private one-time message on Wartaq.                                                            |
 | My account         | View or change your display name. The profile button opens the website for photos, phone and password changes. Account access changes and password resets also open Wartaq.                                                        |
 
-The browser-link flow uses the same per-user [Wartaq MCP access](mcp.md) as other authorized clients. Phone sign-in opens the student's own attendance in Telegram. Offline attendance, chart-image exports and device settings are available in the browser. A message already delivered to Telegram may remain visible after unlinking or withdrawal of access.
+Teacher phone sign-in uses the same classroom tools and assignment permissions as [browser linking](mcp.md). Password changes open Wartaq in the browser. Student phone sign-in opens the student's own attendance in Telegram. Offline attendance, chart-image exports and device settings are available in the browser. A message already delivered to Telegram may remain visible after unlinking or withdrawal of access.
 
 ## Editing a conversation
 
@@ -29,6 +29,7 @@ stateDiagram-v2
     Link --> Consent: /linkaccount
     Link --> Share: Type phone or use /sharephone
     Share --> Mine: Confirm verified student phone
+    Share --> Home: Confirm verified teacher phone
     Consent --> Code: Sign in and approve on Wartaq
     Code --> Home: Redeem in original chat
     Home --> Roll: Choose attendance and course
@@ -56,7 +57,7 @@ stateDiagram-v2
 | Profiles or invitations                             | `telegram/accounts/`                        | Telegram account tests                 |
 | Button delivery, command handling or callback page  | `telegram/runtime/`                         | Telegram runtime tests                 |
 | Browser linking, token refresh or permission checks | `telegram/auth.ts`, `telegram/transport.ts` | Telegram runtime and integration tests |
-| Student phone sign-in                               | `telegram/runtime/`, `server/index.ts`      | Telegram runtime and database tests    |
+| Teacher and Student phone sign-in                   | `telegram/runtime/`, `server/index.ts`      | Telegram runtime and database tests    |
 
 Add a destination to its workflow's route list and implement its screen. `Action.route` is derived from those lists, so misspelled button and prompt destinations fail type checking. Check the caller's available MCP tools before an action, and add a test that follows the real button or prompt through its side effect. Stored buttons from an older release can survive for fifteen minutes, so treat removed destinations as expired.
 
@@ -76,7 +77,7 @@ Add a destination to its workflow's route list and implement its screen. `Action
 
 Use canonical HTTPS origins without a trailing slash. The worker needs no application database URL or website signing secret. It registers an OAuth client, uses PKCE, and binds each login to the initiating chat and a browser-issued code. SQLite encrypts stored values with AES-256-GCM. Back up the volume and storage key privately as a pair. Losing either requires users to reconnect.
 
-Set `TELEGRAM_WORKER_SECRET` on the `wartaqi` service and reference it from `wartaq-telegram` to enable student phone sign-in. Use at least 32 random bytes encoded as base64url. Student phone sessions expire after 30 days. The web password setup remains available and can be finished separately.
+Set `TELEGRAM_WORKER_SECRET` on the `wartaqi` service and reference it from `wartaq-telegram` to enable phone sign-in. Use at least 32 random bytes encoded as base64url. Telegram phone sessions expire after 30 days.
 
 The worker claims each Telegram update before handling it. After an interruption or uncertain write, reopen the record to check its state. Buttons expire after fifteen minutes and are tied to their user, private chat and message. The bot edits the open message as you navigate. `/unlink` clears local access and requests provider revocation.
 

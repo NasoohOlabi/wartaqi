@@ -174,8 +174,8 @@ export function createUpdates(
           chat,
           denied
             ? phoneIssue(
-                'Phone sign-in requires an approved student account with a verified number. Teachers use browser linking.',
-                'يتطلب الدخول بالهاتف حساب طالب معتمداً برقم مؤكد. يدخل المعلمون بربط الحساب عبر المتصفح.',
+                'Phone sign-in requires an approved Student or Teacher account with a verified number. Teachers must complete browser setup first.',
+                'يتطلب الدخول بالهاتف حساب طالب أو معلم معتمداً برقم مؤكد. على المعلمين إكمال إعداد الحساب في المتصفح أولاً.',
               )
             : phoneIssue(
                 'Phone sign-in is temporarily unavailable. Try /sharephone again.',
@@ -184,7 +184,7 @@ export function createUpdates(
         )
         return
       }
-      await show(chat, message.from.id, { route: 'nb.mine' })
+      await show(chat, message.from.id, { route: auth.teacher(chat) ? 'home' : 'nb.mine' })
       return
     }
     if (!message.text) return

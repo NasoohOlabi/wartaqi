@@ -1,4 +1,9 @@
-import { revokeTelegramGrants, telegramGrantBinding } from '../shared/telegram-grants'
+import { profileUpdateSchema, validProfileUpdate } from '../server/profile'
+import {
+  revokeTelegramGrants,
+  telegramGrantBinding,
+  telegramTeacherGrantBinding,
+} from '../shared/telegram-grants'
 import { z } from 'zod'
 import { hashPassword, verifyPassword } from 'better-auth/crypto'
 import {
@@ -708,7 +713,7 @@ export function createHandler(
         kind: 'reveal'
         reveal: (db: PoolClient, subject: string, requestId: string) => Promise<unknown | null>
       },
-  telegramCredential?: string,
+  telegramCredential?: { identifier: string; role: 'student' | 'teacher' },
 ) {
   return async (request: Request): Promise<Response> => {
     const origin = request.headers.get('origin')
@@ -727,6 +732,10 @@ export function createHandler(
         headers: privateResponse ? { ...cors, 'Cache-Control': 'no-store' } : cors,
       })
     if (origin && !origins.includes(origin)) return reply({ error: 'Forbidden' }, 403)
+    if (path === '/api/mcp/profile' && telegramCredential?.role !== 'teacher')
+      return reply({ error: 'Not found' }, 404)
+    if (path === '/api/mcp/profile' && !['GET', 'POST'].includes(request.method))
+      return reply({ error: 'Method not allowed' }, 405)
     if (request.method === 'OPTIONS')
       return new Response(null, {
         status: 204,
@@ -740,6 +749,7 @@ export function createHandler(
     if (
       ![
         '/api/me',
+        '/api/mcp/profile',
         '/api/me/invitation-profile',
         '/api/notebook',
         '/api/events',
@@ -795,6 +805,7 @@ export function createHandler(
       ].includes(path) &&
         request.method !== 'POST') ||
       (![
+        '/api/mcp/profile',
         '/api/events',
         '/api/attendance/sync',
         '/api/student/sync',
@@ -858,23 +869,25 @@ export function createHandler(
         if (!live(account.active, account.expires_at)) throw new HttpError(403)
         if (telegramCredential) {
           const phone = z.string().min(1).safeParse(result.rows[0].verifiedPhone)
+          const isStudent = telegramCredential.role === 'student'
           if (
-            account.role !== 'student' ||
-            !account.student_id ||
             !phone.success ||
-            path !== '/api/student/attendance'
+            account.role !== telegramCredential.role ||
+            (isStudent && (!account.student_id || path !== '/api/student/attendance')) ||
+            (!isStudent && (!account.teacher_id || path === '/api/me/invitation-profile'))
           )
             throw new HttpError(403)
+          const binding =
+            isStudent && account.student_id
+              ? telegramGrantBinding(subject, phone.data, account.student_id)
+              : account.teacher_id &&
+                telegramTeacherGrantBinding(subject, phone.data, account.teacher_id)
           const credential = await db.query(
             `SELECT 1 FROM neon_auth.verification
                WHERE identifier = $1 AND value = $2 AND "expiresAt" > now()
                  AND EXISTS (SELECT 1 FROM neon_auth."user" WHERE id = $3)
                FOR SHARE`,
-            [
-              telegramCredential,
-              telegramGrantBinding(subject, phone.data, account.student_id),
-              subject,
-            ],
+            [telegramCredential.identifier, binding, subject],
           )
           if (!credential.rowCount) throw new HttpError(403)
         }
@@ -940,7 +953,11 @@ export function createHandler(
           await db.query('COMMIT')
           return reply({ saved: true, sessionRevoked: !!newPassword && !sessionId })
         }
-        if (invitationProfile?.requiresSetup && path !== '/api/me' && !telegramCredential)
+        if (
+          invitationProfile?.requiresSetup &&
+          path !== '/api/me' &&
+          telegramCredential?.role !== 'student'
+        )
           throw new HttpError(403)
         if (account.role === 'student') {
           if (!account.student_id) throw new HttpError(403)
@@ -1031,6 +1048,24 @@ export function createHandler(
               .sort((a, b) => a.getTime() - b.getTime())[0]
               ?.toISOString() ?? null,
         })
+        if (path === '/api/mcp/profile' && telegramCredential?.role === 'teacher') {
+          let result
+          if (request.method === 'GET') {
+            result = await db.query('SELECT name, image FROM neon_auth."user" WHERE id = $1', [
+              subject,
+            ])
+          } else {
+            const body = await readBody(request)
+            if (!validProfileUpdate(body)) throw new HttpError(400)
+            const { name, image } = profileUpdateSchema.parse(body)
+            result = await db.query(
+              'UPDATE neon_auth."user" SET name = $2, image = CASE WHEN $3 THEN $4::text ELSE image END, "updatedAt" = now() WHERE id = $1 RETURNING name, image',
+              [subject, name, image !== undefined, image ?? null],
+            )
+          }
+          await db.query('COMMIT')
+          return reply(result.rows[0])
+        }
         if (path === '/api/me') {
           await db.query('COMMIT')
           return reply({
