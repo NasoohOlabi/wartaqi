@@ -2215,3 +2215,9 @@ Verification uses synthetic Telegram updates and a disposable PostgreSQL databas
 The owner asked for a cleaner account editor and a save label that reflects the teacher details being saved. **Save teacher** submits the name, role and optional access expiry. Phone confirmation, password reset and access withdrawal sit below the account details. Pressing Enter in the sign-in phone field leaves both save actions untouched.
 
 The synthetic administrator browser scenario checks the teacher grant payload, phone confirmation, password reset and the responsive editor in English and Arabic. It uses emulated phones and a simulated account API. The PR records the release checks and Railway deployment verification.
+
+## 2026-11-21 21:59 Asia/Damascus — Telegram as a Teacher’s first sign-in
+
+The owner asked to let Teachers use the bot without first creating a website password. Verified Telegram contact now opens the Teacher notebook while website setup is pending. Teacher access still follows the approved account and student assignments. The bot keeps website password setup out of its account and error prompts.
+
+The disposable database regression reproduced the rejected first sign-in. It verifies that a new Teacher can open the notebook and save an assigned mark with a verified phone while the web notebook waits for password setup. The PR records release and production checks. Telegram contact delivery is simulated during local verification.
