@@ -541,7 +541,7 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
       })
       .parse(messages.at(-1)?.reply_markup)
     expect(home.inline_keyboard[1][0].text).toBe(
-      lang === 'ar' ? 'تسجيل الدخول بالهاتف' : 'Sign in with phone',
+      lang === 'ar' ? 'دخول الطالب بالهاتف' : 'Student phone sign-in',
     )
     const button = z.string().parse(home.inline_keyboard[1][0].callback_data)
     await worker.process({
@@ -558,7 +558,8 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
         [{ text: lang === 'ar' ? 'مشاركة رقم هاتفي' : 'Share my phone', request_contact: true }],
       ],
     })
-    const pending = z.object({ message: z.number() }).parse(worker.store.get('phone:123'))
+    const pendingMessage = () =>
+      z.object({ message: z.number() }).parse(worker.store.get('phone:123')).message
     const share = (update_id: number, contact: unknown, extra: Record<string, unknown> = {}) =>
       worker.process({
         update_id,
@@ -566,15 +567,19 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
           message_id: update_id,
           chat: { id: 123, type: 'private' },
           from: { id: 123 },
-          reply_to_message: { message_id: pending.message },
+          reply_to_message: { message_id: pendingMessage() },
           contact,
           ...extra,
         },
       })
+    const beforeInvalidContacts = messages.length
     await share(3, { phone_number: '963912345678' })
     await share(4, { phone_number: '963912345678', user_id: 999 })
     await share(5, { phone_number: '963912345678', user_id: 123 }, { forward_date: 1 })
     await share(6, { phone_number: '963912345678', user_id: 123 }, { reply_to_message: undefined })
+    expect(messages).toHaveLength(beforeInvalidContacts + 4)
+    const beforeTypedReply = messages.length
+    const previousKeyboard = pendingMessage()
     await worker.process({
       update_id: 7,
       message: {
@@ -585,6 +590,11 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
       },
     })
     expect(requests).toHaveLength(0)
+    expect(messages).toHaveLength(beforeTypedReply + 1)
+    expect(messages.at(-1)?.text).toContain(lang === 'ar' ? 'مشاركة رقم هاتفي' : 'Share my phone')
+    expect(messages.at(-1)?.text).toContain(lang === 'ar' ? 'ربط الحساب' : 'Link account')
+    expect(pendingMessage()).not.toBe(previousKeyboard)
+    expect(messages.at(-1)?.reply_markup).toMatchObject({ keyboard: [[{ request_contact: true }]] })
     await share(8, { phone_number: '963912345678', user_id: 123 })
     expect(requests[0]).toEqual({ action: 'login', phone: '+963912345678' })
     expect(requests[1]?.action).toBe('attendance')

@@ -103,15 +103,17 @@ export function createUpdates(
       .object({ user: z.number(), message: z.number() })
       .safeParse(store.get(`phone:${chat}`))
     if (message.contact) {
+      if (!pendingPhone.success) return
       if (
-        !pendingPhone.success ||
         pendingPhone.data.user !== message.from.id ||
         message.contact.user_id !== message.from.id ||
         message.forward_origin ||
         message.forward_date ||
         message.reply_to_message?.message_id !== pendingPhone.data.message
-      )
+      ) {
+        await show(chat, message.from.id, { route: 'sys.phone' })
         return
+      }
       store.delete(`phone:${chat}`)
       await api('sendMessage', {
         chat_id: chat,
@@ -125,8 +127,8 @@ export function createUpdates(
         await say(
           chat,
           language(chat) === 'ar'
-            ? 'تعذّر تسجيل الدخول بهذا الرقم. تواصل مع المسؤول أو استخدم /menu لربط حسابك.'
-            : 'Could not sign in with this number. Contact your administrator or use /menu to link an account.',
+            ? 'يتطلب دخول الطالب رقمًا مؤكّدًا في وارتق يطابق رقم تيليجرام. للمعلّمين، استخدم /menu ثم «ربط الحساب».'
+            : 'Student phone sign-in requires a verified Wartaq number matching your Telegram number. Teachers can use /menu then Link account.',
         )
         return
       }
@@ -147,14 +149,18 @@ export function createUpdates(
         reply_markup: { remove_keyboard: true },
       }).catch(() => {})
     }
+    const isBrowserCode = /^\d{8}$/.test(text)
     const hadPendingCode = auth.hasPendingCode(chat)
-    if (/^\d{8}$/.test(text) && hadPendingCode && auth.redeem(chat, text)) {
+    if (isBrowserCode && hadPendingCode && auth.redeem(chat, text)) {
       await dismissPhone()
       await show(chat, message.from.id, { route: 'home' })
       return
     }
-    if (pendingPhone.success && !text.startsWith('/')) return
-    if (/^\d{8}$/.test(text) && (hadPendingCode || !store.get(`credentials:${chat}`))) {
+    if (pendingPhone.success && !text.startsWith('/') && !(hadPendingCode && isBrowserCode)) {
+      await show(chat, message.from.id, { route: 'sys.phone' })
+      return
+    }
+    if (isBrowserCode && (hadPendingCode || !store.get(`credentials:${chat}`))) {
       await say(
         chat,
         language(chat) === 'ar'

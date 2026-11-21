@@ -42,8 +42,8 @@ export function createNavigation(
           chat_id: chat,
           text:
             lang === 'ar'
-              ? 'شارك رقم تيليجرام المسجّل لحسابك في وارتق. للإلغاء، استخدم /cancel.'
-              : 'Share the Telegram number registered for your Wartaq account. Use /cancel to stop.',
+              ? 'اضغط «مشاركة رقم هاتفي» أدناه. إذا لم يظهر الزر، افتح لوحة مفاتيح البوت بجانب حقل الرسالة. للمعلّمين، استخدم /menu ثم «ربط الحساب».'
+              : 'Tap Share my phone below. If the button is hidden, open the bot keyboard beside the message field. Teachers can use /menu then Link account.',
           reply_markup: {
             keyboard: [
               [
@@ -112,7 +112,7 @@ export function createNavigation(
       }
       const phoneButton = auth.phoneAvailable()
         ? {
-            text: lang === 'ar' ? 'تسجيل الدخول بالهاتف' : 'Sign in with phone',
+            text: lang === 'ar' ? 'دخول الطالب بالهاتف' : 'Student phone sign-in',
             callback_data: secret(),
           }
         : null
