@@ -13,6 +13,10 @@ const updateSchema = z.object({
       chat: z.object({ id: z.number(), type: z.string() }),
       from: z.object({ id: z.number(), language_code: z.string().optional() }).optional(),
       text: z.string().optional(),
+      contact: z.object({ phone_number: z.string(), user_id: z.number().optional() }).optional(),
+      reply_to_message: z.object({ message_id: z.number() }).optional(),
+      forward_origin: z.unknown().optional(),
+      forward_date: z.number().optional(),
     })
     .optional(),
   callback_query: z
@@ -91,19 +95,65 @@ export function createUpdates(
       !message ||
       message.chat.type !== 'private' ||
       !message.from ||
-      message.chat.id !== message.from.id ||
-      !message.text
+      message.chat.id !== message.from.id
     )
       return
     const chat = String(message.chat.id)
+    const pendingPhone = z
+      .object({ user: z.number(), message: z.number() })
+      .safeParse(store.get(`phone:${chat}`))
+    if (message.contact) {
+      if (
+        !pendingPhone.success ||
+        pendingPhone.data.user !== message.from.id ||
+        message.contact.user_id !== message.from.id ||
+        message.forward_origin ||
+        message.forward_date ||
+        message.reply_to_message?.message_id !== pendingPhone.data.message
+      )
+        return
+      store.delete(`phone:${chat}`)
+      await api('sendMessage', {
+        chat_id: chat,
+        text: language(chat) === 'ar' ? 'جارٍ تسجيل الدخول…' : 'Signing in…',
+        reply_markup: { remove_keyboard: true },
+      }).catch(() => {})
+      try {
+        const phone = message.contact.phone_number
+        await auth.loginPhone(chat, /^[1-9][0-9]{6,14}$/.test(phone) ? `+${phone}` : phone)
+      } catch {
+        await say(
+          chat,
+          language(chat) === 'ar'
+            ? 'تعذّر تسجيل الدخول بهذا الرقم. تواصل مع المسؤول أو استخدم /menu لربط حسابك.'
+            : 'Could not sign in with this number. Contact your administrator or use /menu to link an account.',
+        )
+        return
+      }
+      await show(chat, message.from.id, { route: 'nb.mine' })
+      return
+    }
+    if (!message.text) return
     const text = message.text.trim()
     if (store.get(`lang:${chat}`) === null && message.from.language_code?.startsWith('ar'))
       store.set(`lang:${chat}`, 'ar')
+    const command = text.split(/\s/)[0].split('@')[0]
+    const dismissPhone = async () => {
+      if (!pendingPhone.success) return
+      store.delete(`phone:${chat}`)
+      await api('sendMessage', {
+        chat_id: chat,
+        text: language(chat) === 'ar' ? 'تم إغلاق مشاركة الرقم.' : 'Phone sharing closed.',
+        reply_markup: { remove_keyboard: true },
+      }).catch(() => {})
+    }
     const hadPendingCode = auth.hasPendingCode(chat)
     if (/^\d{8}$/.test(text) && hadPendingCode && auth.redeem(chat, text)) {
+      await dismissPhone()
       await show(chat, message.from.id, { route: 'home' })
       return
     }
+    if (pendingPhone.success && !text.startsWith('/')) return
     if (/^\d{8}$/.test(text) && (hadPendingCode || !store.get(`credentials:${chat}`))) {
       await say(
         chat,
@@ -113,25 +163,28 @@ export function createUpdates(
       )
       return
     }
-    const command = text.split(/\s/)[0].split('@')[0]
     if (command === '/unlink') {
       await show(chat, message.from.id, { route: 'sys.unlink' })
       return
     }
     if (command === '/language') {
+      await dismissPhone()
       await show(chat, message.from.id, { route: 'sys.language' })
       return
     }
     if (command === '/cancel') {
+      store.delete(`phone:${chat}`)
       auth.cancel(chat)
       store.delete(`prompt:${chat}`)
       store.delete(`generation:${chat}`)
-      await say(
-        chat,
-        language(chat) === 'ar'
-          ? 'تم الإلغاء. استخدم /menu لفتح القائمة.'
-          : 'Cancelled. Use /menu to open the menu.',
-      )
+      await api('sendMessage', {
+        chat_id: chat,
+        text:
+          language(chat) === 'ar'
+            ? 'تم الإلغاء. استخدم /menu لفتح القائمة.'
+            : 'Cancelled. Use /menu to open the menu.',
+        ...(pendingPhone.success ? { reply_markup: { remove_keyboard: true } } : {}),
+      })
       return
     }
     if (command === '/help') {
@@ -144,6 +197,7 @@ export function createUpdates(
       return
     }
     if (command === '/start' || command === '/menu') {
+      await dismissPhone()
       store.delete(`prompt:${chat}`)
       await show(chat, message.from.id, { route: 'home' })
       return

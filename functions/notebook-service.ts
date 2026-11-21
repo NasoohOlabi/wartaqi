@@ -1,3 +1,4 @@
+import { revokeTelegramGrants, telegramGrantBinding } from '../shared/telegram-grants'
 import { z } from 'zod'
 import { hashPassword, verifyPassword } from 'better-auth/crypto'
 import {
@@ -322,7 +323,7 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
     const input = verifiedPhoneInputSchema.parse(body)
     if (input.authUserId === subject) throw new HttpError(403)
     const previous = await db.query(
-      'SELECT verified_phone FROM app_accounts WHERE auth_user_id = $1',
+      'SELECT verified_phone FROM app_accounts WHERE auth_user_id = $1 FOR UPDATE',
       [input.authUserId],
     )
     const updated = await db.query(
@@ -330,8 +331,10 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
       [input.authUserId, input.phone],
     )
     if (!updated.rowCount) throw new HttpError(400)
-    if (previous.rows[0]?.verified_phone !== input.phone)
+    if (previous.rows[0]?.verified_phone !== input.phone) {
       await db.query('DELETE FROM neon_auth.session WHERE "userId"::text = $1', [input.authUserId])
+      await revokeTelegramGrants(db, input.authUserId)
+    }
     return adminBoard(db)
   } else if (path === '/api/admin/accounts/grant') {
     const legacyGrant = z
@@ -377,6 +380,7 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
         [grant.authUserId, grant.role, staffId, expiry],
       )
     }
+    await revokeTelegramGrants(db, grant.authUserId)
   } else if (path === '/api/admin/courses') {
     const course = courseInputSchema.parse(body)
     await db.query(
@@ -596,11 +600,11 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
     const { authUserId, password } = input
     if (authUserId === subject) throw new HttpError(403)
     let verifiedPhone: string | undefined
+    const result = await db.query(
+      'SELECT verified_phone FROM app_accounts WHERE auth_user_id = $1 FOR UPDATE',
+      [authUserId],
+    )
     if (generated) {
-      const result = await db.query(
-        'SELECT verified_phone FROM app_accounts WHERE auth_user_id = $1 FOR UPDATE',
-        [authUserId],
-      )
       const phone = z.string().min(1).safeParse(result.rows[0]?.verified_phone)
       if (!phone.success) throw new HttpError(400)
       verifiedPhone = phone.data
@@ -613,6 +617,7 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
     )
     if (updated.rowCount !== 1) throw new HttpError(400)
     await db.query('DELETE FROM neon_auth.session WHERE "userId"::text = $1', [authUserId])
+    await revokeTelegramGrants(db, authUserId)
     if (generated) {
       return { loginIdentifier: verifiedPhone, loginMethod: 'phone', temporaryPassword: password }
     }
@@ -621,6 +626,7 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
     if (authUserId === subject) throw new HttpError(403)
     await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [authUserId])
     await db.query('UPDATE app_accounts SET active = false WHERE auth_user_id = $1', [authUserId])
+    await revokeTelegramGrants(db, authUserId)
   } else {
     const combined =
       path === '/api/admin/students/enroll' ? neonAdminStudentEnrollSchema.parse(body) : null
@@ -702,6 +708,7 @@ export function createHandler(
         kind: 'reveal'
         reveal: (db: PoolClient, subject: string, requestId: string) => Promise<unknown | null>
       },
+  telegramCredential?: string,
 ) {
   return async (request: Request): Promise<Response> => {
     const origin = request.headers.get('origin')
@@ -849,6 +856,28 @@ export function createHandler(
         if (!result.rows.length) throw new HttpError(403)
         const account = accountRow.parse(result.rows[0])
         if (!live(account.active, account.expires_at)) throw new HttpError(403)
+        if (telegramCredential) {
+          const phone = z.string().min(1).safeParse(result.rows[0].verifiedPhone)
+          if (
+            account.role !== 'student' ||
+            !account.student_id ||
+            !phone.success ||
+            path !== '/api/student/attendance'
+          )
+            throw new HttpError(403)
+          const credential = await db.query(
+            `SELECT 1 FROM neon_auth.verification
+               WHERE identifier = $1 AND value = $2 AND "expiresAt" > now()
+                 AND EXISTS (SELECT 1 FROM neon_auth."user" WHERE id = $3)
+               FOR SHARE`,
+            [
+              telegramCredential,
+              telegramGrantBinding(subject, phone.data, account.student_id),
+              subject,
+            ],
+          )
+          if (!credential.rowCount) throw new HttpError(403)
+        }
         const invitationProfile =
           result.rows[0].hasLegacyInvitation || result.rows[0].invitation_request_id
             ? invitationProfileSchema.parse(result.rows[0])
@@ -906,11 +935,13 @@ export function createHandler(
               'DELETE FROM neon_auth.session WHERE "userId"::text = $1 AND id IS DISTINCT FROM $2::uuid',
               [subject, sessionId ?? null],
             )
+            await revokeTelegramGrants(db, subject)
           }
           await db.query('COMMIT')
           return reply({ saved: true, sessionRevoked: !!newPassword && !sessionId })
         }
-        if (invitationProfile?.requiresSetup && path !== '/api/me') throw new HttpError(403)
+        if (invitationProfile?.requiresSetup && path !== '/api/me' && !telegramCredential)
+          throw new HttpError(403)
         if (account.role === 'student') {
           if (!account.student_id) throw new HttpError(403)
           const result = await db.query(

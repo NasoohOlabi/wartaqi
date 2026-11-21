@@ -26,6 +26,7 @@ export class Auth {
     private store: Storage,
     private origin: string,
     publicOrigin: string,
+    private workerSecret?: string,
   ) {
     this.resource = `${origin}/mcp`
     this.redirect = `${publicOrigin}/callback`
@@ -209,7 +210,41 @@ export class Auth {
     this.store.delete(`oauth-active:${chat}`)
     this.store.delete(`link:${chat}`)
   }
+  phoneAvailable() {
+    return !!this.workerSecret
+  }
+  isLinked(chat: string) {
+    return !!this.student(chat) || this.store.get(`credentials:${chat}`) !== null
+  }
+  async phoneRequest(body: unknown) {
+    if (!this.workerSecret) throw new Error('Phone sign-in unavailable')
+    const response = await fetch(`${this.origin}/api/telegram/student`, {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.timeout(15_000),
+      headers: { authorization: `Bearer ${this.workerSecret}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!response.ok) throw new Error(`Student request failed (${response.status})`)
+    return response.json()
+  }
+  async loginPhone(chat: string, phone: string) {
+    const { token } = z
+      .object({ token: z.string().min(1) })
+      .parse(await this.phoneRequest({ action: 'login', phone }))
+    await this.unlink(chat)
+    this.store.set(`student:${chat}`, token, Date.now() + 30 * 24 * 60 * 60_000)
+  }
+  student(chat: string) {
+    return z
+      .string()
+      .nullable()
+      .parse(this.store.get(`student:${chat}`))
+  }
   async unlink(chat: string) {
+    const student = this.student(chat)
+    this.store.delete(`student:${chat}`)
+    if (student) await this.phoneRequest({ action: 'unlink', token: student }).catch(() => {})
     const credentials = credentialsSchema.nullable().parse(this.store.get(`credentials:${chat}`))
     const pending = z
       .object({ credentials: credentialsSchema })

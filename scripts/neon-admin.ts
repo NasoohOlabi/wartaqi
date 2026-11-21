@@ -4,6 +4,7 @@ import { Pool, type PoolClient } from 'pg'
 import { z } from 'zod'
 import { phoneSchema } from '../shared/invitations'
 import { neonAdminGrantSchema } from '../shared/neon'
+import { revokeTelegramGrants } from '../shared/telegram-grants'
 
 const teacherFields = {
   id: z.uuid().default(() => crypto.randomUUID()),
@@ -124,6 +125,7 @@ async function grant(client: PoolClient, raw: unknown, requestedId: string = cry
       [authUserId, account.role, staffId, expiry],
     )
   }
+  await revokeTelegramGrants(client, authUserId)
 }
 async function setSignInPhone(client: PoolClient, authUserId: string, phone: string) {
   await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [authUserId])
@@ -146,8 +148,10 @@ async function setSignInPhone(client: PoolClient, authUserId: string, phone: str
     'UPDATE neon_auth."user" SET email = $2, "updatedAt" = now() WHERE id::text = $1 AND email IS DISTINCT FROM $2',
     [authUserId, `${authUserId}@invitation.invalid`],
   )
-  if (previous.verified_phone !== phone)
+  if (previous.verified_phone !== phone) {
     await client.query('DELETE FROM neon_auth.session WHERE "userId"::text = $1', [authUserId])
+    await revokeTelegramGrants(client, authUserId)
+  }
 }
 
 async function migrate(pool: Pool) {
@@ -230,6 +234,7 @@ async function main() {
           [id],
         )
         if (!result.rowCount) throw new Error('Account not found')
+        await revokeTelegramGrants(client, id)
       })
       console.log('Account disabled')
     } else if (command === 'teacher' && args[0] === 'disable' && args.length === 2) {

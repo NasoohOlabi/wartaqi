@@ -2,6 +2,8 @@
 
 Open [@WartaqBot](https://t.me/WartaqBot) in a private chat and tap **Start**. Choose **Link account**, sign in to Wartaq and approve the connection. On the confirmation page, choose **Copy code**, then **Open Telegram**. Paste the eight digits into the same private chat and send them within five minutes. Returning to the bot or changing its language keeps the pending link. To discard it, use `/cancel`. Enter your Wartaq password on the Wartaq sign-in page.
 
+Students can also choose **Sign in with phone**, then **Share my phone** in the private chat. Telegram shares the number on the student's Telegram account. When it matches the administrator-verified sign-in number on their approved Wartaq Student account, the bot opens **My attendance** without a password or passkey. The administrator links that account to the student's course record and verifies the sign-in number. If the numbers differ, use **Link account** or ask the administrator to verify the correct number.
+
 Choose a task from the buttons under the message. Type a reply when a screen asks for a name, date, grade or note. The bot follows Telegram's language on first use. The language button switches between Arabic and English. Use the Telegram menu to reopen the notebook, cancel an action or disconnect.
 
 | From the menu      | What you can do                                                                                                                                                                                                                    |
@@ -13,7 +15,7 @@ Choose a task from the buttons under the message. Type a reply when a screen ask
 | Accounts           | Administrators can search accounts, review access and invite someone after confirming their number. The invitation button opens the private one-time message on Wartaq.                                                            |
 | My account         | View or change your display name. The profile button opens the website for photos, phone and password changes. Account access changes and password resets also open Wartaq.                                                        |
 
-The bot uses the same per-user [Wartaq MCP access](mcp.md) as other authorized clients. Offline attendance, chart-image exports and device settings are available in the browser. A message already delivered to Telegram may remain visible after unlinking or withdrawal of access.
+The browser-link flow uses the same per-user [Wartaq MCP access](mcp.md) as other authorized clients. Phone sign-in opens the student's own attendance in Telegram. Offline attendance, chart-image exports and device settings are available in the browser. A message already delivered to Telegram may remain visible after unlinking or withdrawal of access.
 
 ## Editing a conversation
 
@@ -23,6 +25,7 @@ Each workflow returns a `Screen` with text, button rows and an optional next act
 stateDiagram-v2
     [*] --> Link: Start in private chat
     Link --> Consent: Link account
+    Link --> Mine: Share verified student phone
     Consent --> Code: Sign in and approve on Wartaq
     Code --> Home: Redeem in original chat
     Home --> Roll: Choose attendance and course
@@ -50,6 +53,7 @@ stateDiagram-v2
 | Profiles or invitations                             | `telegram/accounts/`                        | Telegram account tests                 |
 | Button delivery, command handling or callback page  | `telegram/runtime/`                         | Telegram runtime tests                 |
 | Browser linking, token refresh or permission checks | `telegram/auth.ts`, `telegram/transport.ts` | Telegram runtime and integration tests |
+| Student phone sign-in                               | `telegram/runtime/`, `server/index.ts`      | Telegram runtime and database tests    |
 
 Add a destination to its workflow's route list and implement its screen. `Action.route` is derived from those lists, so misspelled button and prompt destinations fail type checking. Check the caller's available MCP tools before an action, and add a test that follows the real button or prompt through its side effect. Stored buttons from an older release can survive for fifteen minutes, so treat removed destinations as expired.
 
@@ -57,16 +61,19 @@ Add a destination to its workflow's route list and implement its screen. `Action
 
 `wartaq-telegram` runs one Bun process from `telegram/Dockerfile` in the AppSuite production project. Use the repository root as the build context, `main` as the source branch, Wait for CI, one replica and an always-on service. Attach a writable volume at `/data`. The public domain accepts the OAuth redirect at `/callback`. The worker receives Telegram updates through long polling. `/health` returns 200 after successful polling and 503 on a polling failure.
 
-| Worker variable          | Value                                               |
-| ------------------------ | --------------------------------------------------- |
-| `TELEGRAM_BOT_TOKEN`     | BotFather token, supplied privately                 |
-| `TELEGRAM_STORAGE_KEY`   | Base64-encoded 32 random bytes, supplied privately  |
-| `TELEGRAM_DB_PATH`       | `/data/bot.sqlite`                                  |
-| `WARTAQI_ORIGIN`         | `https://wartaqi.up.railway.app`                    |
-| `TELEGRAM_PUBLIC_ORIGIN` | `https://wartaq-telegram-production.up.railway.app` |
-| `PORT`                   | `3000`                                              |
+| Worker variable          | Value                                                  |
+| ------------------------ | ------------------------------------------------------ |
+| `TELEGRAM_BOT_TOKEN`     | BotFather token, supplied privately                    |
+| `TELEGRAM_STORAGE_KEY`   | Base64-encoded 32 random bytes, supplied privately     |
+| `TELEGRAM_WORKER_SECRET` | A separate random secret shared with the Wartaq server |
+| `TELEGRAM_DB_PATH`       | `/data/bot.sqlite`                                     |
+| `WARTAQI_ORIGIN`         | `https://wartaqi.up.railway.app`                       |
+| `TELEGRAM_PUBLIC_ORIGIN` | `https://wartaq-telegram-production.up.railway.app`    |
+| `PORT`                   | `3000`                                                 |
 
 Use canonical HTTPS origins without a trailing slash. The worker needs no application database URL or website signing secret. It registers an OAuth client, uses PKCE, and binds each login to the initiating chat and a browser-issued code. SQLite encrypts stored values with AES-256-GCM. Back up the volume and storage key privately as a pair. Losing either requires users to reconnect.
+
+Set `TELEGRAM_WORKER_SECRET` on the `wartaqi` service and reference it from `wartaq-telegram` to enable student phone sign-in. Use at least 32 random bytes encoded as base64url. Student phone sessions expire after 30 days. The web password setup remains available and can be finished separately.
 
 The worker claims each Telegram update before handling it. After an interruption or uncertain write, reopen the record to check its state. Buttons expire after fifteen minutes and are tied to their user, private chat and message. The bot edits the open message as you navigate. `/unlink` clears local access and requests provider revocation.
 

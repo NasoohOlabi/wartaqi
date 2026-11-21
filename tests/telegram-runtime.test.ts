@@ -141,9 +141,9 @@ test('repeated navigation preserves browser authorization and the pending privat
   try {
     await send(1, '/start')
     const keyboard = z
-      .object({ inline_keyboard: z.array(z.array(z.object({ url: z.string() }))) })
+      .object({ inline_keyboard: z.array(z.array(z.object({ url: z.string().optional() }))) })
       .parse(messages.at(-1)?.reply_markup)
-    const authorize = new URL(keyboard.inline_keyboard[0][0].url)
+    const authorize = new URL(z.string().parse(keyboard.inline_keyboard[0][0].url))
     await send(2, '/language')
     expect(String(messages.at(-1)?.text)).toContain('وارتق')
     await send(3, '/start')
@@ -168,9 +168,10 @@ test('repeated navigation preserves browser authorization and the pending privat
     await send(8, '/unlink')
     await send(9, '/start')
     const next = z
-      .object({ inline_keyboard: z.array(z.array(z.object({ url: z.string() }))) })
+      .object({ inline_keyboard: z.array(z.array(z.object({ url: z.string().optional() }))) })
       .parse(messages.at(-1)?.reply_markup)
-    const nextState = new URL(next.inline_keyboard[0][0].url).searchParams.get('state') ?? ''
+    const nextState =
+      new URL(z.string().parse(next.inline_keyboard[0][0].url)).searchParams.get('state') ?? ''
     await send(10, '/cancel')
     expect(worker.store.get(`oauth:${nextState}`)).toBeNull()
     await send(11, '/start')
@@ -464,6 +465,141 @@ test('private updates use bound, single-use choices and never replay a duplicate
     worker.store.set('offset', 999, Date.now() - 1)
     await worker.process(message(2, '/help'))
     expect(deliveries.at(-1)?.text).toContain('/cancel')
+  } finally {
+    worker.store.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test.each(['en', 'ar'])('phone button accepts its own native contact in %s', async (lang) => {
+  const { createWorker } = await import('../telegram/runtime')
+  const directory = mkdtempSync(join(tmpdir(), 'wartaq-phone-'))
+  const messages: Record<string, unknown>[] = []
+  const requests: Record<string, unknown>[] = []
+  globalThis.fetch = Object.assign(
+    async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
+      if (url.endsWith('/.well-known/oauth-protected-resource/mcp'))
+        return Response.json({
+          resource: 'https://wartaq.example/mcp',
+          authorization_servers: ['https://wartaq.example/api/auth'],
+        })
+      if (url.includes('/.well-known/oauth-authorization-server'))
+        return Response.json({
+          issuer: 'https://wartaq.example/api/auth',
+          authorization_endpoint: 'https://wartaq.example/authorize',
+          token_endpoint: 'https://wartaq.example/token',
+          registration_endpoint: 'https://wartaq.example/register',
+        })
+      if (url.endsWith('/register')) return Response.json({ client_id: 'client' })
+      if (url.endsWith('/api/telegram/student')) {
+        requests.push(body)
+        if (body.action === 'login') return Response.json({ token: 'synthetic-token' })
+        if (body.action === 'attendance')
+          return Response.json({
+            student: {
+              studentId: '11111111-1111-4111-8111-111111111111',
+              name: 'Synthetic',
+              group: '',
+            },
+            attendance: [],
+          })
+        return Response.json({ ok: true })
+      }
+      if (new URL(url).origin === 'https://api.telegram.org') {
+        messages.push(body)
+        return Response.json({ ok: true, result: { message_id: 100 + messages.length } })
+      }
+      throw new Error('Unexpected request')
+    },
+    { preconnect: originalFetch.preconnect },
+  )
+  const worker = createWorker({
+    TELEGRAM_BOT_TOKEN: 'synthetic',
+    WARTAQI_ORIGIN: 'https://wartaq.example',
+    TELEGRAM_PUBLIC_ORIGIN: 'https://bot.example',
+    TELEGRAM_DB_PATH: join(directory, 'bot.sqlite'),
+    TELEGRAM_STORAGE_KEY: Buffer.alloc(32, 7).toString('base64'),
+    TELEGRAM_WORKER_SECRET: 'a'.repeat(32),
+  })
+  try {
+    await worker.process({
+      update_id: 1,
+      message: {
+        message_id: 1,
+        chat: { id: 123, type: 'private' },
+        from: { id: 123, language_code: lang },
+        text: '/start',
+      },
+    })
+    const home = z
+      .object({
+        inline_keyboard: z.array(
+          z.array(z.object({ text: z.string(), callback_data: z.string().optional() })),
+        ),
+      })
+      .parse(messages.at(-1)?.reply_markup)
+    expect(home.inline_keyboard[1][0].text).toBe(
+      lang === 'ar' ? 'تسجيل الدخول بالهاتف' : 'Sign in with phone',
+    )
+    const button = z.string().parse(home.inline_keyboard[1][0].callback_data)
+    await worker.process({
+      update_id: 2,
+      callback_query: {
+        id: 'cb',
+        from: { id: 123 },
+        data: button,
+        message: { message_id: 101, chat: { id: 123, type: 'private' } },
+      },
+    })
+    expect(messages.at(-1)?.reply_markup).toMatchObject({
+      keyboard: [
+        [{ text: lang === 'ar' ? 'مشاركة رقم هاتفي' : 'Share my phone', request_contact: true }],
+      ],
+    })
+    const pending = z.object({ message: z.number() }).parse(worker.store.get('phone:123'))
+    const share = (update_id: number, contact: unknown, extra: Record<string, unknown> = {}) =>
+      worker.process({
+        update_id,
+        message: {
+          message_id: update_id,
+          chat: { id: 123, type: 'private' },
+          from: { id: 123 },
+          reply_to_message: { message_id: pending.message },
+          contact,
+          ...extra,
+        },
+      })
+    await share(3, { phone_number: '963912345678' })
+    await share(4, { phone_number: '963912345678', user_id: 999 })
+    await share(5, { phone_number: '963912345678', user_id: 123 }, { forward_date: 1 })
+    await share(6, { phone_number: '963912345678', user_id: 123 }, { reply_to_message: undefined })
+    await worker.process({
+      update_id: 7,
+      message: {
+        message_id: 7,
+        chat: { id: 123, type: 'private' },
+        from: { id: 123 },
+        text: '+963912345678',
+      },
+    })
+    expect(requests).toHaveLength(0)
+    await share(8, { phone_number: '963912345678', user_id: 123 })
+    expect(requests[0]).toEqual({ action: 'login', phone: '+963912345678' })
+    expect(requests[1]?.action).toBe('attendance')
+    expect(String(messages.at(-1)?.text)).toContain(lang === 'ar' ? 'حضوري' : 'My attendance')
+    expect(worker.store.get('phone:123')).toBeNull()
+    await worker.process({
+      update_id: 9,
+      message: {
+        message_id: 9,
+        chat: { id: 123, type: 'private' },
+        from: { id: 123 },
+        text: '/unlink',
+      },
+    })
+    expect(requests.at(-1)?.action).toBe('unlink')
   } finally {
     worker.store.close()
     rmSync(directory, { recursive: true, force: true })

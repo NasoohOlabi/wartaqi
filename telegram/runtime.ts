@@ -12,6 +12,7 @@ const configSchema = z.object({
   TELEGRAM_PUBLIC_ORIGIN: z.url(),
   TELEGRAM_DB_PATH: z.string().min(1),
   TELEGRAM_STORAGE_KEY: z.string().min(1),
+  TELEGRAM_WORKER_SECRET: z.string().min(32).optional(),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
 })
 export function createWorker(env: Record<string, string | undefined>) {
@@ -24,7 +25,12 @@ export function createWorker(env: Record<string, string | undefined>) {
       throw new Error('Origins must be HTTPS origins without a trailing slash')
   }
   const store = new Storage(config.TELEGRAM_DB_PATH, config.TELEGRAM_STORAGE_KEY)
-  const auth = new Auth(store, config.WARTAQI_ORIGIN, config.TELEGRAM_PUBLIC_ORIGIN)
+  const auth = new Auth(
+    store,
+    config.WARTAQI_ORIGIN,
+    config.TELEGRAM_PUBLIC_ORIGIN,
+    config.TELEGRAM_WORKER_SECRET,
+  )
   const api = telegramApi(config.TELEGRAM_BOT_TOKEN)
   const navigation = createNavigation(store, auth, api, config.WARTAQI_ORIGIN)
   const { process, notifyFailure } = createUpdates(store, auth, api, navigation)
