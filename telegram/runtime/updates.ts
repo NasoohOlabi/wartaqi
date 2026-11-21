@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { phoneSchema } from '../../shared/invitations'
 import { Auth } from '../auth'
 import { isBotRoute, type BotRoute } from '../routes'
 import { Storage } from '../storage'
@@ -47,7 +48,7 @@ export function createUpdates(
   api: ReturnType<typeof telegramApi>,
   navigation: ReturnType<typeof createNavigation>,
 ) {
-  const { language, say, show } = navigation
+  const { language, say, show, requestPhone } = navigation
   const process = async (raw: unknown) => {
     const update = updateSchema.parse(raw)
     const previous = z.number().nullable().parse(store.get('offset')) ?? 0
@@ -100,18 +101,39 @@ export function createUpdates(
       return
     const chat = String(message.chat.id)
     const pendingPhone = z
-      .object({ user: z.number(), message: z.number() })
+      .object({ user: z.number(), message: z.number(), expected: z.string().optional() })
       .safeParse(store.get(`phone:${chat}`))
     if (message.contact) {
+      if (!pendingPhone.success) return
       if (
-        !pendingPhone.success ||
         pendingPhone.data.user !== message.from.id ||
         message.contact.user_id !== message.from.id ||
         message.forward_origin ||
         message.forward_date ||
         message.reply_to_message?.message_id !== pendingPhone.data.message
-      )
+      ) {
+        await requestPhone(chat, message.from.id, pendingPhone.data.expected)
         return
+      }
+      const rawPhone = message.contact.phone_number
+      const phone = phoneSchema.safeParse(
+        /^[1-9][0-9]{6,14}$/.test(rawPhone) ? `+${rawPhone}` : rawPhone,
+      )
+      if (
+        !phone.success ||
+        (pendingPhone.data.expected && phone.data !== pendingPhone.data.expected)
+      ) {
+        store.delete(`phone:${chat}`)
+        await api('sendMessage', {
+          chat_id: chat,
+          text:
+            language(chat) === 'ar'
+              ? 'لم يتطابق الرقم. استخدم /menu أو /sharephone للمحاولة مجدداً.'
+              : 'The number did not match. Use /menu or /sharephone to try again.',
+          reply_markup: { remove_keyboard: true },
+        })
+        return
+      }
       store.delete(`phone:${chat}`)
       await api('sendMessage', {
         chat_id: chat,
@@ -119,14 +141,13 @@ export function createUpdates(
         reply_markup: { remove_keyboard: true },
       }).catch(() => {})
       try {
-        const phone = message.contact.phone_number
-        await auth.loginPhone(chat, /^[1-9][0-9]{6,14}$/.test(phone) ? `+${phone}` : phone)
+        await auth.loginPhone(chat, phone.data)
       } catch {
         await say(
           chat,
           language(chat) === 'ar'
-            ? 'تعذّر تسجيل الدخول بهذا الرقم. تواصل مع المسؤول أو استخدم /menu لربط حسابك.'
-            : 'Could not sign in with this number. Contact your administrator or use /menu to link an account.',
+            ? 'يتطلب دخول الطالب رقمًا مؤكّدًا في وارتق يطابق رقم تيليجرام. للمعلّمين، استخدم /menu ثم «ربط الحساب».'
+            : 'Student phone sign-in requires a verified Wartaq number matching your Telegram number. Teachers can use /menu then Link account.',
         )
         return
       }
@@ -139,6 +160,7 @@ export function createUpdates(
       store.set(`lang:${chat}`, 'ar')
     const command = text.split(/\s/)[0].split('@')[0]
     const dismissPhone = async () => {
+      store.delete(`phone-input:${chat}`)
       if (!pendingPhone.success) return
       store.delete(`phone:${chat}`)
       await api('sendMessage', {
@@ -147,20 +169,48 @@ export function createUpdates(
         reply_markup: { remove_keyboard: true },
       }).catch(() => {})
     }
+    const isBrowserCode = /^\d{8}$/.test(text)
     const hadPendingCode = auth.hasPendingCode(chat)
-    if (/^\d{8}$/.test(text) && hadPendingCode && auth.redeem(chat, text)) {
+    if (isBrowserCode && hadPendingCode && auth.redeem(chat, text)) {
       await dismissPhone()
       await show(chat, message.from.id, { route: 'home' })
       return
     }
-    if (pendingPhone.success && !text.startsWith('/')) return
-    if (/^\d{8}$/.test(text) && (hadPendingCode || !store.get(`credentials:${chat}`))) {
+    if (pendingPhone.success && !text.startsWith('/') && !(hadPendingCode && isBrowserCode)) {
+      await requestPhone(chat, message.from.id, pendingPhone.data.expected)
+      return
+    }
+    if (
+      !text.startsWith('/') &&
+      store.get(`phone-input:${chat}`) === message.from.id &&
+      !hadPendingCode &&
+      !auth.isLinked(chat)
+    ) {
+      const phone = phoneSchema.safeParse(text)
+      if (!phone.success) {
+        await say(
+          chat,
+          language(chat) === 'ar'
+            ? 'أدخل رقم هاتف صحيحاً مع رمز البلد، مثل +963912345678، أو استخدم /sharephone.'
+            : 'Enter a valid phone number with country code, such as +963912345678, or use /sharephone.',
+        )
+        return
+      }
+      await requestPhone(chat, message.from.id, phone.data)
+      return
+    }
+    if (isBrowserCode && (hadPendingCode || !store.get(`credentials:${chat}`))) {
       await say(
         chat,
         language(chat) === 'ar'
           ? 'الرمز غير صحيح أو انتهت صلاحيته. حاول مجدداً، أو استخدم /cancel ثم /start لبدء الربط من جديد.'
           : 'That code is incorrect or expired. Try again, or use /cancel then /start to link again.',
       )
+      return
+    }
+    if (command === '/sharephone') {
+      if (auth.phoneAvailable() && !auth.isLinked(chat)) await requestPhone(chat, message.from.id)
+      else await show(chat, message.from.id, { route: 'home' })
       return
     }
     if (command === '/unlink') {
@@ -174,6 +224,7 @@ export function createUpdates(
     }
     if (command === '/cancel') {
       store.delete(`phone:${chat}`)
+      store.delete(`phone-input:${chat}`)
       auth.cancel(chat)
       store.delete(`prompt:${chat}`)
       store.delete(`generation:${chat}`)
@@ -191,8 +242,8 @@ export function createUpdates(
       await say(
         chat,
         language(chat) === 'ar'
-          ? '/menu القائمة، /cancel إلغاء، /language اللغة، /unlink إلغاء الربط'
-          : '/menu opens the menu, /cancel cancels, /language changes language, /unlink disconnects.',
+          ? '/menu القائمة، /sharephone مشاركة رقم الهاتف، /cancel إلغاء، /language اللغة، /unlink إلغاء الربط'
+          : '/menu opens the menu, /sharephone shares your phone, /cancel cancels, /language changes language, /unlink disconnects.',
       )
       return
     }

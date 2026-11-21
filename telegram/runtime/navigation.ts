@@ -20,6 +20,39 @@ export function createNavigation(
   const say = async (chat: string, text: string) => {
     await api('sendMessage', { chat_id: chat, text })
   }
+  const requestPhone = async (chat: string, user: number, expected?: string) => {
+    if (!auth.phoneAvailable() || auth.isLinked(chat)) return
+    const lang = language(chat)
+    store.delete(`prompt:${chat}`)
+    store.delete(`generation:${chat}`)
+    const sent = z.object({ message_id: z.number() }).parse(
+      await api('sendMessage', {
+        chat_id: chat,
+        text:
+          lang === 'ar'
+            ? 'اضغط «مشاركة رقم هاتفي» لتأكيد رقمك عبر تيليجرام. إذا لم يظهر الزر، افتح لوحة مفاتيح البوت بجانب حقل الرسالة.'
+            : 'Tap Share my phone to confirm your number with Telegram. If the button is hidden, open the bot keyboard beside the message field.',
+        reply_markup: {
+          keyboard: [
+            [
+              {
+                text: lang === 'ar' ? 'مشاركة رقم هاتفي' : 'Share my phone',
+                request_contact: true,
+              },
+            ],
+          ],
+          resize_keyboard: true,
+          one_time_keyboard: true,
+        },
+      }),
+    )
+    store.delete(`phone-input:${chat}`)
+    store.set(
+      `phone:${chat}`,
+      { user, message: sent.message_id, expected },
+      Date.now() + 5 * 60_000,
+    )
+  }
   const show = async (
     chat: string,
     user: number,
@@ -33,39 +66,13 @@ export function createNavigation(
       store.set(`lang:${chat}`, lang)
       action = { route: 'home' }
     }
-    if (action.route === 'sys.phone') {
-      if (!auth.phoneAvailable() || auth.isLinked(chat)) return
-      store.delete(`prompt:${chat}`)
-      store.delete(`generation:${chat}`)
-      const sent = z.object({ message_id: z.number() }).parse(
-        await api('sendMessage', {
-          chat_id: chat,
-          text:
-            lang === 'ar'
-              ? 'شارك رقم تيليجرام المسجّل لحسابك في وارتق. للإلغاء، استخدم /cancel.'
-              : 'Share the Telegram number registered for your Wartaq account. Use /cancel to stop.',
-          reply_markup: {
-            keyboard: [
-              [
-                {
-                  text: lang === 'ar' ? 'مشاركة رقم هاتفي' : 'Share my phone',
-                  request_contact: true,
-                },
-              ],
-            ],
-            resize_keyboard: true,
-            one_time_keyboard: true,
-          },
-        }),
-      )
-      store.set(`phone:${chat}`, { user, message: sent.message_id }, Date.now() + 5 * 60_000)
-      return
-    }
+    if (action.route === 'sys.phone') return requestPhone(chat, user)
     if (action.route === 'sys.unlink') {
       await auth.unlink(chat)
       store.delete(`generation:${chat}`)
       store.delete(`prompt:${chat}`)
       store.delete(`phone:${chat}`)
+      store.delete(`phone-input:${chat}`)
       await api('sendMessage', {
         chat_id: chat,
         text: lang === 'ar' ? 'تم إلغاء الربط.' : 'Account unlinked.',
@@ -110,38 +117,22 @@ export function createNavigation(
         }
         throw error
       }
-      const phoneButton = auth.phoneAvailable()
-        ? {
-            text: lang === 'ar' ? 'تسجيل الدخول بالهاتف' : 'Sign in with phone',
-            callback_data: secret(),
-          }
-        : null
-      const sent = z.object({ message_id: z.number() }).parse(
-        await api('sendMessage', {
-          chat_id: chat,
-          text: phoneButton
-            ? lang === 'ar'
-              ? 'اختر طريقة تسجيل الدخول إلى وارتق.'
-              : 'Choose how to sign in to Wartaq.'
-            : lang === 'ar'
-              ? 'مرحباً بك في وارتق. افتح الرابط وسجّل الدخول، ثم أرسل الرمز المعروض هنا.'
-              : 'Welcome to Wartaq. Open the link and sign in, then send the displayed code here.',
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: lang === 'ar' ? 'ربط الحساب' : 'Link account', url }],
-              ...(phoneButton ? [[phoneButton]] : []),
-            ],
-          },
-        }),
-      )
-      if (!phoneButton) return
-      const generation = secret()
-      store.set(`generation:${chat}`, generation)
-      store.set(
-        `button:${phoneButton.callback_data}`,
-        { chat, user, message: sent.message_id, generation, action: { route: 'sys.phone' } },
-        Date.now() + 15 * 60_000,
-      )
+      const phoneAvailable = auth.phoneAvailable()
+      await api('sendMessage', {
+        chat_id: chat,
+        text: phoneAvailable
+          ? lang === 'ar'
+            ? '<b>اكتب رقم هاتفك</b> مع رمز البلد، أو استخدم /sharephone لمشاركة رقم تيليجرام مباشرة. للمعلمين، استخدم ربط الحساب.'
+            : '<b>Type your phone number</b> with its country code, or use /sharephone to share your Telegram number directly. Teachers can use Link account.'
+          : lang === 'ar'
+            ? 'مرحباً بك في وارتق. افتح الرابط وسجّل الدخول، ثم أرسل الرمز المعروض هنا.'
+            : 'Welcome to Wartaq. Open the link and sign in, then send the displayed code here.',
+        ...(phoneAvailable ? { parse_mode: 'HTML' } : {}),
+        reply_markup: {
+          inline_keyboard: [[{ text: lang === 'ar' ? 'ربط الحساب' : 'Link account', url }]],
+        },
+      })
+      if (phoneAvailable) store.set(`phone-input:${chat}`, user, Date.now() + 5 * 60_000)
       return
     }
     const mcp = credentials ? new Mcp(origin, credentials.access_token) : null
@@ -235,5 +226,5 @@ export function createNavigation(
     else store.delete(`prompt:${chat}`)
     if (screen.document) await api.document(chat, screen.document)
   }
-  return { language, say, show }
+  return { language, say, show, requestPhone }
 }
