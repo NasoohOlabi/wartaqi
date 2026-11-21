@@ -533,31 +533,24 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
         text: '/start',
       },
     })
-    const home = z
-      .object({
-        inline_keyboard: z.array(
-          z.array(z.object({ text: z.string(), callback_data: z.string().optional() })),
-        ),
-      })
-      .parse(messages.at(-1)?.reply_markup)
-    expect(home.inline_keyboard[1][0].text).toBe(
-      lang === 'ar' ? 'دخول الطالب بالهاتف' : 'Student phone sign-in',
+    expect(messages.at(-1)?.parse_mode).toBe('HTML')
+    expect(messages.at(-1)?.text).toContain(
+      lang === 'ar' ? '<b>اكتب رقم هاتفك</b>' : '<b>Type your phone number</b>',
     )
-    const button = z.string().parse(home.inline_keyboard[1][0].callback_data)
-    await worker.process({
-      update_id: 2,
-      callback_query: {
-        id: 'cb',
-        from: { id: 123 },
-        data: button,
-        message: { message_id: 101, chat: { id: 123, type: 'private' } },
-      },
-    })
+    expect(String(messages.at(-1)?.text)).toContain('/sharephone')
     expect(messages.at(-1)?.reply_markup).toMatchObject({
-      keyboard: [
-        [{ text: lang === 'ar' ? 'مشاركة رقم هاتفي' : 'Share my phone', request_contact: true }],
-      ],
+      inline_keyboard: [[{ url: expect.any(String) }]],
     })
+    const send = (update_id: number, text: string) =>
+      worker.process({
+        update_id,
+        message: {
+          message_id: update_id,
+          chat: { id: 123, type: 'private' },
+          from: { id: 123 },
+          text,
+        },
+      })
     const pendingMessage = () =>
       z.object({ message: z.number() }).parse(worker.store.get('phone:123')).message
     const share = (update_id: number, contact: unknown, extra: Record<string, unknown> = {}) =>
@@ -572,44 +565,39 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
           ...extra,
         },
       })
-    const beforeInvalidContacts = messages.length
-    await share(3, { phone_number: '963912345678' })
-    await share(4, { phone_number: '963912345678', user_id: 999 })
-    await share(5, { phone_number: '963912345678', user_id: 123 }, { forward_date: 1 })
-    await share(6, { phone_number: '963912345678', user_id: 123 }, { reply_to_message: undefined })
-    expect(messages).toHaveLength(beforeInvalidContacts + 4)
-    const beforeTypedReply = messages.length
-    const previousKeyboard = pendingMessage()
-    await worker.process({
-      update_id: 7,
-      message: {
-        message_id: 7,
-        chat: { id: 123, type: 'private' },
-        from: { id: 123 },
-        text: '+963912345678',
-      },
-    })
+    await send(2, 'invalid')
+    expect(String(messages.at(-1)?.text)).toContain('/sharephone')
+    await send(3, '+963912345678')
     expect(requests).toHaveLength(0)
-    expect(messages).toHaveLength(beforeTypedReply + 1)
-    expect(messages.at(-1)?.text).toContain(lang === 'ar' ? 'مشاركة رقم هاتفي' : 'Share my phone')
-    expect(messages.at(-1)?.text).toContain(lang === 'ar' ? 'ربط الحساب' : 'Link account')
-    expect(pendingMessage()).not.toBe(previousKeyboard)
-    expect(messages.at(-1)?.reply_markup).toMatchObject({ keyboard: [[{ request_contact: true }]] })
-    await share(8, { phone_number: '963912345678', user_id: 123 })
+    expect(messages.at(-1)?.reply_markup).toMatchObject({
+      keyboard: [
+        [{ text: lang === 'ar' ? 'مشاركة رقم هاتفي' : 'Share my phone', request_contact: true }],
+      ],
+    })
+    const firstKeyboard = pendingMessage()
+    await send(4, 'Retry sharing')
+    expect(pendingMessage()).not.toBe(firstKeyboard)
+    await share(5, { phone_number: '963912345679', user_id: 123 })
+    expect(requests).toHaveLength(0)
+    expect(String(messages.at(-1)?.text)).toContain('/menu')
+    await send(6, '/menu')
+    await send(7, '0912345678')
+    await share(8, { phone_number: '963912345678' })
+    await share(9, { phone_number: '963912345678', user_id: 999 })
+    await share(10, { phone_number: '963912345678', user_id: 123 }, { forward_date: 1 })
+    await share(11, { phone_number: '963912345678', user_id: 123 }, { reply_to_message: undefined })
+    expect(requests).toHaveLength(0)
+    await share(12, { phone_number: '963912345678', user_id: 123 })
     expect(requests[0]).toEqual({ action: 'login', phone: '+963912345678' })
     expect(requests[1]?.action).toBe('attendance')
     expect(String(messages.at(-1)?.text)).toContain(lang === 'ar' ? 'حضوري' : 'My attendance')
     expect(worker.store.get('phone:123')).toBeNull()
-    await worker.process({
-      update_id: 9,
-      message: {
-        message_id: 9,
-        chat: { id: 123, type: 'private' },
-        from: { id: 123 },
-        text: '/unlink',
-      },
-    })
+    await send(13, '/unlink')
     expect(requests.at(-1)?.action).toBe('unlink')
+    await send(14, '/sharephone@WartaqBot')
+    expect(messages.at(-1)?.reply_markup).toMatchObject({ keyboard: [[{ request_contact: true }]] })
+    await share(15, { phone_number: '963912345678', user_id: 123 })
+    expect(requests.filter((request) => request.action === 'login')).toHaveLength(2)
   } finally {
     worker.store.close()
     rmSync(directory, { recursive: true, force: true })
