@@ -220,7 +220,9 @@ export class Auth {
     return !!this.workerSecret
   }
   isLinked(chat: string) {
-    return !!this.student(chat) || this.store.get(`credentials:${chat}`) !== null
+    return (
+      !!this.student(chat) || !!this.teacher(chat) || this.store.get(`credentials:${chat}`) !== null
+    )
   }
   async phoneRequest(body: unknown) {
     if (!this.workerSecret) throw new Error('Phone sign-in unavailable')
@@ -235,11 +237,11 @@ export class Auth {
     return response.json()
   }
   async loginPhone(chat: string, phone: string) {
-    const { token } = z
-      .object({ token: z.string().min(1) })
-      .parse(await this.phoneRequest({ action: 'login', phone }))
+    const { token, role } = z
+      .object({ token: z.string().min(1), role: z.enum(['student', 'teacher']) })
+      .parse(await this.phoneRequest({ action: 'login-phone', phone }))
     await this.unlink(chat)
-    this.store.set(`student:${chat}`, token, Date.now() + 30 * 24 * 60 * 60_000)
+    this.store.set(`${role}:${chat}`, token, Date.now() + 30 * 24 * 60 * 60_000)
   }
   student(chat: string) {
     return z
@@ -247,8 +249,21 @@ export class Auth {
       .nullable()
       .parse(this.store.get(`student:${chat}`))
   }
+  teacher(chat: string) {
+    return z
+      .string()
+      .nullable()
+      .parse(this.store.get(`teacher:${chat}`))
+  }
+  teacherMcp(chat: string) {
+    const token = this.teacher(chat)
+    return token && this.workerSecret ? { token, secret: this.workerSecret } : null
+  }
   async unlink(chat: string) {
     const student = this.student(chat)
+    const teacher = this.teacher(chat)
+    this.store.delete(`teacher:${chat}`)
+    if (teacher) await this.phoneRequest({ action: 'unlink', token: teacher }).catch(() => {})
     this.store.delete(`student:${chat}`)
     if (student) await this.phoneRequest({ action: 'unlink', token: student }).catch(() => {})
     const credentials = credentialsSchema.nullable().parse(this.store.get(`credentials:${chat}`))

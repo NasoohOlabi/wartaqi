@@ -5,7 +5,11 @@ import { Pool } from 'pg'
 import { z } from 'zod'
 import { createHandler } from '../functions/notebook-service'
 import { phoneSchema } from '../shared/invitations'
-import { telegramGrantBinding, telegramGrantPrefix } from '../shared/telegram-grants'
+import {
+  telegramGrantBinding,
+  telegramGrantPrefix,
+  telegramTeacherGrantBinding,
+} from '../shared/telegram-grants'
 import { createMcpHandler } from './mcp'
 import { invitationReceipts } from './mcp-invitation'
 import { mcpConsentPage } from './mcp-consent'
@@ -206,8 +210,12 @@ const phoneLoginSchema = z.strictObject({
   oauth_query: z.string().max(6000).optional(),
 })
 
-function notebookAsUser(userId: string, operation: McpOperation) {
-  // This request is built in-process from a named tool and a verified OAuth subject.
+function notebookAsUser(
+  userId: string,
+  operation: McpOperation,
+  telegramCredential?: { identifier: string; role: 'teacher' },
+) {
+  // This request comes from a named tool and an authenticated MCP identity.
   const authenticated = async () => userId
   return createHandler(
     pool,
@@ -217,6 +225,7 @@ function notebookAsUser(userId: string, operation: McpOperation) {
     operation.path === '/api/admin/accounts/invite'
       ? { kind: 'save', save: receipts.save }
       : undefined,
+    telegramCredential,
   )(
     new Request(new URL(operation.path, origin), {
       method: operation.method,
@@ -251,6 +260,35 @@ const mcp = createMcpHandler(
   },
 )
 
+async function telegramTeacherMcp(request: Request) {
+  const secret = config.TELEGRAM_WORKER_SECRET
+  const supplied = request.headers.get('authorization') ?? ''
+  const expected = `Bearer ${secret ?? ''}`
+  if (
+    !secret ||
+    Buffer.byteLength(supplied) !== Buffer.byteLength(expected) ||
+    !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))
+  )
+    return new Response(null, { status: 401 })
+  const token = request.headers.get('x-telegram-grant') ?? ''
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) return new Response(null, { status: 401 })
+  const prefix = `${telegramGrantPrefix}${createHash('sha256').update(token).digest('hex')}:`
+  const found = await pool.query(
+    'SELECT identifier FROM neon_auth.verification WHERE starts_with(identifier, $1) AND "expiresAt" > now()',
+    [prefix],
+  )
+  const identifier = z.string().safeParse(found.rows[0]?.identifier)
+  if (!identifier.success) return new Response(null, { status: 401 })
+  const accountId = z.uuid().safeParse(identifier.data.slice(prefix.length))
+  if (!accountId.success) return new Response(null, { status: 401 })
+  return createMcpHandler(
+    origin,
+    async () => ({ userId: accountId.data, scopes: ['mcp:read', 'mcp:write'] }),
+    (userId, operation) =>
+      notebookAsUser(userId, operation, { identifier: identifier.data, role: 'teacher' }),
+  )(request)
+}
+
 const discoveryPaths = new Set([
   '/.well-known/oauth-protected-resource',
   '/.well-known/oauth-protected-resource/mcp',
@@ -283,6 +321,7 @@ async function telegramStudent(request: Request) {
   const input = z
     .discriminatedUnion('action', [
       z.strictObject({ action: z.literal('login'), phone: phoneSchema }),
+      z.strictObject({ action: z.literal('login-phone'), phone: phoneSchema }),
       z.strictObject({
         action: z.literal('attendance'),
         token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
@@ -300,26 +339,42 @@ async function telegramStudent(request: Request) {
   if (!input.success) return new Response(null, { status: 400 })
   const reply = (body: unknown, status = 200) =>
     Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } })
-  if (input.data.action === 'login') {
+  if (input.data.action === 'login' || input.data.action === 'login-phone') {
     const db = await pool.connect()
     try {
       await db.query('BEGIN')
       const result = await db.query(
-        `SELECT a.auth_user_id, a.verified_phone, a.student_id
+        `SELECT a.auth_user_id, a.verified_phone, a.student_id, a.teacher_id, a.role
            FROM app_accounts a
            JOIN neon_auth."user" u ON u.id::text = a.auth_user_id
-           JOIN students s ON s.id = a.student_id
-           WHERE a.verified_phone = $1 AND a.role = 'student' AND a.active
-             AND (a.expires_at IS NULL OR a.expires_at > now()) AND s.active
+           LEFT JOIN students s ON s.id = a.student_id
+           LEFT JOIN teachers t ON t.id = a.teacher_id
+           WHERE a.verified_phone = $1 AND a.active
+             AND (a.expires_at IS NULL OR a.expires_at > now())
+             AND ((a.role = 'student' AND s.active) OR
+               ($2::boolean AND a.role = 'teacher' AND NOT a.invitation_requires_setup AND t.active AND (t.expires_at IS NULL OR t.expires_at > now())))
            FOR UPDATE OF a`,
-        [input.data.phone],
+        [input.data.phone, input.data.action === 'login-phone'],
       )
       if (!result.rowCount) {
         await db.query('ROLLBACK')
         return reply({ error: 'Unavailable' }, 403)
       }
       const row = z
-        .object({ auth_user_id: z.uuid(), verified_phone: z.string(), student_id: z.uuid() })
+        .discriminatedUnion('role', [
+          z.object({
+            role: z.literal('student'),
+            auth_user_id: z.uuid(),
+            verified_phone: z.string(),
+            student_id: z.uuid(),
+          }),
+          z.object({
+            role: z.literal('teacher'),
+            auth_user_id: z.uuid(),
+            verified_phone: z.string(),
+            teacher_id: z.uuid(),
+          }),
+        ])
         .parse(result.rows[0])
       const token = randomBytes(32).toString('base64url')
       const identifier = `${telegramGrantPrefix}${createHash('sha256').update(token).digest('hex')}:${row.auth_user_id}`
@@ -329,10 +384,15 @@ async function telegramStudent(request: Request) {
       )
       await db.query(
         `INSERT INTO neon_auth.verification (id, identifier, value, "expiresAt") VALUES (gen_random_uuid(), $1, $2, now() + interval '30 days')`,
-        [identifier, telegramGrantBinding(row.auth_user_id, row.verified_phone, row.student_id)],
+        [
+          identifier,
+          row.role === 'student'
+            ? telegramGrantBinding(row.auth_user_id, row.verified_phone, row.student_id)
+            : telegramTeacherGrantBinding(row.auth_user_id, row.verified_phone, row.teacher_id),
+        ],
       )
       await db.query('COMMIT')
-      return reply({ token })
+      return reply(input.data.action === 'login' ? { token } : { token, role: row.role })
     } catch (error) {
       await db.query('ROLLBACK')
       throw error
@@ -362,7 +422,7 @@ async function telegramStudent(request: Request) {
     [origin],
     async () => ({ subject }),
     undefined,
-    identifier,
+    { identifier, role: 'student' },
   )
   const result = await handler(new Request(new URL('/api/student/attendance', origin)))
   const headers = new Headers(result.headers)
@@ -388,6 +448,7 @@ export async function handle(request: Request): Promise<Response> {
   )
     return new Response('Not found', { status: 404 })
   if (url.pathname === '/api/telegram/student') return telegramStudent(request)
+  if (url.pathname === '/api/telegram/teacher-mcp') return telegramTeacherMcp(request)
   if (url.pathname === '/mcp') return mcp(request)
   if (url.pathname === '/mcp/login' || url.pathname === '/mcp/consent') {
     if (request.method !== 'GET')
