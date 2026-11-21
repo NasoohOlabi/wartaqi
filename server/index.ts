@@ -1,12 +1,13 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { verifyOAuthQueryParams } from '@better-auth/oauth-provider'
 import { betterAuth } from 'better-auth'
 import { Pool } from 'pg'
 import { z } from 'zod'
 import { createHandler } from '../functions/notebook-service'
+import { phoneSchema } from '../shared/invitations'
+import { telegramGrantBinding, telegramGrantPrefix } from '../shared/telegram-grants'
 import { createMcpHandler } from './mcp'
 import { invitationReceipts } from './mcp-invitation'
-import { phoneSchema } from '../shared/invitations'
 import { mcpConsentPage } from './mcp-consent'
 import { createMcpOAuthPlugins } from './mcp-oauth'
 import type { McpOperation } from './mcp-tools'
@@ -22,6 +23,7 @@ const config = z
     DATABASE_URL: z.string().min(1),
     BETTER_AUTH_SECRET: z.string().min(32),
     BETTER_AUTH_URL: z.url(),
+    TELEGRAM_WORKER_SECRET: z.string().min(32).optional(),
     PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   })
   .parse(process.env)
@@ -267,6 +269,107 @@ const oauthBrowserPaths = new Set([
   '/api/auth/oauth2/consent',
 ])
 
+async function telegramStudent(request: Request) {
+  const secret = config.TELEGRAM_WORKER_SECRET
+  const supplied = request.headers.get('authorization') ?? ''
+  const expected = `Bearer ${secret ?? ''}`
+  if (
+    !secret ||
+    Buffer.byteLength(supplied) !== Buffer.byteLength(expected) ||
+    !timingSafeEqual(Buffer.from(supplied), Buffer.from(expected))
+  )
+    return new Response(null, { status: 401 })
+  if (request.method !== 'POST') return new Response(null, { status: 405 })
+  const input = z
+    .discriminatedUnion('action', [
+      z.strictObject({ action: z.literal('login'), phone: phoneSchema }),
+      z.strictObject({
+        action: z.literal('attendance'),
+        token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+      }),
+      z.strictObject({
+        action: z.literal('unlink'),
+        token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+      }),
+    ])
+    .safeParse(
+      await readBoundedBody(request, 1024)
+        .then((body) => JSON.parse(body ?? 'null'))
+        .catch(() => null),
+    )
+  if (!input.success) return new Response(null, { status: 400 })
+  const reply = (body: unknown, status = 200) =>
+    Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } })
+  if (input.data.action === 'login') {
+    const db = await pool.connect()
+    try {
+      await db.query('BEGIN')
+      const result = await db.query(
+        `SELECT a.auth_user_id, a.verified_phone, a.student_id
+           FROM app_accounts a
+           JOIN neon_auth."user" u ON u.id::text = a.auth_user_id
+           JOIN students s ON s.id = a.student_id
+           WHERE a.verified_phone = $1 AND a.role = 'student' AND a.active
+             AND (a.expires_at IS NULL OR a.expires_at > now()) AND s.active
+           FOR UPDATE OF a`,
+        [input.data.phone],
+      )
+      if (!result.rowCount) {
+        await db.query('ROLLBACK')
+        return reply({ error: 'Unavailable' }, 403)
+      }
+      const row = z
+        .object({ auth_user_id: z.uuid(), verified_phone: z.string(), student_id: z.uuid() })
+        .parse(result.rows[0])
+      const token = randomBytes(32).toString('base64url')
+      const identifier = `${telegramGrantPrefix}${createHash('sha256').update(token).digest('hex')}:${row.auth_user_id}`
+      await db.query(
+        `DELETE FROM neon_auth.verification WHERE starts_with(identifier, $1) AND "expiresAt" <= now()`,
+        [telegramGrantPrefix],
+      )
+      await db.query(
+        `INSERT INTO neon_auth.verification (id, identifier, value, "expiresAt") VALUES (gen_random_uuid(), $1, $2, now() + interval '30 days')`,
+        [identifier, telegramGrantBinding(row.auth_user_id, row.verified_phone, row.student_id)],
+      )
+      await db.query('COMMIT')
+      return reply({ token })
+    } catch (error) {
+      await db.query('ROLLBACK')
+      throw error
+    } finally {
+      db.release()
+    }
+  }
+  const prefix = `${telegramGrantPrefix}${createHash('sha256').update(input.data.token).digest('hex')}:`
+  if (input.data.action === 'unlink') {
+    await pool.query('DELETE FROM neon_auth.verification WHERE starts_with(identifier, $1)', [
+      prefix,
+    ])
+    return reply({ ok: true })
+  }
+  const found = await pool.query(
+    `SELECT identifier FROM neon_auth.verification WHERE starts_with(identifier, $1) AND "expiresAt" > now()`,
+    [prefix],
+  )
+  if (!found.rowCount) return reply({ error: 'Unavailable' }, 403)
+  const identifier = z.string().parse(found.rows[0].identifier)
+  const accountId = z.uuid().safeParse(identifier.slice(prefix.length))
+  if (!accountId.success) return reply({ error: 'Unavailable' }, 403)
+  const subject = accountId.data
+  const handler = createHandler(
+    pool,
+    async () => subject,
+    [origin],
+    async () => ({ subject }),
+    undefined,
+    identifier,
+  )
+  const result = await handler(new Request(new URL('/api/student/attendance', origin)))
+  const headers = new Headers(result.headers)
+  headers.set('Cache-Control', 'no-store')
+  return new Response(result.body, { status: result.status, headers })
+}
+
 export async function handle(request: Request): Promise<Response> {
   const url = new URL(request.url)
   let authPath: string
@@ -284,6 +387,7 @@ export async function handle(request: Request): Promise<Response> {
     ].includes(authPath)
   )
     return new Response('Not found', { status: 404 })
+  if (url.pathname === '/api/telegram/student') return telegramStudent(request)
   if (url.pathname === '/mcp') return mcp(request)
   if (url.pathname === '/mcp/login' || url.pathname === '/mcp/consent') {
     if (request.method !== 'GET')

@@ -2185,3 +2185,9 @@ At 18:26 Asia/Damascus, the CodeQL PR review identified a substring hostname mat
 The owner reported an unstyled confirmation page and a failed return to Telegram. Repeating Start or changing language cancelled the earlier login and discarded a pending code. The worker now preserves the active attempt, prompts for the code on return and uses the newly selected language immediately. The responsive bilingual callback shows one code, a copy action with a manual fallback and a return button.
 
 Runtime tests reproduce the earlier callback failure and exercise successful redemption, cancellation, invalid codes and provider failures. The browser check exercises the production callback HTML and CSP on desktop and a narrow phone with a synthetic code. Disposable PostgreSQL covers actual Wartaq consent and access. The PR records publication and live verification.
+
+## 2026-11-21 19:30 Asia/Damascus — Passwordless Telegram sign-in for students
+
+The owner asked students to sign in with the Telegram account associated with their Wartaq phone. The private bot offers **Sign in with phone** alongside **Link account**. Telegram shares the student's contact with consent, and Wartaq checks the prompt, sender and administrator-verified sign-in number on the approved Student account. The bot opens the linked student's attendance even while browser password setup is pending. The worker and Wartaq server share a dedicated Railway secret. Phone credentials expire after 30 days, and account withdrawals and sign-in phone changes revoke them.
+
+Simulated Telegram updates exercise the keyboard, contact and attendance path. Disposable PostgreSQL covers verified matching, rejection of staff and roster-only numbers, browser setup restrictions, attendance projection and revocation. The PR records the release checks and exact Railway deployments. A Telegram client using a matching approved synthetic account is needed to verify native contact delivery end to end.

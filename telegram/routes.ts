@@ -2,7 +2,7 @@ import { accountRoutes } from './accounts'
 import { courseRoutes } from './courses'
 import { notebookRoutes } from './notebook'
 
-const systemRoutes = ['home', 'sys.home', 'sys.language', 'sys.unlink'] as const
+const systemRoutes = ['home', 'sys.home', 'sys.language', 'sys.unlink', 'sys.phone'] as const
 export const routeGroups = [
   ['system', systemRoutes],
   ['notebook', notebookRoutes],
