@@ -2204,6 +2204,12 @@ The owner requested a shorter first phone prompt, an explanation on failure and 
 
 Disposable PostgreSQL tests verified that Syrian `099` and `+96399` spellings resolve to the same verified sign-in number. Both spellings were denied for a Teacher, while an approved Student could confirm the international number after using the local form in browser sign-in. Bilingual simulated updates verify the prompt and recovery without using real credentials or phone numbers. The PR records the release checks and deployment.
 
+## 2026-11-21 21:17 Asia/Damascus — Teacher Telegram phone sign-in
+
+The owner confirmed that Telegram shared the same number that Wartaq displayed for an active Teacher and asked to enable Teacher phone sign-in. The bot uses the Telegram self-contact to confirm the number. Teachers who have completed account setup can open their usual menus with that number. Each Teacher tool call checks the current grant, role and assigned-student access. Student phone sign-in retains its attendance view. Administrators connect through browser linking.
+
+Verification uses synthetic Telegram updates and a disposable PostgreSQL database for Teacher permissions, attendance writes, withdrawal and existing Student sessions. The PR records the release checks and production deployment. Live testing uses no real student records.
+
 ## 2026-11-21 21:25 Asia/Damascus — Clarify the teacher account editor
 
 The owner asked for a cleaner account editor and a save label that reflects the teacher details being saved. **Save teacher** submits the name, role and optional access expiry. Phone confirmation, password reset and access withdrawal sit below the account details. Pressing Enter in the sign-in phone field leaves both save actions untouched.

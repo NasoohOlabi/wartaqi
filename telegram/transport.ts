@@ -18,19 +18,24 @@ export class Mcp {
   constructor(
     private origin: string,
     private token: string,
+    private workerSecret?: string,
   ) {}
   private async request(method: string, params: Record<string, unknown> = {}) {
-    const response = await fetch(`${this.origin}/mcp`, {
-      method: 'POST',
-      signal: AbortSignal.timeout(15_000),
-      redirect: 'error',
-      headers: {
-        authorization: `Bearer ${this.token}`,
-        'content-type': 'application/json',
-        accept: 'application/json, text/event-stream',
+    const response = await fetch(
+      `${this.origin}${this.workerSecret ? '/api/telegram/teacher-mcp' : '/mcp'}`,
+      {
+        method: 'POST',
+        signal: AbortSignal.timeout(15_000),
+        redirect: 'error',
+        headers: {
+          authorization: `Bearer ${this.workerSecret ?? this.token}`,
+          ...(this.workerSecret ? { 'x-telegram-grant': this.token } : {}),
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params }),
       },
-      body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params }),
-    })
+    )
     if (!response.ok) throw new Error(`MCP request failed (${response.status})`)
     const body = rpcSchema.parse(await response.json())
     if (body.error || body.result === undefined) throw new Error('MCP request failed')

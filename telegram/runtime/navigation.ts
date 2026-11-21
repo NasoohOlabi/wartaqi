@@ -83,8 +83,9 @@ export function createNavigation(
     const browserLink = action.route === 'sys.linkaccount'
     if (action.route === 'sys.home' || browserLink) action = { route: 'home' }
     const studentToken = auth.student(chat)
-    const credentials = studentToken ? null : await auth.credentials(chat)
-    if (!credentials && !studentToken) {
+    const teacher = auth.teacherMcp(chat)
+    const credentials = studentToken || teacher ? null : await auth.credentials(chat)
+    if (!credentials && !studentToken && !teacher) {
       store.delete(`prompt:${chat}`)
       store.delete(`generation:${chat}`)
       const showPending = async () => {
@@ -157,7 +158,11 @@ export function createNavigation(
       })
       return
     }
-    const mcp = credentials ? new Mcp(origin, credentials.access_token) : null
+    const mcp = teacher
+      ? new Mcp(origin, teacher.token, teacher.secret)
+      : credentials
+        ? new Mcp(origin, credentials.access_token)
+        : null
     let studentData: z.infer<typeof neonStudentAttendanceSchema> | undefined
     let tools: ReadonlySet<string>
     try {
@@ -170,7 +175,9 @@ export function createNavigation(
       else throw new Error('Missing credentials')
     } catch (error) {
       if (
-        (error instanceof Error && error.message === 'MCP request failed (401)') ||
+        (error instanceof Error &&
+          (error.message === 'MCP request failed (401)' ||
+            (teacher && error.message === 'MCP request failed (403)'))) ||
         (error instanceof StudentRequestError && error.status === 403)
       )
         await auth.unlink(chat)

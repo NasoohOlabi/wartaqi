@@ -495,7 +495,8 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
       if (url.endsWith('/register')) return Response.json({ client_id: 'client' })
       if (url.endsWith('/api/telegram/student')) {
         requests.push(body)
-        if (body.action === 'login') return Response.json({ token: 'synthetic-token' })
+        if (body.action === 'login-phone')
+          return Response.json({ token: 'synthetic-token', role: 'student' })
         if (body.action === 'attendance')
           return Response.json({
             student: {
@@ -587,7 +588,7 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
     await share(11, { phone_number: '963991234567', user_id: 123 }, { reply_to_message: undefined })
     expect(requests).toHaveLength(0)
     await share(12, { phone_number: '963 99 123 4567', user_id: 123 })
-    expect(requests[0]).toEqual({ action: 'login', phone: '+963991234567' })
+    expect(requests[0]).toEqual({ action: 'login-phone', phone: '+963991234567' })
     expect(requests[1]?.action).toBe('attendance')
     expect(String(messages.at(-1)?.text)).toContain(lang === 'ar' ? 'حضوري' : 'My attendance')
     expect(worker.store.get('phone:123')).toBeNull()
@@ -596,7 +597,7 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
     await send(14, '/sharephone@WartaqBot')
     expect(messages.at(-1)?.reply_markup).toMatchObject({ keyboard: [[{ request_contact: true }]] })
     await share(15, { phone_number: '963991234567', user_id: 123 })
-    expect(requests.filter((request) => request.action === 'login')).toHaveLength(2)
+    expect(requests.filter((request) => request.action === 'login-phone')).toHaveLength(2)
   } finally {
     worker.store.close()
     rmSync(directory, { recursive: true, force: true })
@@ -684,7 +685,7 @@ test.each(['en', 'ar'])('phone denial and browser recovery in %s', async (lang) 
     await contact(3)
     expect(String(messages.at(-1)?.text)).toContain('/linkaccount')
     expect(String(messages.at(-1)?.text)).toContain(
-      lang === 'ar' ? 'حساب طالب معتمداً' : 'approved student account',
+      lang === 'ar' ? 'حساب طالب أو معلم معتمداً' : 'approved Student or Teacher account',
     )
     await send(4, '/linkaccount')
     expect(String(messages.at(-1)?.text)).toContain('/linkaccount')

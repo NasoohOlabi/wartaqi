@@ -18,6 +18,9 @@ const teacherId = crypto.randomUUID()
 const courseId = crypto.randomUUID()
 const enrollmentId = crypto.randomUUID()
 const eventId = crypto.randomUUID()
+const teacherEventId = crypto.randomUUID()
+const otherStudentId = crypto.randomUUID()
+const otherEnrollmentId = crypto.randomUUID()
 
 afterAll(async () => {
   server?.kill()
@@ -31,16 +34,18 @@ afterAll(async () => {
   } finally {
     db.release()
   }
-  await pool.query('DELETE FROM events WHERE id = $1', [eventId])
-  await pool.query('DELETE FROM course_enrollments WHERE id = $1', [enrollmentId])
+  await pool.query('DELETE FROM events WHERE id = ANY($1::uuid[])', [[eventId, teacherEventId]])
+  await pool.query('DELETE FROM course_enrollments WHERE id = ANY($1::uuid[])', [
+    [enrollmentId, otherEnrollmentId],
+  ])
   await pool.query('DELETE FROM courses WHERE id = $1', [courseId])
-  await pool.query('DELETE FROM students WHERE id = $1', [studentId])
+  await pool.query('DELETE FROM students WHERE id = ANY($1::uuid[])', [[studentId, otherStudentId]])
   await pool.query('DELETE FROM teachers WHERE id = $1', [teacherId])
   for (const id of ids) await pool.query('DELETE FROM neon_auth."user" WHERE id = $1', [id])
   await pool.end()
 })
 
-integration('phone credentials allow only current verified students and revoke', async () => {
+integration('phone grants follow verified Student and Teacher access and revoke', async () => {
   if (!databaseUrl) throw new Error('Disposable database required')
   pool = new Pool({ connectionString: databaseUrl })
   const previousSecret = process.env.TELEGRAM_WORKER_SECRET
@@ -122,6 +127,120 @@ integration('phone credentials allow only current verified students and revoke',
       { date: '2026-11-20', status: 'present', enrollmentId, course: 'Synthetic course' },
     ],
   })
+  await pool.query('UPDATE students SET teacher_id = $2 WHERE id = $1', [studentId, teacherId])
+  await pool.query("INSERT INTO students (id, name) VALUES ($1, 'Other student')", [otherStudentId])
+  await pool.query(
+    'INSERT INTO course_enrollments (id, course_id, student_id) VALUES ($1, $2, $3)',
+    [otherEnrollmentId, courseId, otherStudentId],
+  )
+  const teacherLogin = await post({ action: 'login-phone', phone: '0995120035' })
+  expect(teacherLogin.status).toBe(200)
+  const teacherGrant = z
+    .object({ token: z.string(), role: z.literal('teacher') })
+    .parse(await teacherLogin.json()).token
+  const rpc = (grant: string, method: string, params: unknown = {}, workerSecret = secret) =>
+    fetch(`${started.origin}/api/telegram/teacher-mcp`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${workerSecret}`,
+        'x-telegram-grant': grant,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    })
+  expect((await rpc(teacherGrant, 'tools/list', {}, 'invalid')).status).toBe(401)
+  expect((await rpc(token, 'tools/list')).status).toBe(403)
+  expect(
+    (
+      await fetch(`${started.origin}/mcp`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${teacherGrant}` },
+      })
+    ).status,
+  ).toBe(401)
+  const list = await rpc(teacherGrant, 'tools/list')
+  expect(list.status).toBe(200)
+  const tools = z
+    .object({ result: z.object({ tools: z.array(z.object({ name: z.string() })) }) })
+    .parse(await list.json())
+    .result.tools.map((tool) => tool.name)
+  expect(tools).toContain('get_notebook')
+  expect(tools).toContain('sync_attendance')
+  expect(tools).not.toContain('grant_account')
+  const notebook = await rpc(teacherGrant, 'tools/call', { name: 'get_notebook', arguments: {} })
+  expect(notebook.status).toBe(200)
+  const notebookBody = JSON.stringify(await notebook.json())
+  expect(notebookBody).toContain(studentId)
+  expect(notebookBody).not.toContain(otherStudentId)
+  const event = {
+    id: teacherEventId,
+    clientTime: new Date().toISOString(),
+    payload: { kind: 'attendance', studentId, enrollmentId, date: '2026-11-21', status: 'present' },
+  }
+  const written = await rpc(teacherGrant, 'tools/call', {
+    name: 'append_events',
+    arguments: { events: [event] },
+  })
+  expect(JSON.stringify(await written.json())).not.toContain('isError')
+  expect(
+    (
+      await pool.query('SELECT 1 FROM events WHERE id = $1 AND student_id = $2', [
+        teacherEventId,
+        studentId,
+      ])
+    ).rowCount,
+  ).toBe(1)
+  const deniedEvent = {
+    ...event,
+    id: crypto.randomUUID(),
+    payload: { ...event.payload, studentId: otherStudentId, enrollmentId: otherEnrollmentId },
+  }
+  const deniedWrite = await rpc(teacherGrant, 'tools/call', {
+    name: 'append_events',
+    arguments: { events: [deniedEvent] },
+  })
+  expect(JSON.stringify(await deniedWrite.json())).toContain('isError')
+  expect((await pool.query('SELECT 1 FROM events WHERE id = $1', [deniedEvent.id])).rowCount).toBe(
+    0,
+  )
+  const profile = await rpc(teacherGrant, 'tools/call', { name: 'get_profile', arguments: {} })
+  expect(profile.status).toBe(200)
+  expect(JSON.stringify(await profile.json())).toContain('Synthetic staff')
+  const renamed = await rpc(teacherGrant, 'tools/call', {
+    name: 'update_profile',
+    arguments: { input: { name: 'Updated synthetic staff' } },
+  })
+  expect(JSON.stringify(await renamed.json())).toContain('Updated synthetic staff')
+  await pool.query(
+    'UPDATE app_accounts SET invitation_requires_setup = true, invitation_request_id = gen_random_uuid() WHERE auth_user_id = $1',
+    [staff],
+  )
+  expect((await post({ action: 'login-phone', phone: '0995120035' })).status).toBe(403)
+  const pending = await rpc(teacherGrant, 'tools/call', { name: 'get_notebook', arguments: {} })
+  expect(JSON.stringify(await pending.json())).toContain('isError')
+  await pool.query(
+    'UPDATE app_accounts SET invitation_requires_setup = false WHERE auth_user_id = $1',
+    [staff],
+  )
+  await pool.query('UPDATE teachers SET active = false WHERE id = $1', [teacherId])
+  expect((await rpc(teacherGrant, 'tools/list')).status).toBe(403)
+  await pool.query('UPDATE teachers SET active = true WHERE id = $1', [teacherId])
+  await pool.query("UPDATE app_accounts SET role = 'administrator' WHERE auth_user_id = $1", [
+    staff,
+  ])
+  expect((await post({ action: 'login-phone', phone: '0995120035' })).status).toBe(403)
+  expect((await rpc(teacherGrant, 'tools/list')).status).toBe(403)
+  await pool.query("UPDATE app_accounts SET role = 'teacher' WHERE auth_user_id = $1", [staff])
+  await pool.query('UPDATE app_accounts SET active = false WHERE auth_user_id = $1', [staff])
+  expect((await rpc(teacherGrant, 'tools/list')).status).toBe(403)
+  await pool.query(
+    'UPDATE app_accounts SET active = true, verified_phone = $2 WHERE auth_user_id = $1',
+    [staff, '+963995120036'],
+  )
+  expect((await rpc(teacherGrant, 'tools/list')).status).toBe(403)
+  expect((await post({ action: 'unlink', token: teacherGrant })).status).toBe(200)
+  expect((await rpc(teacherGrant, 'tools/list')).status).toBe(401)
   await pool.query('UPDATE app_accounts SET active = false WHERE auth_user_id = $1', [user])
   expect((await post({ action: 'attendance', token })).status).toBe(403)
   await pool.query(
