@@ -69,7 +69,7 @@ export function NeonAuth({
     | null
   >(null)
   useEffect(() => {
-    if (session.isPending || session.error || !navigator.onLine) return
+    if (session.isPending || session.error) return
     const cached = offlineAccess()
     if (cached && userId && cached.userId !== userId) {
       clearOfflineAccess()
@@ -208,15 +208,21 @@ export function NeonAuth({
       setLogout('failed')
     }
   }
-  const offline = offlineSession ?? (!navigator.onLine ? offlineAccess() : null)
-  if (offline)
+  if (offlineSession)
     return (
       <OfflineAttendance
-        userId={offline.userId}
-        actor={offline.actor}
-        close={() => {
+        userId={offlineSession.userId}
+        actor={offlineSession.actor}
+        close={(connected) => {
           setOfflineSession(null)
-          if (!navigator.onLine) window.location.href = window.location.pathname
+          if (connected) {
+            if (account?.kind === 'error') {
+              setAccount(null)
+              setAccountAttempt((value) => value + 1)
+            }
+            if (session.isPending || session.error || userId !== offlineSession.userId)
+              void session.refetch().catch(() => {})
+          } else if (!navigator.onLine) window.location.href = window.location.pathname
         }}
       />
     )

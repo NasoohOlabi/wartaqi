@@ -34,7 +34,7 @@ export function OfflineAttendance({
 }: {
   userId: string
   actor: string
-  close: () => void
+  close: (connected: boolean) => void
   reviewChanges?: boolean
   onSynced?: () => void
 }) {
@@ -59,6 +59,7 @@ export function OfflineAttendance({
   const syncLock = useRef(false)
   const reviewHeading = useRef<HTMLHeadingElement>(null)
   const revalidated = useRef(false)
+  const [connected, setConnected] = useState(false)
   const [leaseExpired, setLeaseExpired] = useState(false)
   const [loaded, setLoaded] = useState(false)
   useEffect(() => {
@@ -83,16 +84,17 @@ export function OfflineAttendance({
     reviewHeading.current?.focus({ preventScroll: true })
   }, [])
   const sync = async (retryBlocked = false) => {
-    if (!navigator.onLine || syncLock.current) return
+    if (syncLock.current) return
     syncLock.current = true
     setSyncing(true)
     try {
-      if (!revalidated.current) {
+      if (!revalidated.current || (retryBlocked && !reviewChanges)) {
         const notebook = await getNotebook(userId)
         if (!notebook.teacher.canRead || !notebook.teacher.canWrite) throw new NeonRequestError(403)
+        revalidated.current = true
         await cacheOfflineRoster(userId, notebook)
         await refresh()
-        revalidated.current = true
+        setConnected(true)
       }
       const results = await Promise.allSettled([
         syncOfflineAttendance(userId, retryBlocked),
@@ -113,16 +115,21 @@ export function OfflineAttendance({
       for (const result of results) if (result.status === 'rejected') throw result.reason
       setError('')
     } catch (cause) {
+      const showSyncError =
+        reviewChanges || revalidated.current || cause instanceof NeonRequestError
+      revalidated.current = false
+      setConnected(false)
       if (cause instanceof NeonRequestError && cause.status === 403) {
         clearOfflineAccess()
         setLeaseExpired(true)
         window.dispatchEvent(new AccessDeniedEvent(userId, cause.status))
       }
-      setError(
-        ar
-          ? 'تعذرت المزامنة. سجّل الدخول مجدداً وحاول مرة أخرى.'
-          : 'Sync failed. Sign in again and retry.',
-      )
+      if (showSyncError)
+        setError(
+          ar
+            ? 'تعذرت المزامنة. سجّل الدخول مجدداً وحاول مرة أخرى.'
+            : 'Sync failed. Sign in again and retry.',
+        )
     } finally {
       syncLock.current = false
       setSyncing(false)
@@ -130,20 +137,48 @@ export function OfflineAttendance({
   }
   useEffect(() => {
     const online = () => void sync(true)
+    const retry = () => void sync()
     const offline = () => {
       revalidated.current = false
+      setConnected(false)
     }
     window.addEventListener('offline', offline)
     window.addEventListener('online', online)
-    const timer = window.setInterval(() => void sync(), 5000)
-    if (navigator.onLine) void sync(true)
+    window.addEventListener('focus', retry)
+    const timer = window.setInterval(retry, 5000)
+    void sync(true)
     return () => {
       window.removeEventListener('online', online)
       window.removeEventListener('offline', offline)
+      window.removeEventListener('focus', retry)
       window.clearInterval(timer)
     }
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
+  const pendingCount = pending.length + studentPending.length
+  useEffect(() => {
+    if (
+      !reviewChanges &&
+      connected &&
+      loaded &&
+      !syncing &&
+      !saving &&
+      !studentId &&
+      !leaseExpired &&
+      pendingCount === 0
+    )
+      close(true)
+  }, [
+    close,
+    connected,
+    leaseExpired,
+    loaded,
+    pendingCount,
+    reviewChanges,
+    saving,
+    studentId,
+    syncing,
+  ])
   const Container = reviewChanges ? 'section' : 'main'
   const containerProps = reviewChanges
     ? { className: 'max-w-4xl space-y-4' }
@@ -156,7 +191,7 @@ export function OfflineAttendance({
             ? 'انتهت صلاحية الوصول. اتصل بالإنترنت.'
             : 'Offline access expired. Connect and sign in again.'}
         </p>
-        <button className="secondary" onClick={close}>
+        <button className="secondary" onClick={() => close(false)}>
           {ar ? 'رجوع' : 'Back'}
         </button>
       </Container>
@@ -227,7 +262,7 @@ export function OfflineAttendance({
       )
       await refresh()
       setError('')
-      if (navigator.onLine) void sync()
+      if (revalidated.current) void sync()
     } catch {
       setError(ar ? 'تعذر حفظ الحضور على الجهاز.' : 'Could not save attendance on this device.')
     } finally {
@@ -250,19 +285,18 @@ export function OfflineAttendance({
         return ar ? 'بانتظار المزامنة' : 'Pending sync'
     }
   }
-  const pendingCount = pending.length + studentPending.length
   const syncActions = (
     <div className="flex flex-wrap gap-2">
       {(!reviewChanges || pendingCount > 0) && (
         <button
           className={reviewChanges ? 'primary' : 'secondary'}
-          disabled={saving || syncing || !navigator.onLine}
+          disabled={saving || syncing}
           onClick={() => void sync(true)}
         >
-          {ar ? 'مزامنة الآن' : 'Sync now'}
+          {pendingCount ? (ar ? 'مزامنة الآن' : 'Sync now') : t('Try again')}
         </button>
       )}
-      <button className="secondary" onClick={close}>
+      <button className="secondary" onClick={() => close(connected)}>
         {ar ? 'رجوع' : 'Back'}
       </button>
     </div>
@@ -289,9 +323,16 @@ export function OfflineAttendance({
         <>
           <h1 className="title">{ar ? 'الدفتر دون اتصال' : 'Offline notebook'}</h1>
           <p role="status">
-            {navigator.onLine ? (ar ? 'متصل' : 'Online') : ar ? 'دون اتصال' : 'Offline'} ·{' '}
-            {pendingCount} {ar ? 'بانتظار المزامنة' : 'pending sync'}
+            {connected
+              ? ar
+                ? 'متصل بوارتق'
+                : 'Connected to Wartaq'
+              : ar
+                ? 'بانتظار الاتصال بوارتق'
+                : 'Waiting to reconnect to Wartaq'}{' '}
+            · {pendingCount} {ar ? 'بانتظار المزامنة' : 'pending sync'}
           </p>
+          {syncActions}
         </>
       )}
       {error && <p role="alert">{error}</p>}
@@ -467,7 +508,7 @@ export function OfflineAttendance({
                       setTags('')
                       await refresh()
                       setError('')
-                      if (navigator.onLine) void sync()
+                      if (revalidated.current) void sync()
                     } catch {
                       setError(ar ? 'تعذر حفظ الملاحظة' : 'Could not save note on this device.')
                     } finally {
@@ -519,7 +560,7 @@ export function OfflineAttendance({
                       await refresh()
                       setPhoneDraft(undefined)
                       setError('')
-                      if (navigator.onLine) void sync()
+                      if (revalidated.current) void sync()
                     } catch {
                       setError(
                         ar
@@ -711,7 +752,6 @@ export function OfflineAttendance({
           })}
         </section>
       )}
-      {!reviewChanges && syncActions}
     </Container>
   )
 }

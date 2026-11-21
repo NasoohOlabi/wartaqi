@@ -176,6 +176,56 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
     .poll(() => page.evaluate(() => Boolean(localStorage.getItem('halaqa-offline-access'))))
     .toBe(true)
 
+  await test.step('reconnects even when the browser keeps reporting offline', async () => {
+    await page.addInitScript(() => {
+      if (sessionStorage.getItem('stale-offline-status'))
+        Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    })
+    networkAvailable = false
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+      window.dispatchEvent(new Event('offline'))
+    })
+    await expect(page.getByRole('heading', { name: 'Offline notebook' })).toBeVisible()
+    await expect(page.getByText('Waiting to reconnect to Wartaq · 0 pending sync')).toBeVisible()
+    await page.getByRole('button', { name: names[0], exact: true }).click()
+    const draft = page.getByRole('textbox', { name: 'Note', exact: true })
+    await draft.fill('Unsaved draft')
+    networkAvailable = true
+    await expect(page.getByText('Connected to Wartaq · 0 pending sync')).toBeVisible({
+      timeout: 12_000,
+    })
+    expect(await page.evaluate(() => navigator.onLine)).toBe(false)
+    await expect(draft).toHaveValue('Unsaved draft')
+    await page.getByRole('button', { name: 'Back to students' }).click()
+    await expect(page.getByRole('heading', { name: 'Attendance & notes' })).toBeVisible()
+
+    networkAvailable = false
+    await page.evaluate(() => {
+      localStorage.setItem('halaqa-language', 'ar')
+      sessionStorage.setItem('stale-offline-status', '1')
+    })
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'الدفتر دون اتصال' })).toBeVisible()
+    await expect(page.getByText('بانتظار الاتصال بوارتق · 0 بانتظار المزامنة')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'حاول مجدداً' })).toBeInViewport()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    )
+    networkAvailable = true
+    await expect(page.getByRole('heading', { name: 'الحضور والملاحظات' })).toBeVisible({
+      timeout: 12_000,
+    })
+    expect(await page.evaluate(() => navigator.onLine)).toBe(false)
+    await page.evaluate(() => {
+      sessionStorage.removeItem('stale-offline-status')
+      Reflect.deleteProperty(navigator, 'onLine')
+    })
+    await page.getByRole('button', { name: 'الملف الشخصي', exact: true }).click()
+    await page.getByRole('button', { name: 'English', exact: true }).click()
+    await page.keyboard.press('Escape')
+  })
+
   networkAvailable = false
   await context.setOffline(true)
   await expect(page.getByRole('heading', { name: 'Offline notebook' })).toBeVisible()

@@ -2221,3 +2221,9 @@ The synthetic administrator browser scenario checks the teacher grant payload, p
 The owner asked to let Teachers use the bot without first creating a website password. Verified Telegram contact now opens the Teacher notebook while website setup is pending. Teacher access still follows the approved account and student assignments. The bot keeps website password setup out of its account and error prompts.
 
 The disposable database regression reproduced the rejected first sign-in. It verifies that a new Teacher can open the notebook and save an assigned mark with a verified phone while the web notebook waits for password setup. The PR records release and production checks. Telegram contact delivery is simulated during local verification.
+
+## 2026-11-21 22:16 Asia/Damascus — Recover from a stale offline status
+
+The owner reported that Wartaq showed the offline notebook while other apps were connected. A mobile browser test reproduced the cached view getting stuck after the API recovered while the browser still reported offline. Wartaq now retries the authorized notebook directly, shows reconnection controls above the roster and returns when the queue is clear and no student record is open.
+
+Desktop and emulated phone tests cover reconnecting after an in-app disconnect and a cold start, draft protection, and queued change reconciliation. Railway deployment records show no web deployment at the time shown in the screenshot. The phone's original disconnect remains unverified. The PR records release and production checks.
