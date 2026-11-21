@@ -318,9 +318,9 @@ function Notebook({
       <OfflineAttendance
         userId={neon.userId}
         actor={neon.teacher.name}
-        close={() => {
+        close={(connected) => {
           setOfflineView(false)
-          if (navigator.onLine) void ledger.refresh()
+          if (connected || navigator.onLine) void ledger.refresh()
         }}
       />
     )
