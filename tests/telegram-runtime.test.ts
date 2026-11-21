@@ -534,13 +534,12 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
       },
     })
     expect(messages.at(-1)?.parse_mode).toBe('HTML')
-    expect(messages.at(-1)?.text).toContain(
-      lang === 'ar' ? '<b>اكتب رقم هاتفك</b>' : '<b>Type your phone number</b>',
+    expect(messages.at(-1)?.text).toBe(
+      lang === 'ar'
+        ? '<b>اكتب رقم هاتفك</b> أو اضغط على /sharephone لمشاركة رقم تيليجرام مباشرة.'
+        : '<b>Type your phone number</b> or click on /sharephone to share your Telegram number directly.',
     )
-    expect(String(messages.at(-1)?.text)).toContain('/sharephone')
-    expect(messages.at(-1)?.reply_markup).toMatchObject({
-      inline_keyboard: [[{ url: expect.any(String) }]],
-    })
+    expect(messages.at(-1)?.reply_markup).toBeUndefined()
     const send = (update_id: number, text: string) =>
       worker.process({
         update_id,
@@ -566,8 +565,8 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
         },
       })
     await send(2, 'invalid')
-    expect(String(messages.at(-1)?.text)).toContain('/sharephone')
-    await send(3, '+963912345678')
+    expect(String(messages.at(-1)?.text)).toContain('/linkaccount')
+    await send(3, '0991234567')
     expect(requests).toHaveLength(0)
     expect(messages.at(-1)?.reply_markup).toMatchObject({
       keyboard: [
@@ -577,18 +576,18 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
     const firstKeyboard = pendingMessage()
     await send(4, 'Retry sharing')
     expect(pendingMessage()).not.toBe(firstKeyboard)
-    await share(5, { phone_number: '963912345679', user_id: 123 })
+    await share(5, { phone_number: '963991234568', user_id: 123 })
     expect(requests).toHaveLength(0)
     expect(String(messages.at(-1)?.text)).toContain('/menu')
     await send(6, '/menu')
-    await send(7, '0912345678')
-    await share(8, { phone_number: '963912345678' })
-    await share(9, { phone_number: '963912345678', user_id: 999 })
-    await share(10, { phone_number: '963912345678', user_id: 123 }, { forward_date: 1 })
-    await share(11, { phone_number: '963912345678', user_id: 123 }, { reply_to_message: undefined })
+    await send(7, '0991234567')
+    await share(8, { phone_number: '963991234567' })
+    await share(9, { phone_number: '963991234567', user_id: 999 })
+    await share(10, { phone_number: '963991234567', user_id: 123 }, { forward_date: 1 })
+    await share(11, { phone_number: '963991234567', user_id: 123 }, { reply_to_message: undefined })
     expect(requests).toHaveLength(0)
-    await share(12, { phone_number: '963912345678', user_id: 123 })
-    expect(requests[0]).toEqual({ action: 'login', phone: '+963912345678' })
+    await share(12, { phone_number: '963 99 123 4567', user_id: 123 })
+    expect(requests[0]).toEqual({ action: 'login', phone: '+963991234567' })
     expect(requests[1]?.action).toBe('attendance')
     expect(String(messages.at(-1)?.text)).toContain(lang === 'ar' ? 'حضوري' : 'My attendance')
     expect(worker.store.get('phone:123')).toBeNull()
@@ -596,8 +595,135 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
     expect(requests.at(-1)?.action).toBe('unlink')
     await send(14, '/sharephone@WartaqBot')
     expect(messages.at(-1)?.reply_markup).toMatchObject({ keyboard: [[{ request_contact: true }]] })
-    await share(15, { phone_number: '963912345678', user_id: 123 })
+    await share(15, { phone_number: '963991234567', user_id: 123 })
     expect(requests.filter((request) => request.action === 'login')).toHaveLength(2)
+  } finally {
+    worker.store.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test.each(['en', 'ar'])('phone denial and browser recovery in %s', async (lang) => {
+  const { createWorker } = await import('../telegram/runtime')
+  const directory = mkdtempSync(join(tmpdir(), 'wartaq-recovery-'))
+  const messages: Record<string, unknown>[] = []
+  let discoveryFails = true
+  let discoveryCalls = 0
+  let denied = true
+  globalThis.fetch = Object.assign(
+    async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
+      if (url.endsWith('/.well-known/oauth-protected-resource/mcp')) {
+        discoveryCalls++
+        if (discoveryFails) return new Response(null, { status: 503 })
+        return Response.json({
+          resource: 'https://wartaq.example/mcp',
+          authorization_servers: ['https://wartaq.example/api/auth'],
+        })
+      }
+      if (url.includes('/.well-known/oauth-authorization-server'))
+        return Response.json({
+          issuer: 'https://wartaq.example/api/auth',
+          authorization_endpoint: 'https://wartaq.example/authorize',
+          token_endpoint: 'https://wartaq.example/token',
+          registration_endpoint: 'https://wartaq.example/register',
+        })
+      if (url.endsWith('/register')) return Response.json({ client_id: 'client' })
+      if (url.endsWith('/token'))
+        return Response.json({
+          access_token: 'synthetic-access',
+          refresh_token: 'synthetic-refresh',
+        })
+      if (url.endsWith('/api/telegram/student'))
+        return new Response(null, { status: denied ? 403 : 503 })
+      if (new URL(url).origin === 'https://api.telegram.org') {
+        messages.push(body)
+        return Response.json({ ok: true, result: { message_id: 100 + messages.length } })
+      }
+      throw new Error('Unexpected request')
+    },
+    { preconnect: originalFetch.preconnect },
+  )
+  const worker = createWorker({
+    TELEGRAM_BOT_TOKEN: 'synthetic',
+    WARTAQI_ORIGIN: 'https://wartaq.example',
+    TELEGRAM_PUBLIC_ORIGIN: 'https://bot.example',
+    TELEGRAM_DB_PATH: join(directory, 'bot.sqlite'),
+    TELEGRAM_STORAGE_KEY: Buffer.alloc(32, 7).toString('base64'),
+    TELEGRAM_WORKER_SECRET: 'a'.repeat(32),
+  })
+  const send = (update_id: number, text: string) =>
+    worker.process({
+      update_id,
+      message: {
+        message_id: update_id,
+        chat: { id: 123, type: 'private' },
+        from: { id: 123, language_code: lang },
+        text,
+      },
+    })
+  const contact = (update_id: number) =>
+    worker.process({
+      update_id,
+      message: {
+        message_id: update_id,
+        chat: { id: 123, type: 'private' },
+        from: { id: 123 },
+        reply_to_message: {
+          message_id: z.object({ message: z.number() }).parse(worker.store.get('phone:123'))
+            .message,
+        },
+        contact: { phone_number: '963 99 123 4567', user_id: 123 },
+      },
+    })
+  try {
+    await send(1, '/start')
+    expect(discoveryCalls).toBe(0)
+    await send(2, '/sharephone')
+    await contact(3)
+    expect(String(messages.at(-1)?.text)).toContain('/linkaccount')
+    expect(String(messages.at(-1)?.text)).toContain(
+      lang === 'ar' ? 'حساب طالب معتمداً' : 'approved student account',
+    )
+    await send(4, '/linkaccount')
+    expect(String(messages.at(-1)?.text)).toContain('/linkaccount')
+    expect(worker.store.get('phone:123')).toBeNull()
+    discoveryFails = false
+    await send(5, '/linkaccount')
+    expect(messages.at(-1)?.reply_markup).toMatchObject({
+      inline_keyboard: [[{ url: expect.any(String) }]],
+    })
+    const state = z.string().parse(worker.store.get('oauth-active:123'))
+    await send(6, '/linkaccount')
+    expect(worker.store.get('oauth-active:123')).toBe(state)
+    const callback = new URL('https://bot.example/callback')
+    callback.search = new URLSearchParams({ state, code: 'synthetic-code' }).toString()
+    expect((await worker.fetch(new Request(callback))).status).toBe(200)
+    const pendingCode = worker.store.get('link:123')
+    expect(pendingCode).not.toBeNull()
+    await send(7, '/linkaccount')
+    expect(worker.store.get('link:123')).toEqual(pendingCode)
+    expect(String(messages.at(-1)?.text)).toContain(lang === 'ar' ? '٨ أرقام' : 'eight-digit code')
+    await send(8, '/cancel')
+    denied = false
+    await send(9, '/sharephone')
+    await contact(10)
+    expect(String(messages.at(-1)?.text)).toContain(
+      lang === 'ar' ? 'مؤقتاً' : 'temporarily unavailable',
+    )
+    expect(String(messages.at(-1)?.text)).toContain('/linkaccount')
+    await worker.process({
+      update_id: 11,
+      message: {
+        message_id: 11,
+        chat: { id: 123, type: 'private' },
+        from: { id: 123 },
+        contact: { phone_number: '963991234567', user_id: 123 },
+      },
+    })
+    expect(String(messages.at(-1)?.text)).toContain(lang === 'ar' ? 'انتهت صلاحية' : 'expired')
+    expect(String(messages.at(-1)?.text)).toContain('/linkaccount')
   } finally {
     worker.store.close()
     rmSync(directory, { recursive: true, force: true })

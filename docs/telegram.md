@@ -2,9 +2,9 @@
 
 Open [@WartaqBot](https://t.me/WartaqBot) in a private chat and tap **Start**.
 
-The private chat prompts students to **Type your phone number**. Enter the number, then tap **Share my phone** to confirm it with Telegram. Send `/sharephone` to open the sharing button directly. Open the bot keyboard beside the message field if the button is hidden. The bot opens **My attendance** when the Telegram number matches the administrator-verified sign-in number on the approved Student account linked to the course record. Teachers, administrators and students with a different Telegram number can use **Link account**.
+The private chat asks for your phone number. Enter it, then tap **Share my phone** to confirm it with Telegram. Syrian mobile numbers can use `09` or `+9639`. Send `/sharephone` to open the sharing button directly. Open the bot keyboard beside the message field if the button is hidden. The bot opens **My attendance** when the Telegram number matches the administrator-verified sign-in number on the approved Student account linked to the course record.
 
-To use **Link account**, sign in on the Wartaq website and approve the connection. On the confirmation page, choose **Copy code**, then **Open Telegram**. Paste the eight digits into the same private chat and send them within five minutes. Returning to the bot or changing its language keeps the pending link. To discard it, use `/cancel`.
+If you have trouble confirming your number, or you use a Teacher or Administrator account, send `/linkaccount`. Tap **Link account** to open Wartaq in your browser, sign in and approve the connection. On the confirmation page, choose **Copy code**, then **Open Telegram**. Paste the eight digits into the same private chat and send them within five minutes. Returning to the bot or changing its language keeps the pending link. To discard it, use `/cancel`.
 
 Choose a task from the buttons under the message. Type a reply when a screen asks for a name, date, grade or note. The bot follows Telegram's language on first use. The language button switches between Arabic and English. Use the Telegram menu to reopen the notebook, cancel an action or disconnect.
 
@@ -26,7 +26,7 @@ Each workflow returns a `Screen` with text, button rows and an optional next act
 ```mermaid
 stateDiagram-v2
     [*] --> Link: Start in private chat
-    Link --> Consent: Link account
+    Link --> Consent: /linkaccount
     Link --> Share: Type phone or use /sharephone
     Share --> Mine: Confirm verified student phone
     Consent --> Code: Sign in and approve on Wartaq

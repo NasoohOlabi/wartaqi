@@ -2197,3 +2197,9 @@ Simulated Telegram updates exercise the keyboard, contact and attendance path. D
 The owner reported that typing a number left the bot silent. A bilingual runtime test reproduced the ignored reply. The bot now shows **Share my phone** again for typed input and rejected contacts, and names the passwordless option **Student phone sign-in**. Its prompt directs teachers to **Link account**. The runtime tests verify the renewed prompt and native contact binding without using a real account. Native contact delivery still needs a Telegram client check with a matching approved synthetic account.
 
 At 20:11, the owner asked the bot to start with a bold **Type your phone number** prompt and offer a Telegram command for direct sharing. The signed-out bot now prompts for the number, then asks Telegram to share the student's own contact for confirmation. `/sharephone` opens the native button immediately. Browser linking remains available from the prompt. The runtime tests use synthetic updates to check both languages, number matching, recovery and the shortcut.
+
+## 2026-11-21 20:45 Asia/Damascus — Telegram sign-in copy and browser recovery
+
+The owner requested a shorter first phone prompt, an explanation on failure and a `/linkaccount` command. The bot starts with the phone prompt and direct sharing shortcut. Recovery messages explain the specific next step and offer browser linking. `/linkaccount` opens the existing browser approval and code flow.
+
+Disposable PostgreSQL tests verified that Syrian `099` and `+96399` spellings resolve to the same verified sign-in number. Both spellings were denied for a Teacher, while an approved Student could confirm the international number after using the local form in browser sign-in. Bilingual simulated updates verify the prompt and recovery without using real credentials or phone numbers. The PR records the release checks and deployment.

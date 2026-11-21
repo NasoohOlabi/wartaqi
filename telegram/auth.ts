@@ -18,6 +18,12 @@ const credentialsSchema = grantSchema.extend({ client: z.string(), expires: z.nu
 export type Credentials = z.infer<typeof credentialsSchema>
 const nonce = () => randomBytes(32).toString('base64url')
 
+export class StudentRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`Student request failed (${status})`)
+  }
+}
+
 export class Auth {
   private resource: string
   private redirect: string
@@ -225,7 +231,7 @@ export class Auth {
       headers: { authorization: `Bearer ${this.workerSecret}`, 'content-type': 'application/json' },
       body: JSON.stringify(body),
     })
-    if (!response.ok) throw new Error(`Student request failed (${response.status})`)
+    if (!response.ok) throw new StudentRequestError(response.status)
     return response.json()
   }
   async loginPhone(chat: string, phone: string) {
