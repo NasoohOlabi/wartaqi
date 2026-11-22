@@ -2233,3 +2233,7 @@ Desktop and emulated phone tests cover reconnecting after an in-app disconnect a
 The owner asked to keep the same notebook and disable actions that need a connection. The regular notebook now opens with account-scoped saved data, retains the open page during connection changes, and queues attendance, notes, and phone edits from its regular controls. Course management, account settings, and corrections require a connection. The existing My changes page handles conflict review.
 
 The focused browser scenario covers cold restart, a stale network signal, draft continuity, and queued change reconciliation on desktop and an emulated phone. Local tests use synthetic records. The PR records release and production verification.
+
+## 2026-11-22 09:14 Asia/Damascus — Check offline access independently of reconnect
+
+PR #168 passed database and application checks in CI. Both browser projects failed when an open notebook kept displaying a student note after cached access was removed in that tab. A controlled browser clock reproduced the failure and now checks that the page hides the note within one second. The notebook checks local access on its own timer and retries the connection every five seconds.

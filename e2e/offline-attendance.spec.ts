@@ -358,8 +358,16 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   await context.setOffline(true)
   await expect(offlinePage.getByText('Offline', { exact: true })).toBeVisible()
   await expect(firstRow).toHaveCount(0)
-  await openUnenrolledStudent()
+  const clockStart = Date.now()
+  await offlinePage.clock.install({ time: clockStart })
+  await offlinePage.clock.pauseAt(clockStart + 1_000)
+  await offlinePage.goto(`/?page=app&view=student&course=all&student=${unenrolledId}`)
+  await offlinePage.clock.runFor(500)
   await expect(offlinePage.getByText('First offline note', { exact: true })).toHaveCount(1)
   await offlinePage.evaluate(() => localStorage.removeItem('halaqa-offline-access'))
+  await offlinePage.clock.runFor(1_000)
+  await expect(offlinePage.getByRole('alert')).toHaveText(
+    'Offline access expired. Connect and sign in again.',
+  )
   await expect(offlinePage.getByText('First offline note', { exact: true })).toHaveCount(0)
 })

@@ -269,15 +269,14 @@ export function useLedger(neon: { userId: string; teacher: NeonTeacher }, startO
     setOffline(true)
     void loadOffline().catch(() => setLoaded(false))
   })
-  const onTick = useEffectEvent(() => {
-    if (!offlineRef.current) return
-    if (offlineAccess()?.userId !== neonUserId) {
-      setOfflinePrepared(false)
-      setOfflineExpired(true)
-      setLoaded(false)
-      setError('Offline access expired. Connect and sign in again.')
-    }
-    void refresh()
+  const checkOfflineAccess = useEffectEvent(() => {
+    if (!offlineRef.current || offlineAccess()?.userId === neonUserId) return
+    setOfflinePrepared(false)
+    setOfflineExpired(true)
+    setLoaded(false)
+  })
+  const retryOfflineConnection = useEffectEvent(() => {
+    if (offlineRef.current) void refresh()
   })
   useEffect(() => {
     const unsubscribe = subscribeOfflineQueue(onQueueChange)
@@ -287,14 +286,16 @@ export function useLedger(neon: { userId: string; teacher: NeonTeacher }, startO
     window.addEventListener('offline', onDisconnect)
     window.addEventListener('focus', onProbe)
     window.addEventListener('storage', onQueueChange)
-    const timer = window.setInterval(onTick, 5000)
+    const accessTimer = window.setInterval(checkOfflineAccess, 1000)
+    const retryTimer = window.setInterval(retryOfflineConnection, 5000)
     return () => {
       unsubscribe()
       window.removeEventListener('online', onProbe)
       window.removeEventListener('offline', onDisconnect)
       window.removeEventListener('focus', onProbe)
       window.removeEventListener('storage', onQueueChange)
-      window.clearInterval(timer)
+      window.clearInterval(accessTimer)
+      window.clearInterval(retryTimer)
     }
   }, [startOffline])
 

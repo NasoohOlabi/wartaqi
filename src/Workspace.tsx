@@ -226,9 +226,13 @@ function Notebook({
     ledger.offlineExpired ||
     (ledger.offline && !ledger.offlinePrepared)
   if (!ledger.loaded || !preference.ready)
-    return ledger.error ? (
+    return ledger.offlineExpired || ledger.error ? (
       <main id="main-content" tabIndex={-1} className="workspace-auth panel space-y-3">
-        <p role="alert">{errorMessage(ledger.error)}</p>
+        <p role="alert">
+          {ledger.offlineExpired
+            ? t('Offline access expired. Connect and sign in again.')
+            : errorMessage(ledger.error)}
+        </p>
         <button className="secondary" disabled={ledger.busy} onClick={() => void ledger.refresh()}>
           {t('Try again')}
         </button>
