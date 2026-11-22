@@ -2238,6 +2238,12 @@ The focused browser scenario covers cold restart, a stale network signal, draft 
 
 PR #168 passed database and application checks in CI. Both browser projects failed when an open notebook kept displaying a student note after cached access was removed in that tab. A controlled browser clock reproduced the failure and now checks that the page hides the note within one second. The notebook checks local access on its own timer and retries the connection every five seconds.
 
+## 2026-11-22 11:58 Asia/Damascus — Clarify student profile actions
+
+The owner asked for a clearer Edit student button and action icons. The profile highlights Edit student with a filled pencil button next to the heading when space allows. Back has an arrow that follows the reading direction. Take attendance and Add note have distinct icons and wrap together on narrow screens.
+
+The profile browser scenarios check bilingual button labels, icons, touch targets, heading alignment and phone overflow with synthetic records. The PR records release and production verification.
+
 ## 2026-11-22 12:07 Asia/Damascus — Student Telegram sign-in from the roster
 
 The owner reported that Telegram accepted their shared contact, then rejected sign-in even though the number matched the student roster. The server now uses the contact from **Share my phone** to open **My attendance** when the phone belongs to one active roster record. A roster grant needs no website account and checks the current phone and access on each request. Verified account sign-in still takes precedence.
