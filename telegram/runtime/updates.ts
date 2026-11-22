@@ -174,8 +174,8 @@ export function createUpdates(
           chat,
           denied
             ? phoneIssue(
-                'Phone sign-in requires an approved Student or Teacher account with a verified number. Check that your Telegram number matches your Wartaq sign-in number.',
-                'يتطلب الدخول بالهاتف حساب طالب أو معلم معتمداً برقم مؤكد. تأكّد من أن رقم تيليجرام يطابق رقم تسجيل دخولك في وارتق.',
+                'Students, check that your Telegram number matches the phone number on your roster record. Teachers, use your verified Wartaq sign-in number.',
+                'للطلاب، تأكّدوا من أن رقم تيليجرام يطابق رقم الهاتف المسجل في قائمة الطلاب. للمعلمين، استخدموا رقم تسجيل الدخول المؤكد في وارتق.',
               )
             : phoneIssue(
                 'Phone sign-in is temporarily unavailable. Try /sharephone again.',

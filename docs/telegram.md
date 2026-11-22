@@ -2,7 +2,7 @@
 
 Open [@WartaqBot](https://t.me/WartaqBot) in a private chat and tap **Start**.
 
-The private chat asks for your phone number. Enter it, then tap **Share my phone** to confirm it with Telegram. Syrian mobile numbers can use `09` or `+9639`. Send `/sharephone` to open the sharing button directly. Open the bot keyboard beside the message field if the button is hidden. The Telegram number must match the administrator-verified sign-in number on an approved Teacher or Student account. Teachers open the Teacher menu and students open **My attendance**. Both work from the first sign-in in Telegram. Set a website password if you decide to use the website later.
+The private chat asks for your phone number. Enter it, then tap **Share my phone** to confirm it with Telegram. Syrian mobile numbers can use `09` or `+9639`. Send `/sharephone` to open the sharing button directly. Open the bot keyboard beside the message field if the button is hidden. When your Telegram number matches one active student record, **My attendance** opens without a Wartaq account or an additional verification step. If the number is missing or shared across active student records, ask your teacher to check it in the roster. Approved Teachers and Students can also use their verified Wartaq sign-in number. Teachers open the Teacher menu.
 
 If you have trouble confirming your number or use an Administrator account, send `/linkaccount`. Tap **Link account** to open Wartaq in your browser, sign in and approve the connection. On the confirmation page, choose **Copy code**, then **Open Telegram**. Paste the eight digits into the same private chat and send them within five minutes. Returning to the bot or changing its language keeps the pending link. To discard it, use `/cancel`.
 
@@ -28,7 +28,7 @@ stateDiagram-v2
     [*] --> Link: Start in private chat
     Link --> Consent: /linkaccount
     Link --> Share: Type phone or use /sharephone
-    Share --> Mine: Confirm verified student phone
+    Share --> Mine: Match student roster or sign-in phone
     Share --> Home: Confirm verified teacher phone
     Consent --> Code: Sign in and approve on Wartaq
     Code --> Home: Redeem in original chat

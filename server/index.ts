@@ -6,8 +6,11 @@ import { z } from 'zod'
 import { createHandler } from '../functions/notebook-service'
 import { phoneSchema } from '../shared/invitations'
 import {
+  rosterGrantBinding,
+  rosterStudentForPhone,
   telegramGrantBinding,
   telegramGrantPrefix,
+  telegramRosterSubjectPrefix,
   telegramTeacherGrantBinding,
 } from '../shared/telegram-grants'
 import { createMcpHandler } from './mcp'
@@ -356,10 +359,6 @@ async function telegramStudent(request: Request) {
            FOR UPDATE OF a`,
         [input.data.phone, input.data.action === 'login-phone'],
       )
-      if (!result.rowCount) {
-        await db.query('ROLLBACK')
-        return reply({ error: 'Unavailable' }, 403)
-      }
       const row = z
         .discriminatedUnion('role', [
           z.object({
@@ -375,24 +374,42 @@ async function telegramStudent(request: Request) {
             teacher_id: z.uuid(),
           }),
         ])
+        .optional()
         .parse(result.rows[0])
+      const rosterStudent =
+        !row && input.data.action === 'login-phone'
+          ? await rosterStudentForPhone(db, input.data.phone)
+          : null
+      const grant = row
+        ? {
+            subject: row.auth_user_id,
+            role: row.role,
+            binding:
+              row.role === 'student'
+                ? telegramGrantBinding(row.auth_user_id, row.verified_phone, row.student_id)
+                : telegramTeacherGrantBinding(row.auth_user_id, row.verified_phone, row.teacher_id),
+          }
+        : rosterStudent && {
+            subject: `${telegramRosterSubjectPrefix}${rosterStudent}`,
+            role: 'student',
+            binding: rosterGrantBinding(rosterStudent, input.data.phone),
+          }
+      if (!grant) {
+        await db.query('ROLLBACK')
+        return reply({ error: 'Unavailable' }, 403)
+      }
       const token = randomBytes(32).toString('base64url')
-      const identifier = `${telegramGrantPrefix}${createHash('sha256').update(token).digest('hex')}:${row.auth_user_id}`
+      const identifier = `${telegramGrantPrefix}${createHash('sha256').update(token).digest('hex')}:${grant.subject}`
       await db.query(
         `DELETE FROM neon_auth.verification WHERE starts_with(identifier, $1) AND "expiresAt" <= now()`,
         [telegramGrantPrefix],
       )
       await db.query(
         `INSERT INTO neon_auth.verification (id, identifier, value, "expiresAt") VALUES (gen_random_uuid(), $1, $2, now() + interval '30 days')`,
-        [
-          identifier,
-          row.role === 'student'
-            ? telegramGrantBinding(row.auth_user_id, row.verified_phone, row.student_id)
-            : telegramTeacherGrantBinding(row.auth_user_id, row.verified_phone, row.teacher_id),
-        ],
+        [identifier, grant.binding],
       )
       await db.query('COMMIT')
-      return reply(input.data.action === 'login' ? { token } : { token, role: row.role })
+      return reply(input.data.action === 'login' ? { token } : { token, role: grant.role })
     } catch (error) {
       await db.query('ROLLBACK')
       throw error
@@ -413,16 +430,20 @@ async function telegramStudent(request: Request) {
   )
   if (!found.rowCount) return reply({ error: 'Unavailable' }, 403)
   const identifier = z.string().parse(found.rows[0].identifier)
-  const accountId = z.uuid().safeParse(identifier.slice(prefix.length))
-  if (!accountId.success) return reply({ error: 'Unavailable' }, 403)
-  const subject = accountId.data
+  const suffix = identifier.slice(prefix.length)
+  const roster = suffix.startsWith(telegramRosterSubjectPrefix)
+  const parsed = z
+    .uuid()
+    .safeParse(roster ? suffix.slice(telegramRosterSubjectPrefix.length) : suffix)
+  if (!parsed.success) return reply({ error: 'Unavailable' }, 403)
+  const subject = parsed.data
   const handler = createHandler(
     pool,
     async () => subject,
     [origin],
     async () => ({ subject }),
     undefined,
-    { identifier, role: 'student' },
+    roster ? { identifier, role: 'roster-student' } : { identifier, role: 'student' },
   )
   const result = await handler(new Request(new URL('/api/student/attendance', origin)))
   const headers = new Headers(result.headers)
