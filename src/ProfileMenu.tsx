@@ -21,11 +21,13 @@ export type Profile = {
 export function ProfileMenu({
   profile,
   administrator = false,
+  offline = false,
   leave,
   disabled = false,
 }: {
   profile?: Profile
   administrator?: boolean
+  offline?: boolean
   leave: () => void
   disabled?: boolean
 }) {
@@ -83,10 +85,13 @@ export function ProfileMenu({
       {open && (
         <div className="profile-panel" id={panelId}>
           {profile?.name && <strong dir="auto">{profile.name}</strong>}
-          {profile?.accounts && <AccountChoices {...profile.accounts} disabled={disabled} />}
+          {!offline && profile?.accounts && (
+            <AccountChoices {...profile.accounts} disabled={disabled} />
+          )}
           {profile && (
             <button
               type="button"
+              disabled={offline}
               onClick={() => {
                 setOpen(false)
                 setQuery({ view: 'profile' }, true)
@@ -139,6 +144,7 @@ export function ProfileMenu({
           {administrator && (
             <button
               type="button"
+              disabled={offline}
               onClick={() => {
                 setOpen(false)
                 setQuery({ view: 'settings', student: '', settingsSection: '' }, true)

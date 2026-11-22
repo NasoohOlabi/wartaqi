@@ -1,7 +1,13 @@
 ﻿import { z } from 'zod'
+import { neonTeacherSchema, type NeonTeacher } from '../shared/neon'
 
 const key = 'halaqa-offline-access'
-const schema = z.object({ userId: z.string(), actor: z.string(), expires: z.number().nullable() })
+const schema = z.object({
+  userId: z.string(),
+  actor: z.string(),
+  expires: z.number().finite().nullable(),
+  teacher: neonTeacherSchema.omit({ invitationProfile: true }).optional(),
+})
 export function offlineAccess() {
   try {
     const value = schema.parse(JSON.parse(localStorage.getItem(key) ?? 'null'))
@@ -10,8 +16,13 @@ export function offlineAccess() {
     return null
   }
 }
-export function allowOfflineAccess(userId: string, actor: string, expires: number | null) {
-  localStorage.setItem(key, JSON.stringify(schema.parse({ userId, actor, expires })))
+export function allowOfflineAccess(
+  userId: string,
+  actor: string,
+  expires: number | null,
+  teacher?: NeonTeacher,
+) {
+  localStorage.setItem(key, JSON.stringify(schema.parse({ userId, actor, expires, teacher })))
 }
 export function clearOfflineAccess() {
   try {

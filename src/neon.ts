@@ -61,8 +61,12 @@ export async function request(
   const session = await authClient.getSession({
     fetchOptions: { signal: AbortSignal.timeout(15000) },
   })
-  if (session.data?.user.id !== userId)
-    throw new Error('Your session changed. Please sign in again.')
+  const signedInUserId = session.data?.user.id
+  if (signedInUserId && signedInUserId !== userId) {
+    if (reportDenial) window.dispatchEvent(new AccessDeniedEvent(userId, 403))
+    throw new NeonRequestError(403)
+  }
+  if (!signedInUserId) throw new Error('Your session changed. Please sign in again.')
   const response = await fetch(`${apiUrl}${path}`, {
     method: body !== undefined ? 'POST' : 'GET',
     headers: {
@@ -89,11 +93,19 @@ export async function getAccount(userId: string) {
     .parse(await request('/api/me', userId, undefined, false)).account
 }
 
+export class InvalidNotebookSnapshotError extends Error {
+  constructor() {
+    super('The request failed. Please try again.')
+  }
+}
+
 export async function getNotebook(userId: string) {
   try {
     return neonSnapshotSchema.parse(await request('/api/notebook', userId))
   } catch (cause) {
     if (cause instanceof NeonRequestError) throw cause
+    if (cause instanceof z.ZodError || cause instanceof SyntaxError)
+      throw new InvalidNotebookSnapshotError()
     throw new Error('The request failed. Please try again.')
   }
 }
