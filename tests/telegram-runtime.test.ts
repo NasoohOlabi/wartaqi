@@ -685,7 +685,7 @@ test.each(['en', 'ar'])('phone denial and browser recovery in %s', async (lang) 
     await contact(3)
     expect(String(messages.at(-1)?.text)).toContain('/linkaccount')
     expect(String(messages.at(-1)?.text)).toContain(
-      lang === 'ar' ? 'حساب طالب أو معلم معتمداً' : 'approved Student or Teacher account',
+      lang === 'ar' ? 'قائمة الطلاب' : 'phone number on your roster record',
     )
     await send(4, '/linkaccount')
     expect(String(messages.at(-1)?.text)).toContain('/linkaccount')

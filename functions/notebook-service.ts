@@ -1,6 +1,9 @@
 import { profileUpdateSchema, validProfileUpdate } from '../server/profile'
 import {
   revokeTelegramGrants,
+  rosterGrantBinding,
+  rosterPhoneSchema,
+  rosterStudentForPhone,
   telegramGrantBinding,
   telegramTeacherGrantBinding,
 } from '../shared/telegram-grants'
@@ -699,6 +702,52 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
   return adminBoard(db)
 }
 
+async function studentAttendance(db: PoolClient, student: z.infer<typeof studentRow>) {
+  const rows = z
+    .array(eventRow)
+    .parse(
+      (
+        await db.query(
+          `SELECT e.id, e.actor, e.client_time, e.received_at, e.payload FROM events e WHERE e.student_id = $1 AND ${visibleLedgerEvent} ORDER BY e.sequence`,
+          [student.id],
+        )
+      ).rows,
+    )
+  const events = rows.map((e) =>
+    eventSchema.parse({
+      id: e.id,
+      actor: e.actor,
+      clientTime: e.client_time.toISOString(),
+      receivedAt: e.received_at.toISOString(),
+      payload: e.payload,
+    }),
+  )
+  const courseRows = z
+    .array(z.object({ id: z.uuid(), name: z.string() }))
+    .parse(
+      (
+        await db.query(
+          'SELECT ce.id, c.name FROM course_enrollments ce JOIN courses c ON c.id = ce.course_id WHERE ce.student_id = $1',
+          [student.id],
+        )
+      ).rows,
+    )
+  const attendance = projectEvents(events).attendance.map(({ value }) => ({
+    date: value.date,
+    status: value.status,
+    ...(value.enrollmentId
+      ? {
+          enrollmentId: value.enrollmentId,
+          course: courseRows.find((entry) => entry.id === value.enrollmentId)?.name ?? null,
+        }
+      : {}),
+  }))
+  return neonStudentAttendanceSchema.parse({
+    student: { studentId: student.id, name: student.name, group: student.group_name },
+    attendance,
+  })
+}
+
 export function createHandler(
   pool: Pool,
   verify: (token: string) => Promise<string>,
@@ -713,7 +762,7 @@ export function createHandler(
         kind: 'reveal'
         reveal: (db: PoolClient, subject: string, requestId: string) => Promise<unknown | null>
       },
-  telegramCredential?: { identifier: string; role: 'student' | 'teacher' },
+  telegramCredential?: { identifier: string; role: 'student' | 'teacher' | 'roster-student' },
 ) {
   return async (request: Request): Promise<Response> => {
     const origin = request.headers.get('origin')
@@ -846,6 +895,28 @@ export function createHandler(
     try {
       const db = await pool.connect()
       try {
+        if (telegramCredential?.role === 'roster-student') {
+          if (path !== '/api/student/attendance') throw new HttpError(403)
+          await db.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')
+          const credential = await db.query(
+            `SELECT s.id, s.name, s.group_name, s.active, s.whatsapp, v.value AS binding
+             FROM neon_auth.verification v JOIN students s ON s.id = $2
+             WHERE v.identifier = $1 AND v."expiresAt" > now() AND s.active`,
+            [telegramCredential.identifier, subject],
+          )
+          const student = studentRow
+            .extend({ whatsapp: rosterPhoneSchema, binding: z.string() })
+            .safeParse(credential.rows[0])
+          if (
+            !student.success ||
+            student.data.binding !== rosterGrantBinding(subject, student.data.whatsapp) ||
+            (await rosterStudentForPhone(db, student.data.whatsapp)) !== subject
+          )
+            throw new HttpError(403)
+          const response = await studentAttendance(db, student.data)
+          await db.query('COMMIT')
+          return reply(response)
+        }
         await db.query('BEGIN')
         if (
           [
@@ -978,49 +1049,7 @@ export function createHandler(
             return reply({ account: profile })
           }
           if (path !== '/api/student/attendance') throw new HttpError(403)
-          const rows = z
-            .array(eventRow)
-            .parse(
-              (
-                await db.query(
-                  `SELECT e.id, e.actor, e.client_time, e.received_at, e.payload FROM events e WHERE e.student_id = $1 AND ${visibleLedgerEvent} ORDER BY e.sequence`,
-                  [student.id],
-                )
-              ).rows,
-            )
-          const events = rows.map((e) =>
-            eventSchema.parse({
-              id: e.id,
-              actor: e.actor,
-              clientTime: e.client_time.toISOString(),
-              receivedAt: e.received_at.toISOString(),
-              payload: e.payload,
-            }),
-          )
-          const courseRows = z
-            .array(z.object({ id: z.uuid(), name: z.string() }))
-            .parse(
-              (
-                await db.query(
-                  'SELECT ce.id, c.name FROM course_enrollments ce JOIN courses c ON c.id = ce.course_id WHERE ce.student_id = $1',
-                  [student.id],
-                )
-              ).rows,
-            )
-          const attendance = projectEvents(events).attendance.map(({ value }) => ({
-            date: value.date,
-            status: value.status,
-            ...(value.enrollmentId
-              ? {
-                  enrollmentId: value.enrollmentId,
-                  course: courseRows.find((entry) => entry.id === value.enrollmentId)?.name ?? null,
-                }
-              : {}),
-          }))
-          const response = neonStudentAttendanceSchema.parse({
-            student: { studentId: student.id, name: student.name, group: student.group_name },
-            attendance,
-          })
+          const response = await studentAttendance(db, student)
           await db.query('COMMIT')
           return reply(response)
         }

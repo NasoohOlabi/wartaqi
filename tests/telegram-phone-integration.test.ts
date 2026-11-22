@@ -39,13 +39,16 @@ afterAll(async () => {
     [enrollmentId, otherEnrollmentId],
   ])
   await pool.query('DELETE FROM courses WHERE id = $1', [courseId])
+  await pool.query('DELETE FROM neon_auth.verification WHERE identifier LIKE $1', [
+    `%:roster:${studentId}`,
+  ])
   await pool.query('DELETE FROM students WHERE id = ANY($1::uuid[])', [[studentId, otherStudentId]])
   await pool.query('DELETE FROM teachers WHERE id = $1', [teacherId])
   for (const id of ids) await pool.query('DELETE FROM neon_auth."user" WHERE id = $1', [id])
   await pool.end()
 })
 
-integration('phone grants follow verified Student and Teacher access and revoke', async () => {
+integration('Telegram phone grants follow student and teacher access', async () => {
   if (!databaseUrl) throw new Error('Disposable database required')
   pool = new Pool({ connectionString: databaseUrl })
   const previousSecret = process.env.TELEGRAM_WORKER_SECRET
@@ -99,6 +102,73 @@ integration('phone grants follow verified Student and Teacher access and revoke'
     })
   expect((await post({ action: 'login', phone: '0995120034' }, 'Bearer invalid')).status).toBe(401)
   expect((await post({ action: 'login', phone: '+12025550791' })).status).toBe(403)
+  await pool.query(
+    "INSERT INTO students (id, name, whatsapp) VALUES ($1, 'Roster only', '0995120037')",
+    [otherStudentId],
+  )
+  const onlyLogin = await post({ action: 'login-phone', phone: '+963 995 120 037' })
+  expect(onlyLogin.status).toBe(200)
+  const onlyToken = z
+    .object({ token: z.string(), role: z.literal('student') })
+    .parse(await onlyLogin.json()).token
+  expect(
+    neonStudentAttendanceSchema.parse(
+      await (await post({ action: 'attendance', token: onlyToken })).json(),
+    ).student.studentId,
+  ).toBe(otherStudentId)
+  await post({ action: 'unlink', token: onlyToken })
+  await pool.query('DELETE FROM students WHERE id = $1', [otherStudentId])
+  const rosterLogin = await post({ action: 'login-phone', phone: '+1 202 555 0791' })
+  expect(rosterLogin.status).toBe(200)
+  const rosterToken = z
+    .object({ token: z.string(), role: z.literal('student') })
+    .parse(await rosterLogin.json()).token
+  const rosterAttendance = await post({ action: 'attendance', token: rosterToken })
+  expect(rosterAttendance.status).toBe(200)
+  expect(await rosterAttendance.json()).toEqual({
+    student: { studentId, name: 'Synthetic student', group: '' },
+    attendance: [
+      { date: '2026-11-20', status: 'present', enrollmentId, course: 'Synthetic course' },
+    ],
+  })
+  expect(
+    (
+      await fetch(`${started.origin}/api/telegram/teacher-mcp`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${secret}`, 'x-telegram-grant': rosterToken },
+      })
+    ).status,
+  ).toBe(401)
+  await pool.query(
+    "INSERT INTO students (id, name, whatsapp) VALUES ($1, 'Duplicate synthetic', '0012025550791')",
+    [otherStudentId],
+  )
+  expect((await post({ action: 'login-phone', phone: '+12025550791' })).status).toBe(403)
+  expect((await post({ action: 'attendance', token: rosterToken })).status).toBe(403)
+  await pool.query('DELETE FROM students WHERE id = $1', [otherStudentId])
+  await pool.query("UPDATE students SET whatsapp = '1 202 555 0791' WHERE id = $1", [studentId])
+  expect((await post({ action: 'attendance', token: rosterToken })).status).toBe(200)
+  await pool.query('UPDATE students SET active = false WHERE id = $1', [studentId])
+  expect((await post({ action: 'attendance', token: rosterToken })).status).toBe(403)
+  await pool.query("UPDATE students SET active = true, whatsapp = '+12025550792' WHERE id = $1", [
+    studentId,
+  ])
+  expect((await post({ action: 'attendance', token: rosterToken })).status).toBe(403)
+  await pool.query("UPDATE students SET whatsapp = '+12025550791' WHERE id = $1", [studentId])
+  await pool.query('UPDATE app_accounts SET active = false WHERE auth_user_id = $1', [user])
+  expect((await post({ action: 'login-phone', phone: '+12025550791' })).status).toBe(403)
+  expect((await post({ action: 'attendance', token: rosterToken })).status).toBe(403)
+  await pool.query('UPDATE app_accounts SET active = true WHERE auth_user_id = $1', [user])
+  await pool.query(
+    'UPDATE neon_auth.verification SET "expiresAt" = now() WHERE identifier LIKE $1',
+    [`%:roster:${studentId}`],
+  )
+  expect((await post({ action: 'attendance', token: rosterToken })).status).toBe(403)
+  const secondRoster = z
+    .object({ token: z.string() })
+    .parse(await (await post({ action: 'login-phone', phone: '+12025550791' })).json()).token
+  expect((await post({ action: 'unlink', token: secondRoster })).status).toBe(200)
+  expect((await post({ action: 'attendance', token: secondRoster })).status).toBe(403)
   for (const phone of ['0995120035', '+963 995 120 035']) {
     expect((await post({ action: 'login', phone })).status).toBe(403)
   }
