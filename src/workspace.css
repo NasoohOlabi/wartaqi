@@ -830,6 +830,13 @@
   gap: 0.5rem;
   margin-bottom: 1rem;
 }
+.student-details-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
 .student-detail-fields {
   display: flex;
   flex-wrap: wrap;
@@ -860,13 +867,6 @@
   }
   .student-details-overview h2 {
     margin-block-start: 1rem;
-  }
-  .student-details-heading {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
   }
   .student-details-history {
     margin-block-start: 0;

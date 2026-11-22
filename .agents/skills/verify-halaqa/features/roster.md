@@ -44,4 +44,6 @@ Staff phone displays in Students, Student information and Administrator register
 
 Open a student with attendance records at 1920px and 2560px in English and Arabic. Student information, attendance totals and courses stay at the reading start, with the wider history beside them. Confirm the first record is visible on a 560px-high viewport, the history date sort works and Back and Edit student remain reachable. At 320/390/430px, check that history follows courses and its labelled rows fit without horizontal scrolling. `e2e/table-pages.spec.ts` exercises both layouts with synthetic records.
 
+At 894px and wider, check that **Edit student** appears beside the profile heading with a pencil icon. Back has a direction-aware arrow. Take attendance and Add note have distinct icons and share a row when space permits. Check English and Arabic, including a 320px phone where the header and action buttons can wrap. Keep the localized labels and 44px button targets. The administrator editor remains a separate page, while the Teacher editor opens within Student information.
+
 Whole-number decimal levels display without the zero-only fraction in roster, filters, profile, history and student portal. Editing a different field preserves the original stored level. Fractional and named levels remain unchanged.

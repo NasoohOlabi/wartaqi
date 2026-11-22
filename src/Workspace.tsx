@@ -9,10 +9,12 @@ import { TableHeader, TableToolbar } from './DataTable'
 import { useDataTable } from './useDataTable'
 import { matchesText } from './studentSearch'
 import {
+  ArrowLeft,
   Check,
   ChevronRight,
   CircleCheck,
   CircleMinus,
+  ClipboardCheck,
   Pencil,
   RefreshCw,
   StickyNote,
@@ -803,10 +805,12 @@ function StudentDetails({
       ? !memberships.length
       : memberships.some((entry) => entry.courseId === courseId && entry.active) &&
         courses.some((course) => course.id === courseId && course.open))
+  const editInSettings = administrator && !offline
   return (
     <section className="panel student-details">
       <div className="student-details-actions">
-        <button className="secondary" onClick={onBack}>
+        <button className="secondary inline-flex min-h-11 items-center gap-2" onClick={onBack}>
+          <ArrowLeft className="icon-directional shrink-0" size={18} aria-hidden="true" />
           {ar ? '\u0639\u0648\u062f\u0629' : 'Back'}
         </button>
         {refresh && (
@@ -824,20 +828,16 @@ function StudentDetails({
       <div className="student-details-overview">
         <div className="student-details-heading">
           <h1 className="title">{ar ? 'معلومات الطالب' : 'Student information'}</h1>
-          {administrator && !offline && (
+          {(editInSettings || (userId && canWrite && !editing)) && (
             <button
-              className="secondary"
-              onClick={() =>
-                setQuery({ view: 'settings', student: student.studentId, account: '' }, true)
-              }
+              className="primary inline-flex min-h-11 items-center gap-2"
+              onClick={() => {
+                if (editInSettings)
+                  setQuery({ view: 'settings', student: student.studentId, account: '' }, true)
+                else setEditing(true)
+              }}
             >
-              {ar
-                ? '\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u0637\u0627\u0644\u0628'
-                : 'Edit student'}
-            </button>
-          )}
-          {((!administrator && !offline) || offline) && userId && canWrite && !editing && (
-            <button className="secondary" onClick={() => setEditing(true)}>
+              <Pencil className="shrink-0" size={18} aria-hidden="true" />
               {ar
                 ? '\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u0637\u0627\u0644\u0628'
                 : 'Edit student'}
@@ -920,20 +920,27 @@ function StudentDetails({
             </dd>
           </div>
         </dl>
-        {eligible && canWrite && (
-          <button
-            className="primary"
-            onClick={() =>
-              navigateNotebook('attendance', courseId, { q: '', group: '', student: '' })
-            }
-          >
-            {ar ? 'تسجيل الحضور' : 'Take attendance'}
-          </button>
-        )}
         {canWrite && (
-          <button className="secondary" onClick={() => setAddingNote(true)}>
-            {t('Add note')}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            {eligible && (
+              <button
+                className="primary inline-flex min-h-11 items-center gap-2"
+                onClick={() =>
+                  navigateNotebook('attendance', courseId, { q: '', group: '', student: '' })
+                }
+              >
+                <ClipboardCheck className="shrink-0" size={18} aria-hidden="true" />
+                {ar ? 'تسجيل الحضور' : 'Take attendance'}
+              </button>
+            )}
+            <button
+              className="secondary inline-flex min-h-11 items-center gap-2"
+              onClick={() => setAddingNote(true)}
+            >
+              <StickyNote className="shrink-0" size={18} aria-hidden="true" />
+              {t('Add note')}
+            </button>
+          </div>
         )}
         {addingNote && (
           <form
