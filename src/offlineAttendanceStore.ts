@@ -111,25 +111,6 @@ export function subscribeOfflineQueue(refresh: () => void) {
   }
 }
 
-export async function listPreparedRosters(userId: string): Promise<PreparedRoster[]> {
-  return transaction('rosters', 'readonly', (store, done) => {
-    const values: PreparedRoster[] = []
-    const request = store.openCursor()
-    request.onsuccess = () => {
-      const cursor = request.result
-      if (!cursor) {
-        done(values)
-        return
-      }
-      if (typeof cursor.key === 'string') {
-        const key: unknown = JSON.parse(cursor.key)
-        if (Array.isArray(key) && key[0] === userId)
-          values.push(preparedRosterSchema.parse(cursor.value))
-      }
-      cursor.continue()
-    }
-  })
-}
 export async function listPendingAttendance(userId: string): Promise<PendingAttendance[]> {
   return transaction('pending', 'readonly', (store, done) => {
     const request = store.get(queueKey(userId))
@@ -139,29 +120,6 @@ export async function listPendingAttendance(userId: string): Promise<PendingAtte
 export function attendanceKey(item: PendingAttendance) {
   const payload = item.event.payload
   return JSON.stringify([payload.studentId, payload.enrollmentId, payload.date])
-}
-export async function queueAttendance(userId: string, entry: Omit<PendingAttendance, 'outcome'>) {
-  const value = pendingSchema.parse({ ...entry, outcome: null })
-  await transaction<void>('pending', 'readwrite', (store, done) => {
-    const request = store.get(queueKey(userId))
-    request.onsuccess = () => {
-      const queue = z.array(pendingSchema).parse(request.result ?? [])
-      const previous = queue.findLast((item) => attendanceKey(item) === attendanceKey(value))
-      store.put(
-        [
-          ...queue,
-          {
-            ...value,
-            expectedEventId: previous?.event.id ?? value.expectedEventId,
-            ...(previous ? { expectedRevision: undefined } : {}),
-          },
-        ],
-        queueKey(userId),
-      )
-      done()
-    }
-  })
-  notifyQueueChanged()
 }
 export async function recordAttendanceOutcome(userId: string, outcome: AttendanceOutcome) {
   const db = await openDatabase()
@@ -377,7 +335,15 @@ const offlineSnapshotSchema = z.object({
     z.object({
       id: z.uuid(),
       name: z.string(),
-      enrollments: z.array(z.object({ id: z.uuid(), studentId: z.uuid(), level: z.string() })),
+      open: z.boolean().default(true),
+      enrollments: z.array(
+        z.object({
+          id: z.uuid(),
+          studentId: z.uuid(),
+          level: z.string(),
+          active: z.boolean().default(true),
+        }),
+      ),
     }),
   ),
   attendance: z.array(
@@ -415,27 +381,31 @@ export async function cacheOfflineRoster(
 ) {
   const students = input.students.filter((student) => student.active)
   const studentIds = new Set(students.map((student) => student.studentId))
-  const enrollments = input.enrollments.filter(
-    (item) => item.active && studentIds.has(item.studentId),
-  )
+  const enrollments = input.enrollments.filter((item) => studentIds.has(item.studentId))
   const projected = projectEvents(input.events)
   const snapshot = offlineSnapshotSchema.parse({
     students: students.map((student) => ({
       id: student.studentId,
       name: student.name,
       group: student.group,
-      level: enrollments.find((item) => item.studentId === student.studentId)?.level ?? '',
+      level:
+        enrollments.find((item) => item.active && item.studentId === student.studentId)?.level ??
+        '',
       phone: student.whatsapp || null,
     })),
-    courses: input.courses
-      .filter((course) => course.open)
-      .map((course) => ({
-        id: course.id,
-        name: course.name,
-        enrollments: enrollments
-          .filter((item) => item.courseId === course.id)
-          .map((item) => ({ id: item.id, studentId: item.studentId, level: item.level })),
-      })),
+    courses: input.courses.map((course) => ({
+      id: course.id,
+      name: course.name,
+      open: course.open,
+      enrollments: enrollments
+        .filter((item) => item.courseId === course.id)
+        .map((item) => ({
+          id: item.id,
+          studentId: item.studentId,
+          level: item.level,
+          active: item.active,
+        })),
+    })),
     attendance: projected.attendance
       .filter(({ value }) => studentIds.has(value.studentId))
       .map(({ event, value }) => ({ ...value, eventId: event.id })),
@@ -636,4 +606,47 @@ export async function resolveStudentConflict(
     }
     notifyQueueChanged()
   })
+}
+export async function queueNotebookOperations(
+  userId: string,
+  attendance: Omit<PendingAttendance, 'outcome'>[],
+  students: StudentOperation[],
+) {
+  const marks = attendance.map((entry) => pendingSchema.parse({ ...entry, outcome: null }))
+  const operations = students.map((operation) =>
+    pendingStudentSchema.parse({ operation, outcome: null }),
+  )
+  const db = await openDatabase()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(['pending', 'studentPending'], 'readwrite')
+      const markStore = tx.objectStore('pending')
+      const markRequest = markStore.get(userId)
+      markRequest.onsuccess = () => {
+        const queue = z.array(pendingSchema).parse(markRequest.result ?? [])
+        for (const item of marks) {
+          const previous = queue.findLast((entry) => attendanceKey(entry) === attendanceKey(item))
+          queue.push({
+            ...item,
+            expectedEventId: previous?.event.id ?? item.expectedEventId,
+            ...(previous ? { expectedRevision: undefined } : {}),
+          })
+        }
+        markStore.put(queue, userId)
+      }
+      const studentStore = tx.objectStore('studentPending')
+      const studentRequest = studentStore.get(userId)
+      studentRequest.onsuccess = () => {
+        const queue = z.array(pendingStudentSchema).parse(studentRequest.result ?? [])
+        queue.push(...operations)
+        studentStore.put(queue, userId)
+      }
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+      tx.onabort = () => reject(tx.error ?? new Error('Offline storage transaction aborted.'))
+    })
+  } finally {
+    db.close()
+  }
+  notifyQueueChanged()
 }

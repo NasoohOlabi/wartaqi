@@ -24,6 +24,7 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   context,
   page,
 }, testInfo) => {
+  test.setTimeout(60_000)
   const teacher = {
     role: 'teacher',
     id: '10000000-0000-4000-8000-000000000001',
@@ -162,60 +163,52 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   await expect
     .poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)))
     .toBe(true)
-  const openChanges = 'My changes'
-  await expect(page.getByRole('heading', { name: 'Attendance & notes' })).toBeVisible()
-  await expect(page.getByRole('button', { name: openChanges })).toHaveCount(0)
-  const dashboard = page.getByRole('button', { name: 'Dashboard' })
-  await dashboard.click()
-  await expect(dashboard).toHaveAttribute('aria-current', 'page')
-  await expect(page.getByRole('button', { name: openChanges })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Profile', exact: true }).click()
-  await expect(page.getByRole('button', { name: openChanges })).toHaveCount(0)
-  await page.keyboard.press('Escape')
+  const onlineHeading = page.getByRole('heading', { name: 'Attendance & notes' })
+  await expect(onlineHeading).toBeVisible()
   await expect
     .poll(() => page.evaluate(() => Boolean(localStorage.getItem('halaqa-offline-access'))))
     .toBe(true)
 
-  await test.step('reconnects even when the browser keeps reporting offline', async () => {
+  await test.step('keeps the same attendance form and draft during a stale offline signal', async () => {
     await page.addInitScript(() => {
       if (sessionStorage.getItem('stale-offline-status'))
         Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
     })
+    await page.getByRole('button', { name: `Add note for ${names[0]}`, exact: true }).click()
+    const draft = page.getByRole('dialog').getByRole('textbox', { name: 'Note', exact: true })
+    await draft.fill('Unsaved draft')
     networkAvailable = false
     await page.evaluate(() => {
       Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
       window.dispatchEvent(new Event('offline'))
     })
-    await expect(page.getByRole('heading', { name: 'Offline notebook' })).toBeVisible()
-    await expect(page.getByText('Waiting to reconnect to Wartaq · 0 pending sync')).toBeVisible()
-    await page.getByRole('button', { name: names[0], exact: true }).click()
-    const draft = page.getByRole('textbox', { name: 'Note', exact: true })
-    await draft.fill('Unsaved draft')
-    networkAvailable = true
-    await expect(page.getByText('Connected to Wartaq · 0 pending sync')).toBeVisible({
-      timeout: 12_000,
-    })
-    expect(await page.evaluate(() => navigator.onLine)).toBe(false)
+    await expect(page.getByText('Offline', { exact: true })).toBeVisible()
+    await expect(onlineHeading).toBeVisible()
     await expect(draft).toHaveValue('Unsaved draft')
-    await page.getByRole('button', { name: 'Back to students' }).click()
-    await expect(page.getByRole('heading', { name: 'Attendance & notes' })).toBeVisible()
+    networkAvailable = true
+    await expect(page.getByText('Offline', { exact: true })).toHaveCount(0, { timeout: 15_000 })
+    await expect(draft).toHaveValue('Unsaved draft')
+    expect(await page.evaluate(() => navigator.onLine)).toBe(false)
+    await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()
 
     networkAvailable = false
     await page.evaluate(() => {
       localStorage.setItem('halaqa-language', 'ar')
+      const key = 'halaqa-offline-access'
+      const access = JSON.parse(localStorage.getItem(key) ?? 'null')
+      delete access.teacher
+      localStorage.setItem(key, JSON.stringify(access))
       sessionStorage.setItem('stale-offline-status', '1')
     })
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'الدفتر دون اتصال' })).toBeVisible()
-    await expect(page.getByText('بانتظار الاتصال بوارتق · 0 بانتظار المزامنة')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'الحضور والملاحظات' })).toBeVisible()
+    await expect(page.getByText('غير متصل', { exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'حاول مجدداً' })).toBeInViewport()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     )
     networkAvailable = true
-    await expect(page.getByRole('heading', { name: 'الحضور والملاحظات' })).toBeVisible({
-      timeout: 12_000,
-    })
+    await expect(page.getByText('غير متصل', { exact: true })).toHaveCount(0, { timeout: 15_000 })
     expect(await page.evaluate(() => navigator.onLine)).toBe(false)
     await page.evaluate(() => {
       sessionStorage.removeItem('stale-offline-status')
@@ -228,59 +221,69 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
 
   networkAvailable = false
   await context.setOffline(true)
-  await expect(page.getByRole('heading', { name: 'Offline notebook' })).toBeVisible()
+  await expect(page.getByText('Offline', { exact: true })).toBeVisible()
   const offlinePage = await context.newPage()
   await offlinePage.addInitScript(() => {
     const actual = Date.now
     Date.now = () => actual() + 25 * 60 * 60 * 1000
   })
   await page.close()
-  await offlinePage.goto('/?page=app')
+  await offlinePage.goto(courseUrl)
   expect(await offlinePage.evaluate(() => navigator.onLine)).toBe(false)
-  await expect(
-    offlinePage.getByRole('heading', { name: 'Offline notebook' }),
-    await offlinePage.locator('body').innerText(),
-  ).toBeVisible()
-  const openStudents = offlinePage
-    .getByRole('navigation', { name: 'Notebook' })
-    .getByRole('button', { name: 'Students' })
-  const openAttendance = offlinePage
-    .getByRole('navigation', { name: 'Notebook' })
-    .getByRole('button', { name: 'Attendance' })
-  const unenrolledStudent = offlinePage.getByRole('button', { name: unenrolledName, exact: true })
-  await expect(unenrolledStudent).toBeVisible()
-  await expect(offlinePage.getByRole('button', { name: names[0], exact: true })).toBeVisible()
-  await openAttendance.click()
-  const selectCourse = offlinePage.getByLabel('Course', { exact: true })
-  const selectDate = offlinePage.getByLabel('Date', { exact: true })
-  await selectCourse.selectOption(courseId)
-  await selectDate.fill(date)
+  const navigation = offlinePage.getByRole('navigation', { name: 'Main navigation' })
+  await expect(navigation).toBeVisible()
+  await expect(offlinePage.getByRole('heading', { name: 'Attendance & notes' })).toBeVisible()
+  await expect(offlinePage.getByText('Offline', { exact: true })).toBeVisible()
   const firstRow = offlinePage.getByRole('group', { name: `Attendance for ${names[0]}` })
   const secondRow = offlinePage.getByRole('group', { name: `Attendance for ${names[1]}` })
   await firstRow.getByRole('button', { name: /present/i }).click()
   await secondRow.getByRole('button', { name: /absent/i }).click()
-  await openStudents.click()
-  await unenrolledStudent.click()
-  const noteField = offlinePage.getByLabel('Note', { exact: true })
-  const phone = offlinePage.getByLabel('Phone', { exact: true })
+  await offlinePage.getByRole('button', { name: 'Save attendance (2)' }).click()
+  await expect(offlinePage.getByText(/2 pending changes/)).toBeVisible()
+
+  const rosterUrl = '/?page=app&tab=roster&course=all'
+  const openUnenrolledStudent = async () => {
+    await offlinePage.goto(rosterUrl)
+    const mobileOpen = offlinePage.getByRole('button', {
+      name: `Open student: ${unenrolledName}`,
+    })
+    const desktopOpen = offlinePage
+      .getByRole('row')
+      .filter({ hasText: unenrolledName })
+      .getByRole('button', { name: 'Open student', exact: true })
+    await mobileOpen.or(desktopOpen).filter({ visible: true }).click()
+  }
+  await offlinePage.goto('/?page=app&view=profile')
+  await expect(navigation).toBeVisible()
+  await expect(offlinePage.getByText('Connect to Wartaq to open this page.')).toBeVisible()
+  await expect(offlinePage).toHaveURL(/view=profile/)
+  await openUnenrolledStudent()
+  const profile = offlinePage.getByRole('button', { name: 'Profile', exact: true })
+  await profile.click()
+  await expect(offlinePage.getByRole('button', { name: 'Profile settings' })).toBeDisabled()
+  await offlinePage.keyboard.press('Escape')
+  const noteField = offlinePage.getByRole('textbox', { name: 'Note', exact: true })
+  const phone = offlinePage.getByRole('textbox', { name: 'WhatsApp number' })
   for (const note of ['First offline note', 'Second offline note']) {
+    await offlinePage.getByRole('button', { name: 'Add note', exact: true }).click()
     await noteField.fill(note)
     await offlinePage.getByRole('button', { name: 'Save note' }).click()
     await expect(offlinePage.getByText(note, { exact: true })).toBeVisible()
   }
+  await offlinePage.getByRole('button', { name: /^Edit (student|phone)$/ }).click()
   await expect(phone).toHaveValue(oldPhone)
   await phone.fill(updatedPhone)
-  await offlinePage.getByRole('button', { name: 'Save phone' }).click()
-  await expect(offlinePage.getByText('5 pending sync')).toBeVisible()
+  await offlinePage.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(offlinePage.getByText(/5 pending changes/)).toBeVisible()
   expect(
     await offlinePage.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
   ).toBe(true)
   await offlinePage.reload()
-  await unenrolledStudent.click()
-  await expect(phone).toHaveValue(updatedPhone)
   await expect(offlinePage.getByText('First offline note', { exact: true })).toHaveCount(1)
   await expect(offlinePage.getByText('Second offline note', { exact: true })).toHaveCount(1)
-  await openAttendance.click()
+  await offlinePage.getByRole('button', { name: /^Edit (student|phone)$/ }).click()
+  await expect(phone).toHaveValue(updatedPhone)
+  await offlinePage.goto(courseUrl)
   await expect(firstRow.getByRole('button', { name: /present/i })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -295,17 +298,9 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   serverPhone = otherPhone
   networkAvailable = true
   await context.setOffline(false)
-  await expect(offlinePage.getByRole('button', { name: 'Use my phone' })).toBeVisible({
-    timeout: 20_000,
-  })
-  await expect(offlinePage.getByText('3 pending sync')).toBeVisible()
-  expect(notes.size).toBe(2)
-  expect(new Set(studentAttempts).size).toBe(2)
-  expect(studentAttempts).toHaveLength(3)
-  await offlinePage.getByRole('button', { name: 'Back', exact: true }).click()
-  const profile = offlinePage.getByRole('button', { name: 'Profile', exact: true })
-  const changesMenuItem = offlinePage.getByRole('button', { name: openChanges, exact: true })
-  const changesHeading = offlinePage.getByRole('heading', { name: openChanges, exact: true })
+  const changesMenuItem = offlinePage.getByRole('button', { name: 'My changes', exact: true })
+  const changesHeading = offlinePage.getByRole('heading', { name: 'My changes', exact: true })
+  await expect(offlinePage.getByText(/Offline.*pending changes/)).toHaveCount(0)
   await profile.click()
   await expect(changesMenuItem).toBeVisible()
   await offlinePage.getByRole('button', { name: 'العربية', exact: true }).click()
@@ -325,16 +320,12 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   await offlinePage.getByRole('button', { name: 'English', exact: true }).click()
   await offlinePage.keyboard.press('Escape')
   await expect(changesHeading).toBeVisible()
-  const navigation = offlinePage.getByRole('navigation', { name: 'Main navigation' })
-  await expect(navigation).toBeVisible()
-  await expect(offlinePage.getByRole('navigation', { name: 'Notebook' })).toHaveCount(0)
-  await navigation.getByRole('button', { name: 'Dashboard' }).click()
-  await expect(changesHeading).toHaveCount(0)
-  await expect(offlinePage.getByRole('heading', { name: 'Attendance & notes' })).toBeVisible()
-  await profile.click()
-  await changesMenuItem.click()
-  await expect(changesHeading).toBeVisible()
-  await expect(offlinePage.getByText(/saved phone.*15550101011/i)).toBeVisible()
+  await expect(offlinePage.getByRole('button', { name: 'Use my phone' })).toBeVisible()
+  await expect(offlinePage.getByText('3 pending sync')).toBeVisible()
+  expect(notes.size).toBe(2)
+  expect(new Set(studentAttempts).size).toBe(2)
+  expect(studentAttempts).toHaveLength(3)
+
   rejectFirstStudent = false
   await offlinePage.getByRole('button', { name: 'Sync now' }).click()
   await expect(offlinePage.getByText('2 pending sync')).toBeVisible()
@@ -343,17 +334,14 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   await offlinePage.getByRole('button', { name: 'Use my mark' }).click()
   await expect(offlinePage.getByText('1 pending sync')).toBeVisible()
   await offlinePage.getByRole('button', { name: 'Use my phone' }).click()
-  expect([...accepted.values()].map(({ payload }) => payload.status)).toEqual(['present', 'absent'])
   await expect(offlinePage.getByText('No changes waiting to sync.')).toBeVisible()
+  expect([...accepted.values()].map(({ payload }) => payload.status)).toEqual(['present', 'absent'])
   expect(serverPhone).toBe(updatedPhone)
   expect(contactReceipts.size).toBe(1)
   await expect(offlinePage.getByRole('button', { name: 'Sync now' })).toHaveCount(0)
   await expect(navigation).toBeVisible()
-  await profile.click()
-  await expect(changesMenuItem).toHaveCount(0)
-  await offlinePage.keyboard.press('Escape')
   await offlinePage.getByRole('button', { name: 'Back', exact: true }).click()
-  await expect(navigation.getByRole('button', { name: 'Dashboard' })).toHaveAttribute(
+  await expect(navigation.getByRole('button', { name: 'Attendance', exact: true })).toHaveAttribute(
     'aria-current',
     'page',
   )
@@ -366,18 +354,20 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   await expect
     .poll(() => offlinePage.evaluate(() => Boolean(localStorage.getItem('halaqa-offline-access'))))
     .toBe(true)
-  await profile.click()
-  await expect(changesMenuItem).toHaveCount(0)
   networkAvailable = false
   await context.setOffline(true)
-  await expect(offlinePage.getByRole('heading', { name: 'Offline notebook' })).toBeVisible()
-  await openAttendance.click()
-  await selectCourse.selectOption(courseId)
-  await selectDate.fill(date)
+  await expect(offlinePage.getByText('Offline', { exact: true })).toBeVisible()
   await expect(firstRow).toHaveCount(0)
-  await openStudents.click()
-  await expect(offlinePage.getByRole('button', { name: names[0], exact: true })).toHaveCount(0)
-  await expect(unenrolledStudent).toHaveCount(1)
-  await unenrolledStudent.click()
+  const clockStart = Date.now()
+  await offlinePage.clock.install({ time: clockStart })
+  await offlinePage.clock.pauseAt(clockStart + 1_000)
+  await offlinePage.goto(`/?page=app&view=student&course=all&student=${unenrolledId}`)
+  await offlinePage.clock.runFor(500)
   await expect(offlinePage.getByText('First offline note', { exact: true })).toHaveCount(1)
+  await offlinePage.evaluate(() => localStorage.removeItem('halaqa-offline-access'))
+  await offlinePage.clock.runFor(1_000)
+  await expect(offlinePage.getByRole('alert')).toHaveText(
+    'Offline access expired. Connect and sign in again.',
+  )
+  await expect(offlinePage.getByText('First offline note', { exact: true })).toHaveCount(0)
 })

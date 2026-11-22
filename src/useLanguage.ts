@@ -106,6 +106,8 @@ const arabic = {
   'This record is outside your assigned active students.':
     'هذا السجل خارج قائمة طلابك النشطين المعيّنين.',
   'The request failed.': 'فشل الطلب.',
+  'Offline access expired. Connect and sign in again.':
+    'انتهت صلاحية الوصول دون اتصال. اتصل بالإنترنت وسجّل الدخول مجدداً.',
   'Your account has read-only access.': 'حسابك للقراءة فقط.',
   'This browser cannot safely coordinate saves between tabs. Use a current browser with Web Locks support.':
     'لا يمكن لهذا المتصفح تنسيق الحفظ بأمان بين علامات التبويب. استخدم متصفحاً حديثاً يدعم Web Locks.',

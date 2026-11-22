@@ -1,6 +1,6 @@
 import { LanguageSwitch } from './i18n'
 import { useLanguage } from './useLanguage'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
 import type { NeonAccount } from '../shared/neon'
 import type {
   invitationProfileInputSchema,
@@ -24,7 +24,6 @@ import type { Profile } from './ProfileMenu'
 import { WartaqLogo } from './brand/components'
 import { AccountChoices } from './AccountChoices'
 import { offlineAccess, clearOfflineAccess } from './offlineAccess'
-import { OfflineAttendance } from './OfflineAttendance'
 import './auth.css'
 
 const deviceLimitMessage = 'Five accounts are signed in. Sign out of one to add another.'
@@ -54,6 +53,7 @@ export function NeonAuth({
     teacher: NeonAccount,
     signOut: () => void,
     profile: Profile,
+    cached?: { reconnect: () => void },
   ) => React.ReactNode
 }) {
   const { t, errorMessage, language } = useLanguage()
@@ -77,6 +77,14 @@ export function NeonAuth({
       setOfflineSession(null)
     }
   }, [session.isPending, session.error, userId])
+  useEffect(() => {
+    const disconnect = () => {
+      const cached = offlineAccess()
+      if (cached && (!userId || cached.userId === userId)) setOfflineSession(cached)
+    }
+    window.addEventListener('offline', disconnect)
+    return () => window.removeEventListener('offline', disconnect)
+  }, [userId])
   const [logout, setLogout] = useState<'idle' | 'pending' | 'failed'>('idle')
   const [accountAttempt, setAccountAttempt] = useState(0)
   const [addingAccount, setAddingAccount] = useState(false)
@@ -127,6 +135,20 @@ export function NeonAuth({
   const [attempt, setAttempt] = useState(0)
   const [retrying, setRetrying] = useState(false)
   const retryGeneration = useRef(0)
+  const [reconnectRequested, setReconnectRequested] = useState(false)
+  const cachedActions = useMemo(() => ({ reconnect: () => setReconnectRequested(true) }), [])
+  const refreshSession = useEffectEvent(() => {
+    void session
+      .refetch()
+      .catch(() => {})
+      .finally(() => {
+        setAccountAttempt((value) => value + 1)
+        setReconnectRequested(false)
+      })
+  })
+  useEffect(() => {
+    if (reconnectRequested) refreshSession()
+  }, [reconnectRequested])
   useEffect(() => {
     if (!session.isPending && !retrying) return
     const timer = window.setTimeout(() => setStalled(true), 10000)
@@ -146,10 +168,15 @@ export function NeonAuth({
         .then((value) => {
           window.clearTimeout(timer)
           if (cancelled) return
-          if (value.role === 'student' || !value.canRead || !value.canWrite) {
+          if (
+            value.role === 'student' ||
+            !value.canRead ||
+            !value.canWrite ||
+            value.invitationProfile?.requiresSetup
+          ) {
             clearOfflineAccess()
-            setOfflineSession(null)
           }
+          setOfflineSession(null)
           setAccount({ kind: 'ready', userId, value })
         })
         .catch((cause: unknown) => {
@@ -175,10 +202,14 @@ export function NeonAuth({
   }, [userId, accountAttempt])
   useEffect(() => {
     const denied = (event: Event) => {
-      if (event instanceof AccessDeniedEvent && event.userId === userId) {
-        if (event.status === 403) clearOfflineAccess()
+      if (
+        event instanceof AccessDeniedEvent &&
+        (event.userId === userId || (!userId && event.userId === offlineSession?.userId))
+      ) {
+        if (event.status === 403 && offlineAccess()?.userId === event.userId) clearOfflineAccess()
+        setOfflineSession(null)
         setAccount({
-          userId,
+          userId: event.userId,
           kind: 'denied',
           message: new NeonRequestError(event.status).message,
         })
@@ -186,9 +217,10 @@ export function NeonAuth({
     }
     window.addEventListener(AccessDeniedEvent.eventName, denied)
     return () => window.removeEventListener(AccessDeniedEvent.eventName, denied)
-  }, [userId])
+  }, [offlineSession?.userId, userId])
   const signOut = async () => {
     clearOfflineAccess()
+    setOfflineSession(null)
     setLogout('pending')
     try {
       const result = await authClient.signOut({
@@ -208,24 +240,31 @@ export function NeonAuth({
       setLogout('failed')
     }
   }
-  if (offlineSession)
-    return (
-      <OfflineAttendance
-        userId={offlineSession.userId}
-        actor={offlineSession.actor}
-        close={(connected) => {
-          setOfflineSession(null)
-          if (connected) {
-            if (account?.kind === 'error') {
-              setAccount(null)
-              setAccountAttempt((value) => value + 1)
-            }
-            if (session.isPending || session.error || userId !== offlineSession.userId)
-              void session.refetch().catch(() => {})
-          } else if (!navigator.onLine) window.location.href = window.location.pathname
-        }}
-      />
+  const cachedSession =
+    offlineSession ?? (session.error && account?.kind === 'ready' ? offlineAccess() : null)
+  if (cachedSession && (!userId || userId === cachedSession.userId)) {
+    const { teacher, actor, expires } = cachedSession
+    return children(
+      cachedSession.userId,
+      teacher ?? {
+        role: 'teacher',
+        id: '00000000-0000-0000-0000-000000000000',
+        name: actor,
+        canRead: true,
+        canWrite: true,
+        expiresAt: expires === null ? null : new Date(expires).toISOString(),
+      },
+      signOut,
+      {
+        name: session.data?.user.name ?? actor,
+        image: session.data?.user.image ?? null,
+        update: async () => {
+          throw new Error('Connect to Wartaq to edit your profile.')
+        },
+      },
+      cachedActions,
     )
+  }
   if (logout === 'pending') return <WorkspaceLoading message={t('Signing out…')} />
   if (logout === 'failed')
     return (

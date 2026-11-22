@@ -1,65 +1,40 @@
 import { useEffect, useRef, useState } from 'react'
-import { makeEvent, normalizedNoteTags, statuses, type Status } from '../shared/ledger'
-import { offlineAttendanceRecordSchema } from '../shared/offlineAttendance'
-import { offlineStudentOperationSchema } from '../shared/offlineStudent'
 import { useLanguage } from './useLanguage'
-import { setQuery, useQueryState } from './queryState'
 import {
-  cacheOfflineRoster,
+  subscribeOfflineQueue,
   attendanceKey,
   getOfflineSnapshot,
   listPendingAttendance,
   listPendingStudent,
-  queueStudentOperation,
   resolveStudentConflict,
   studentOperationId,
   type PendingStudent,
-  listPreparedRosters,
-  queueAttendance,
   resolveAttendanceConflict,
   type PendingAttendance,
-  type PreparedRoster,
   type OfflineSnapshot,
 } from './offlineAttendanceStore'
-import { syncOfflineAttendance, syncOfflineStudent } from './offlineAttendanceSync'
-import { offlineAccess, clearOfflineAccess } from './offlineAccess'
-import { AccessDeniedEvent, NeonRequestError, getNotebook } from './neon'
+import { offlineAccess } from './offlineAccess'
 
 export function OfflineAttendance({
   userId,
-  actor,
   close,
-  reviewChanges = false,
-  onSynced,
+  syncChanges,
+  syncing,
+  offline,
 }: {
   userId: string
-  actor: string
-  close: (connected: boolean) => void
-  reviewChanges?: boolean
-  onSynced?: () => void
+  close: () => void
+  syncChanges: (retryBlocked?: boolean) => Promise<boolean>
+  syncing: boolean
+  offline: boolean
 }) {
   const { language, t } = useLanguage()
   const ar = language === 'ar'
-  const [rosters, setRosters] = useState<PreparedRoster[]>([])
   const [pending, setPending] = useState<PendingAttendance[]>([])
   const [snapshot, setSnapshot] = useState<OfflineSnapshot | null>(null)
   const [studentPending, setStudentPending] = useState<PendingStudent[]>([])
-  const [studentId, setStudentId] = useState('')
-  const [note, setNote] = useState('')
-  const [tags, setTags] = useState('')
-  const [phoneDraft, setPhoneDraft] = useState<string>()
-  const query = useQueryState()
-  const date = query.date
-  const selected = query.course
-  const showAttendance = !reviewChanges && query.tab === 'attendance'
   const [error, setError] = useState('')
-  const [saving, setSaving] = useState(false)
-  const saveLock = useRef(false)
-  const [syncing, setSyncing] = useState(false)
-  const syncLock = useRef(false)
   const reviewHeading = useRef<HTMLHeadingElement>(null)
-  const revalidated = useRef(false)
-  const [connected, setConnected] = useState(false)
   const [leaseExpired, setLeaseExpired] = useState(false)
   const [loaded, setLoaded] = useState(false)
   useEffect(() => {
@@ -70,7 +45,6 @@ export function OfflineAttendance({
   }, [userId])
   const refresh = async () => {
     setSnapshot(await getOfflineSnapshot(userId))
-    setRosters(await listPreparedRosters(userId))
     setPending(await listPendingAttendance(userId))
     setStudentPending(await listPendingStudent(userId))
     setLoaded(true)
@@ -84,191 +58,38 @@ export function OfflineAttendance({
     reviewHeading.current?.focus({ preventScroll: true })
   }, [])
   const sync = async (retryBlocked = false) => {
-    if (syncLock.current) return
-    syncLock.current = true
-    setSyncing(true)
-    try {
-      if (!revalidated.current || (retryBlocked && !reviewChanges)) {
-        const notebook = await getNotebook(userId)
-        if (!notebook.teacher.canRead || !notebook.teacher.canWrite) throw new NeonRequestError(403)
-        revalidated.current = true
-        await cacheOfflineRoster(userId, notebook)
-        await refresh()
-        setConnected(true)
-      }
-      const results = await Promise.allSettled([
-        syncOfflineAttendance(userId, retryBlocked),
-        syncOfflineStudent(userId, retryBlocked),
-      ])
+    if (offline || syncing) return
+    const connected = await syncChanges(retryBlocked)
+    if (connected) {
       await refresh()
-      if (
-        onSynced &&
-        results.some(
-          (result) =>
-            result.status === 'fulfilled' &&
-            result.value.some(
-              (outcome) => outcome.kind === 'saved' || outcome.kind === 'unchanged',
-            ),
-        )
-      )
-        onSynced()
-      for (const result of results) if (result.status === 'rejected') throw result.reason
       setError('')
-    } catch (cause) {
-      const showSyncError =
-        reviewChanges || revalidated.current || cause instanceof NeonRequestError
-      revalidated.current = false
-      setConnected(false)
-      if (cause instanceof NeonRequestError && cause.status === 403) {
-        clearOfflineAccess()
-        setLeaseExpired(true)
-        window.dispatchEvent(new AccessDeniedEvent(userId, cause.status))
-      }
-      if (showSyncError)
-        setError(
-          ar
-            ? 'تعذرت المزامنة. سجّل الدخول مجدداً وحاول مرة أخرى.'
-            : 'Sync failed. Sign in again and retry.',
-        )
-    } finally {
-      syncLock.current = false
-      setSyncing(false)
+    } else {
+      setError(t('The request failed. Please try again.'))
     }
   }
-  useEffect(() => {
-    const online = () => void sync(true)
-    const retry = () => void sync()
-    const offline = () => {
-      revalidated.current = false
-      setConnected(false)
-    }
-    window.addEventListener('offline', offline)
-    window.addEventListener('online', online)
-    window.addEventListener('focus', retry)
-    const timer = window.setInterval(retry, 5000)
-    void sync(true)
-    return () => {
-      window.removeEventListener('online', online)
-      window.removeEventListener('offline', offline)
-      window.removeEventListener('focus', retry)
-      window.clearInterval(timer)
-    }
+  useEffect(
+    () =>
+      subscribeOfflineQueue(() => {
+        void refresh().catch(() => setError('Offline storage is unavailable.'))
+      }),
+    // The subscription follows the account; refresh reads that account.
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId])
+    [userId],
+  )
   const pendingCount = pending.length + studentPending.length
-  useEffect(() => {
-    if (
-      !reviewChanges &&
-      connected &&
-      loaded &&
-      !syncing &&
-      !saving &&
-      !studentId &&
-      !leaseExpired &&
-      pendingCount === 0
-    )
-      close(true)
-  }, [
-    close,
-    connected,
-    leaseExpired,
-    loaded,
-    pendingCount,
-    reviewChanges,
-    saving,
-    studentId,
-    syncing,
-  ])
-  const Container = reviewChanges ? 'section' : 'main'
-  const containerProps = reviewChanges
-    ? { className: 'max-w-4xl space-y-4' }
-    : { id: 'main-content', tabIndex: -1, className: 'workspace-auth panel space-y-3' }
   if (leaseExpired)
     return (
-      <Container {...containerProps}>
+      <section className="max-w-4xl space-y-4">
         <p role="alert">
           {ar
-            ? 'انتهت صلاحية الوصول. اتصل بالإنترنت.'
+            ? '\u0627\u0646\u062a\u0647\u062a \u0635\u0644\u0627\u062d\u064a\u0629 \u0627\u0644\u0648\u0635\u0648\u0644'
             : 'Offline access expired. Connect and sign in again.'}
         </p>
-        <button className="secondary" onClick={() => close(false)}>
-          {ar ? 'رجوع' : 'Back'}
+        <button className="secondary" onClick={close}>
+          {ar ? '\u0631\u062c\u0648\u0639' : 'Back'}
         </button>
-      </Container>
+      </section>
     )
-  const course = snapshot?.courses.find((item) => item.id === selected)
-  const selectedStudent = snapshot?.students.find((student) => student.id === studentId)
-  const pendingContact = studentPending.findLast(
-    ({ operation }) => operation.kind === 'contact' && operation.studentId === studentId,
-  )
-  const savedPhone =
-    pendingContact?.operation.kind === 'contact'
-      ? (pendingContact.operation.whatsapp ?? '')
-      : (selectedStudent?.phone ?? '')
-  const phone = phoneDraft ?? savedPhone
-  const notes = (snapshot?.notes ?? []).filter((item) => item.studentId === studentId)
-  const localNotes = studentPending.flatMap(({ operation }) =>
-    operation.kind === 'note' &&
-    operation.event.payload.studentId === studentId &&
-    !notes.some((item) => item.id === operation.event.id)
-      ? [{ ...operation.event.payload, id: operation.event.id }]
-      : [],
-  )
-  const roster: PreparedRoster | undefined =
-    course && snapshot
-      ? {
-          courseId: course.id,
-          courseName: course.name,
-          date,
-          students: course.enrollments.flatMap((enrollment) => {
-            const student = snapshot.students.find((item) => item.id === enrollment.studentId)
-            if (!student) return []
-            const mark = snapshot.attendance.find(
-              (item) => item.enrollmentId === enrollment.id && item.date === date,
-            )
-            return [
-              {
-                studentId: student.id,
-                enrollmentId: enrollment.id,
-                name: student.name,
-                group: student.group,
-                level: enrollment.level,
-                revision: {
-                  kind: 'confirmed',
-                  eventId: mark?.eventId ?? null,
-                  status: mark?.status ?? null,
-                },
-              },
-            ]
-          }),
-        }
-      : rosters.find((item) => item.courseId === selected && item.date === date)
-  const save = async (student: PreparedRoster['students'][number], status: Status) => {
-    if (!roster || student.revision.kind !== 'confirmed') return
-    setSaving(true)
-    try {
-      await queueAttendance(
-        userId,
-        offlineAttendanceRecordSchema.parse({
-          event: makeEvent(actor, {
-            kind: 'attendance',
-            studentId: student.studentId,
-            enrollmentId: student.enrollmentId,
-            date: roster.date,
-            status,
-          }),
-          expectedEventId: student.revision.eventId,
-        }),
-      )
-      await refresh()
-      setError('')
-      if (revalidated.current) void sync()
-    } catch {
-      setError(ar ? 'تعذر حفظ الحضور على الجهاز.' : 'Could not save attendance on this device.')
-    } finally {
-      setSaving(false)
-    }
-  }
   const changeStatus = (
     kind?: 'conflict' | 'id_conflict' | 'forbidden' | 'saved' | 'unchanged',
   ) => {
@@ -285,411 +106,105 @@ export function OfflineAttendance({
         return ar ? 'بانتظار المزامنة' : 'Pending sync'
     }
   }
-  const syncActions = (
-    <div className="flex flex-wrap gap-2">
-      {(!reviewChanges || pendingCount > 0) && (
-        <button
-          className={reviewChanges ? 'primary' : 'secondary'}
-          disabled={saving || syncing}
-          onClick={() => void sync(true)}
-        >
-          {pendingCount ? (ar ? 'مزامنة الآن' : 'Sync now') : t('Try again')}
-        </button>
-      )}
-      <button className="secondary" onClick={() => close(connected)}>
-        {ar ? 'رجوع' : 'Back'}
-      </button>
-    </div>
-  )
   return (
-    <Container {...containerProps}>
-      {reviewChanges ? (
-        <header className="workspace-welcome flex-wrap">
-          <div className="space-y-1">
-            <h1 ref={reviewHeading} tabIndex={-1}>
-              {ar ? 'تغييراتي' : 'My changes'}
-            </h1>
-            <p role="status" className="muted">
-              {!loaded
-                ? t('Loading records…')
-                : pendingCount > 0
-                  ? `${pendingCount} ${ar ? 'بانتظار المزامنة' : 'pending sync'}`
-                  : ''}
-            </p>
-          </div>
-          {syncActions}
-        </header>
-      ) : (
-        <>
-          <h1 className="title">{ar ? 'الدفتر دون اتصال' : 'Offline notebook'}</h1>
-          <p role="status">
-            {connected
-              ? ar
-                ? 'متصل بوارتق'
-                : 'Connected to Wartaq'
-              : ar
-                ? 'بانتظار الاتصال بوارتق'
-                : 'Waiting to reconnect to Wartaq'}{' '}
-            · {pendingCount} {ar ? 'بانتظار المزامنة' : 'pending sync'}
+    <section className="max-w-4xl space-y-4">
+      <header className="workspace-welcome flex-wrap">
+        <div className="space-y-1">
+          <h1 ref={reviewHeading} tabIndex={-1}>
+            {ar ? '\u062a\u063a\u064a\u064a\u0631\u0627\u062a\u064a' : 'My changes'}
+          </h1>
+          <p role="status" className="muted">
+            {!loaded
+              ? t('Loading records\u2026')
+              : pendingCount > 0
+                ? `${pendingCount} ${ar ? '\u0628\u0627\u0646\u062a\u0638\u0627\u0631 \u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629' : 'pending sync'}`
+                : ''}
           </p>
-          {syncActions}
-        </>
-      )}
-      {error && <p role="alert">{error}</p>}
-      <nav
-        hidden={reviewChanges}
-        className={reviewChanges ? undefined : 'flex flex-wrap gap-2'}
-        aria-label={ar ? 'الدفتر' : 'Notebook'}
-      >
-        <button
-          className={showAttendance ? 'secondary' : 'primary'}
-          aria-pressed={!showAttendance}
-          onClick={() => setQuery({ tab: 'roster' })}
-        >
-          {t('Students')}
-        </button>
-        <button
-          className={showAttendance ? 'primary' : 'secondary'}
-          aria-pressed={showAttendance}
-          onClick={() => setQuery({ tab: 'attendance' })}
-        >
-          {ar ? 'الحضور' : 'Attendance'}
-        </button>
-      </nav>
-      {!reviewChanges && !snapshot && !rosters.length && (
-        <p>{ar ? 'لا توجد بيانات محفوظة.' : 'No saved roster on this device.'}</p>
-      )}
-      {showAttendance && (
-        <>
-          <div className="space-y-1">
-            <label htmlFor="offline-course">{ar ? 'الدورة' : 'Course'}</label>
-            <select
-              id="offline-course"
-              value={selected}
-              onChange={(event) => setQuery({ course: event.target.value })}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {pendingCount > 0 && (
+            <button
+              className="primary"
+              disabled={syncing || offline}
+              onClick={() => void sync(true)}
             >
-              <option value="">{ar ? 'اختر دورة' : 'Choose a course'}</option>
-              {(
-                snapshot?.courses ??
-                rosters.map((item) => ({ id: item.courseId, name: item.courseName }))
-              )
-                .filter(
-                  (item, index, all) => all.findIndex((entry) => entry.id === item.id) === index,
-                )
-                .map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-            </select>
-          </div>
-          <label>
-            {ar ? 'التاريخ' : 'Date'}
-            <input
-              type="date"
-              value={date}
-              onChange={(event) => setQuery({ date: event.target.value })}
-            />
-          </label>
-          {roster && (
-            <div className="space-y-3">
-              {roster.students.map((student) => {
-                const records = pending.filter(
-                  (item) =>
-                    item.event.payload.kind === 'attendance' &&
-                    item.event.payload.enrollmentId === student.enrollmentId &&
-                    item.event.payload.date === roster.date,
-                )
-                const last = records.at(-1)
-                const status =
-                  last?.event.payload.kind === 'attendance'
-                    ? last.event.payload.status
-                    : student.revision.kind === 'confirmed'
-                      ? student.revision.status
-                      : null
-                const conflict = records.some((item) => item.outcome)
-                return (
-                  <section key={student.studentId} className="rounded-lg border p-3 space-y-2">
-                    <strong dir="auto">{student.name}</strong>
-                    <p>
-                      {ar ? 'المستوى' : 'Level'}: <bdi>{student.level || '—'}</bdi>
-                    </p>
-                    <p role="status">
-                      {conflict
-                        ? changeStatus(records.find((record) => record.outcome)?.outcome?.kind)
-                        : records.length
-                          ? ar
-                            ? 'محفوظ على الجهاز'
-                            : 'Saved on device'
-                          : status
-                            ? ar
-                              ? 'تمت المزامنة'
-                              : 'Synced'
-                            : t('Not marked')}
-                    </p>
-                    <div
-                      className="flex flex-wrap gap-2"
-                      role="group"
-                      aria-label={`${t('Attendance for')} ${student.name}`}
-                    >
-                      {statuses.map((choice) => (
-                        <button
-                          type="button"
-                          key={choice}
-                          className={status === choice ? 'primary' : 'secondary'}
-                          aria-pressed={status === choice}
-                          disabled={saving || conflict || student.revision.kind !== 'confirmed'}
-                          onClick={() => void save(student, choice)}
-                        >
-                          {t(choice)}
-                        </button>
-                      ))}
-                    </div>
-                  </section>
-                )
-              })}
-            </div>
+              {ar ? '\u0645\u0632\u0627\u0645\u0646\u0629 \u0627\u0644\u0622\u0646' : 'Sync now'}
+            </button>
           )}
-        </>
-      )}
-      {snapshot && !reviewChanges && !showAttendance && (
-        <section className="space-y-3">
-          {!selectedStudent ? (
-            <ul aria-label={t('Students')} className="space-y-2">
-              {snapshot.students.map((student) => (
-                <li key={student.id}>
-                  <button
-                    className="secondary w-full text-start"
-                    dir="auto"
-                    onClick={() => setStudentId(student.id)}
-                  >
-                    {student.name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <>
-              <button
-                className="secondary"
-                onClick={() => {
-                  setStudentId('')
-                  setPhoneDraft(undefined)
-                  setNote('')
-                  setTags('')
-                }}
-              >
-                {ar ? 'العودة إلى الطلاب' : 'Back to students'}
-              </button>
-              <h2 dir="auto">{selectedStudent.name}</h2>
-              <form
-                className="space-y-2"
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  if (saveLock.current) return
-                  saveLock.current = true
-                  setSaving(true)
-                  void (async () => {
-                    try {
-                      await queueStudentOperation(
-                        userId,
-                        offlineStudentOperationSchema.parse({
-                          kind: 'note',
-                          event: makeEvent(actor, {
-                            kind: 'note',
-                            studentId,
-                            date,
-                            text: note,
-                            tags: normalizedNoteTags(tags),
-                          }),
-                        }),
-                      )
-                      setNote('')
-                      setTags('')
-                      await refresh()
-                      setError('')
-                      if (revalidated.current) void sync()
-                    } catch {
-                      setError(ar ? 'تعذر حفظ الملاحظة' : 'Could not save note on this device.')
-                    } finally {
-                      saveLock.current = false
-                      setSaving(false)
-                    }
-                  })()
-                }}
-              >
-                <label>
-                  {ar ? 'ملاحظة' : 'Note'}
-                  <textarea
-                    required
-                    maxLength={10000}
-                    value={note}
-                    onChange={(event) => setNote(event.target.value)}
-                  />
-                </label>
-                <label>
-                  {ar ? 'الوسوم' : 'Tags, separated by commas'}
-                  <input value={tags} onChange={(event) => setTags(event.target.value)} />
-                </label>
-                <button className="primary" disabled={saving}>
-                  {ar ? 'حفظ الملاحظة' : 'Save note'}
-                </button>
-              </form>
-              <form
-                className="space-y-2"
-                onSubmit={(event) => {
-                  event.preventDefault()
-                  if (saveLock.current || phone.trim() === savedPhone || pendingContact?.outcome)
-                    return
-                  saveLock.current = true
-                  setSaving(true)
-                  void (async () => {
-                    try {
-                      const expectedWhatsapp =
-                        pendingContact?.operation.kind === 'contact'
-                          ? pendingContact.operation.whatsapp
-                          : selectedStudent.phone
-                      await queueStudentOperation(userId, {
-                        kind: 'contact',
-                        id: crypto.randomUUID(),
-                        studentId,
-                        clientTime: new Date().toISOString(),
-                        expectedWhatsapp,
-                        whatsapp: phone.trim() || null,
-                      })
-                      await refresh()
-                      setPhoneDraft(undefined)
-                      setError('')
-                      if (revalidated.current) void sync()
-                    } catch {
-                      setError(
-                        ar
-                          ? 'تعذر حفظ الهاتف'
-                          : 'Could not save phone update. Resolve any blocked update first.',
-                      )
-                    } finally {
-                      saveLock.current = false
-                      setSaving(false)
-                    }
-                  })()
-                }}
-              >
-                <label>
-                  {ar ? 'الهاتف' : 'Phone'}
-                  <input
-                    type="tel"
-                    maxLength={40}
-                    value={phone}
-                    onChange={(event) => setPhoneDraft(event.target.value)}
-                  />
-                </label>
-                <button
-                  className="secondary"
-                  disabled={
-                    saving || phone.trim() === savedPhone || Boolean(pendingContact?.outcome)
-                  }
-                >
-                  {ar ? 'حفظ الهاتف' : 'Save phone'}
-                </button>
-                {pendingContact && (
-                  <p role="status">{ar ? 'محفوظ على الجهاز' : 'Saved on device'}</p>
-                )}
-              </form>
-              {(notes.length > 0 || localNotes.length > 0) && (
-                <ul aria-label={ar ? 'ملاحظات الطالب' : 'Student notes'}>
-                  {[...notes, ...localNotes].map((item, index) => (
-                    <li key={item.id}>
-                      <time dateTime={item.date}>{item.date}</time>
-                      {' · '}
-                      <span dir="auto" className="whitespace-pre-wrap break-words">
-                        {item.text}
-                      </span>
-                      {index >= notes.length && (
-                        <span> ({ar ? 'محفوظ على الجهاز' : 'Saved on device'})</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
-        </section>
-      )}
-      {reviewChanges && loaded && pendingCount === 0 && (
+          <button className="secondary" onClick={close}>
+            {ar ? '\u0631\u062c\u0648\u0639' : 'Back'}
+          </button>
+        </div>
+      </header>
+      {error && <p role="alert">{error}</p>}
+      {loaded && pendingCount === 0 && (
         <p role="status" className="panel">
           {ar ? 'لا توجد تغييرات بانتظار المزامنة.' : 'No changes waiting to sync.'}
         </p>
       )}
-      {((reviewChanges ? pending.length > 0 : pending.some((item) => item.outcome)) ||
-        studentPending.length > 0) && (
+      {(pending.length > 0 || studentPending.length > 0) && (
         <section className="space-y-2" aria-label={ar ? 'التغييرات المنتظرة' : 'Pending changes'}>
-          {!reviewChanges && <h2>{ar ? 'التغييرات المنتظرة' : 'Pending changes'}</h2>}
-          {pending
-            .filter((item) => reviewChanges || item.outcome)
-            .map((item) => (
-              <div key={item.event.id} className={reviewChanges ? 'panel space-y-3' : undefined}>
-                <p className={reviewChanges ? 'font-semibold' : undefined}>
-                  <bdi>
-                    {snapshot?.students.find(
-                      (student) => student.id === item.event.payload.studentId,
-                    )?.name ?? (ar ? 'طالب غير متاح' : 'Student unavailable')}
-                  </bdi>
-                </p>
-                <p className={reviewChanges ? 'muted' : undefined}>
-                  {t('Attendance')} · <bdi>{item.event.payload.date}</bdi> ·{' '}
-                  {changeStatus(item.outcome?.kind)}
-                  {reviewChanges && item.outcome?.kind !== 'conflict' && (
-                    <> · {t(item.event.payload.status)}</>
-                  )}
-                </p>
-                {item.outcome?.kind === 'conflict' && (
-                  <div className="flex flex-wrap gap-2">
-                    <p className="basis-full">
-                      {ar
-                        ? '\u0627\u0644\u0639\u0644\u0627\u0645\u0629 \u0627\u0644\u0645\u062d\u0641\u0648\u0638\u0629'
-                        : 'Saved mark'}
-                      :{' '}
-                      {item.outcome.current?.status
-                        ? t(item.outcome.current.status)
-                        : t('Not marked')}{' '}
-                      - {ar ? '\u0639\u0644\u0627\u0645\u062a\u064a' : 'My mark'}:{' '}
-                      {t(
-                        pending.findLast(
-                          (candidate) => attendanceKey(candidate) === attendanceKey(item),
-                        )?.event.payload.status ?? item.event.payload.status,
-                      )}
-                    </p>
-                    <button
-                      className="secondary"
-                      onClick={() =>
-                        void resolveAttendanceConflict(userId, item.event.id, 'server')
-                          .then(refresh)
-                          .catch(() => setError('Could not resolve conflict.'))
-                      }
-                    >
-                      {ar
-                        ? '\u0627\u0644\u0627\u062d\u062a\u0641\u0627\u0638 \u0628\u0639\u0644\u0627\u0645\u0629 \u0627\u0644\u062e\u0627\u062f\u0645'
-                        : 'Keep saved mark'}
-                    </button>
-                    <button
-                      className="secondary"
-                      onClick={() =>
-                        void resolveAttendanceConflict(userId, item.event.id, 'local')
-                          .then(async () => {
-                            await refresh()
-                            await sync()
-                          })
-                          .catch(() => setError('Could not resolve conflict.'))
-                      }
-                    >
-                      {ar
-                        ? '\u0627\u0633\u062a\u062e\u062f\u0627\u0645 \u0639\u0644\u0627\u0645\u062a\u064a'
-                        : 'Use my mark'}
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
+          {pending.map((item) => (
+            <div key={item.event.id} className="panel space-y-3">
+              <p className="font-semibold">
+                <bdi>
+                  {snapshot?.students.find((student) => student.id === item.event.payload.studentId)
+                    ?.name ?? (ar ? 'طالب غير متاح' : 'Student unavailable')}
+                </bdi>
+              </p>
+              <p className="muted">
+                {t('Attendance')} · <bdi>{item.event.payload.date}</bdi> ·{' '}
+                {changeStatus(item.outcome?.kind)}
+                {item.outcome?.kind !== 'conflict' && <> · {t(item.event.payload.status)}</>}
+              </p>
+              {item.outcome?.kind === 'conflict' && (
+                <div className="flex flex-wrap gap-2">
+                  <p className="basis-full">
+                    {ar
+                      ? '\u0627\u0644\u0639\u0644\u0627\u0645\u0629 \u0627\u0644\u0645\u062d\u0641\u0648\u0638\u0629'
+                      : 'Saved mark'}
+                    :{' '}
+                    {item.outcome.current?.status
+                      ? t(item.outcome.current.status)
+                      : t('Not marked')}{' '}
+                    - {ar ? '\u0639\u0644\u0627\u0645\u062a\u064a' : 'My mark'}:{' '}
+                    {t(
+                      pending.findLast(
+                        (candidate) => attendanceKey(candidate) === attendanceKey(item),
+                      )?.event.payload.status ?? item.event.payload.status,
+                    )}
+                  </p>
+                  <button
+                    className="secondary"
+                    onClick={() =>
+                      void resolveAttendanceConflict(userId, item.event.id, 'server')
+                        .then(refresh)
+                        .catch(() => setError('Could not resolve conflict.'))
+                    }
+                  >
+                    {ar
+                      ? '\u0627\u0644\u0627\u062d\u062a\u0641\u0627\u0638 \u0628\u0639\u0644\u0627\u0645\u0629 \u0627\u0644\u062e\u0627\u062f\u0645'
+                      : 'Keep saved mark'}
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() =>
+                      void resolveAttendanceConflict(userId, item.event.id, 'local')
+                        .then(async () => {
+                          await refresh()
+                          await sync()
+                        })
+                        .catch(() => setError('Could not resolve conflict.'))
+                    }
+                  >
+                    {ar
+                      ? '\u0627\u0633\u062a\u062e\u062f\u0627\u0645 \u0639\u0644\u0627\u0645\u062a\u064a'
+                      : 'Use my mark'}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
           {studentPending.map((item) => {
             const operation = item.operation
             const id = studentOperationId(operation)
@@ -699,14 +214,14 @@ export function OfflineAttendance({
               ({ operation }) => operation.kind === 'contact' && operation.studentId === student,
             )?.operation
             return (
-              <div key={id} className={reviewChanges ? 'panel space-y-3' : undefined}>
-                <p className={reviewChanges ? 'font-semibold' : undefined}>
+              <div key={id} className="panel space-y-3">
+                <p className="font-semibold">
                   <bdi>
                     {snapshot?.students.find((entry) => entry.id === student)?.name ??
                       (ar ? 'طالب غير متاح' : 'Student unavailable')}
                   </bdi>
                 </p>
-                <p className={reviewChanges ? 'muted' : undefined}>
+                <p className="muted">
                   {operation.kind === 'note' ? (ar ? 'ملاحظة' : 'Note') : ar ? 'هاتف' : 'Phone'} ·{' '}
                   {changeStatus(item.outcome?.kind)}
                 </p>
@@ -752,6 +267,6 @@ export function OfflineAttendance({
           })}
         </section>
       )}
-    </Container>
+    </section>
   )
 }

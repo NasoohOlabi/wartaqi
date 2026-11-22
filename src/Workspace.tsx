@@ -49,15 +49,7 @@ import { CourseSections, Courses } from './Courses'
 import type { Profile } from './ProfileMenu'
 import { ProfileSettings } from './ProfileSettings'
 import { teacherStudentUpdateSchema, type NeonTeacher } from '../shared/neon'
-import { allowOfflineAccess, clearOfflineAccess, offlineAccess } from './offlineAccess'
-import {
-  cacheOfflineRoster,
-  listPendingAttendance,
-  listPendingStudent,
-  subscribeOfflineQueue,
-} from './offlineAttendanceStore'
 import { OfflineAttendance } from './OfflineAttendance'
-import { syncOfflineAttendance, syncOfflineStudent } from './offlineAttendanceSync'
 
 type Projection = ReturnType<typeof projectEvents>
 type Save = (payloads: Payload[]) => Promise<boolean>
@@ -68,18 +60,19 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
   const query = useQueryState()
   return (
     <NeonAuth onSignOut={goHome}>
-      {(userId, account, signOut, profile) =>
-        query.view === 'invitation-message' && account.role === 'administrator' ? (
+      {(userId, account, signOut, profile, cached) =>
+        !cached && query.view === 'invitation-message' && account.role === 'administrator' ? (
           <InvitationMessageViewer
             key={`${userId}:${query.inviteMessage}`}
             userId={userId}
             requestId={query.inviteMessage}
           />
-        ) : query.view === 'profile' ? (
+        ) : !cached && query.view === 'profile' ? (
           <ProfileSettings key={userId} profile={profile} signOut={signOut} role={account.role} />
         ) : account.role === 'student' ? (
           <StudentAttendance key={userId} userId={userId} signOut={signOut} profile={profile} />
-        ) : account.role === 'administrator' &&
+        ) : !cached &&
+          account.role === 'administrator' &&
           (query.view === 'settings' ||
             query.view === 'administration' ||
             query.view === 'add-student') ? (
@@ -99,6 +92,7 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
             neon={{ userId, teacher: account }}
             leave={signOut}
             profile={profile}
+            cached={cached}
           />
         )
       }
@@ -110,15 +104,14 @@ function Notebook({
   leave,
   neon,
   profile,
+  cached,
 }: {
+  cached?: { reconnect: () => void }
   neon: { userId: string; teacher: NeonTeacher }
   leave: () => void
   profile: Profile
 }) {
   const { t, language, errorMessage } = useLanguage()
-  const [offlineView, setOfflineView] = useState(false)
-  const [offlineRoster, setOfflineRoster] = useState<ReturnType<typeof useLedger>['roster']>()
-  const [hasPendingChanges, setHasPendingChanges] = useState(false)
   const query = useQueryState()
   const changesOrigin = useRef<typeof query.view>('notebook')
   const administrator = neon.teacher.role === 'administrator'
@@ -161,97 +154,15 @@ function Notebook({
       setQuery({ view: 'notebook', tab: 'roster', student: '' }, true)
     }
   }
-  const ledger = useLedger(neon)
+  const ledger = useLedger(neon, !!cached)
   const userId = neon.userId
   const access = ledger.snapshotTeacher ?? neon.teacher
   const canCacheOffline = Boolean(access?.canRead && access.canWrite)
   const reviewChanges = query.view === 'changes' && canCacheOffline
-  const actor = access?.name
-  const expires = access?.expiresAt
-  const { loaded, roster, courses, enrollments, events, refresh } = ledger
+  const { refresh } = ledger
   useEffect(() => {
-    if (!userId || !actor || !loaded) return
-    if (!canCacheOffline) {
-      if (offlineAccess()?.userId === userId) clearOfflineAccess()
-      return
-    }
-    if (!navigator.locks) return
-    let current = true
-    void cacheOfflineRoster(userId, { students: roster, courses, enrollments, events })
-      .then(() => {
-        if (!current) return
-        allowOfflineAccess(userId, actor, expires ? Date.parse(expires) : null)
-        setOfflineRoster(roster)
-      })
-      .catch(() => {})
-    return () => {
-      current = false
-    }
-  }, [userId, actor, expires, canCacheOffline, loaded, roster, courses, enrollments, events])
-  useEffect(() => {
-    if (!userId || !canCacheOffline || !navigator.locks) return
-    let revision = 0
-    const readQueue = () => {
-      const current = ++revision
-      void Promise.all([listPendingAttendance(userId), listPendingStudent(userId)]).then(
-        ([attendance, students]) => {
-          if (current === revision)
-            setHasPendingChanges(attendance.length > 0 || students.length > 0)
-        },
-        () => {
-          if (current === revision) setHasPendingChanges(false)
-        },
-      )
-    }
-    const unsubscribe = subscribeOfflineQueue(readQueue)
-    readQueue()
-    return () => {
-      revision++
-      unsubscribe()
-    }
-  }, [userId, canCacheOffline])
-  useEffect(() => {
-    if (query.view === 'changes' && !canCacheOffline) setQuery({ view: 'notebook' })
-  }, [query.view, canCacheOffline])
-  useEffect(() => {
-    if (!userId || !canCacheOffline || !navigator.locks) return
-    let active = true
-    let syncing = false
-    const reconnect = (retryBlocked = false) => {
-      if (!navigator.onLine || syncing || offlineView || reviewChanges) return
-      syncing = true
-      void Promise.allSettled([
-        syncOfflineAttendance(userId, retryBlocked),
-        syncOfflineStudent(userId, retryBlocked),
-      ])
-        .then((results) => {
-          const needsRefresh = results.some(
-            (result) =>
-              result.status === 'fulfilled' &&
-              result.value.some((item) => item.kind === 'saved' || item.kind === 'unchanged'),
-          )
-          if (active && needsRefresh) void refresh()
-        })
-        .finally(() => {
-          syncing = false
-        })
-    }
-    const disconnect = () => {
-      if (offlineAccess()?.userId === userId) setOfflineView(true)
-    }
-    const online = () => reconnect(true)
-    const focus = () => reconnect()
-    window.addEventListener('online', online)
-    window.addEventListener('offline', disconnect)
-    window.addEventListener('focus', focus)
-    reconnect(true)
-    return () => {
-      active = false
-      window.removeEventListener('online', online)
-      window.removeEventListener('offline', disconnect)
-      window.removeEventListener('focus', focus)
-    }
-  }, [userId, canCacheOffline, offlineView, reviewChanges, refresh])
+    if (cached && ledger.loaded && !ledger.offline) cached.reconnect()
+  }, [cached, ledger.loaded, ledger.offline])
   const preference = useCoursePreference(neon.userId, ledger.loaded, ledger.courses)
   const fullRegister =
     administrator &&
@@ -307,35 +218,24 @@ function Notebook({
   )
   const latestNote = visibleNotes[visibleNotes.length - 1]
   const disabled =
-    ledger.busy ||
+    (ledger.busy && !ledger.offline) ||
     !!ledger.pending.length ||
     !!ledger.storageBlocked ||
     !ledger.loaded ||
-    !neon.teacher.canWrite
-  const openOfflineLabel = language === 'ar' ? 'فتح الدفتر دون اتصال' : 'Open offline notebook'
-  if (offlineView && canCacheOffline)
-    return (
-      <OfflineAttendance
-        userId={neon.userId}
-        actor={neon.teacher.name}
-        close={(connected) => {
-          setOfflineView(false)
-          if (connected || navigator.onLine) void ledger.refresh()
-        }}
-      />
-    )
+    !neon.teacher.canWrite ||
+    ledger.offlineExpired ||
+    (ledger.offline && !ledger.offlinePrepared)
   if (!ledger.loaded || !preference.ready)
-    return ledger.error ? (
+    return ledger.offlineExpired || ledger.error ? (
       <main id="main-content" tabIndex={-1} className="workspace-auth panel space-y-3">
-        <p role="alert">{errorMessage(ledger.error)}</p>
+        <p role="alert">
+          {ledger.offlineExpired
+            ? t('Offline access expired. Connect and sign in again.')
+            : errorMessage(ledger.error)}
+        </p>
         <button className="secondary" disabled={ledger.busy} onClick={() => void ledger.refresh()}>
           {t('Try again')}
         </button>
-        {canCacheOffline && offlineAccess()?.userId === userId && (
-          <button className="secondary" onClick={() => setOfflineView(true)}>
-            {openOfflineLabel}
-          </button>
-        )}
       </main>
     ) : (
       <WorkspaceLoading message={t('Loading records…')} />
@@ -357,8 +257,9 @@ function Notebook({
       chooseDefault={showCourseSwitcher ? preference.chooseDefault : undefined}
       courseName={ledger.courses.find((course) => course.id === query.course)?.name}
       administrator={administrator}
+      offline={ledger.offline || !!cached}
       profile={
-        canCacheOffline && offlineRoster === roster && hasPendingChanges
+        canCacheOffline && ledger.offlinePendingCount > 0
           ? {
               ...profile,
               openChanges: () => {
@@ -374,6 +275,52 @@ function Notebook({
       disabled={ledger.busy}
     />
   )
+  const needsConnection =
+    ['profile', 'settings', 'administration', 'add-student', 'invitation-message'].includes(
+      query.view,
+    ) ||
+    (administrator && (query.view === 'history' || query.view === 'courses'))
+  const offlineNotice = ledger.offline && (
+    <div
+      role="status"
+      className="mb-4 flex flex-wrap items-center gap-3 rounded-lg bg-amber-50 p-3 text-amber-900"
+    >
+      <span>
+        {language === 'ar' ? '\u063a\u064a\u0631 \u0645\u062a\u0635\u0644' : 'Offline'}
+        {ledger.offlinePendingCount > 0
+          ? ` \u00b7 ${ledger.offlinePendingCount} ${language === 'ar' ? '\u062a\u063a\u064a\u064a\u0631\u0627\u062a \u0645\u0639\u0644\u0642\u0629' : 'pending changes'}`
+          : ''}
+      </span>
+      <button className="secondary" disabled={ledger.busy} onClick={() => void refresh()}>
+        {t('Try again')}
+      </button>
+      {ledger.offlinePendingCount > 0 && (
+        <button
+          className="secondary"
+          onClick={() => {
+            changesOrigin.current = query.view
+            setQuery({ view: 'changes' }, true)
+          }}
+        >
+          {language === 'ar' ? '\u062a\u063a\u064a\u064a\u0631\u0627\u062a\u064a' : 'My changes'}
+        </button>
+      )}
+    </div>
+  )
+  if ((ledger.offline || cached) && needsConnection)
+    return (
+      <div className="workspace">
+        {navigation}
+        <main id="main-content" tabIndex={-1} className="workspace-main">
+          {offlineNotice}
+          <p>
+            {language === 'ar'
+              ? 'اتصل بوارتق لفتح هذه الصفحة.'
+              : 'Connect to Wartaq to open this page.'}
+          </p>
+        </main>
+      </div>
+    )
   if (reviewChanges)
     return (
       <div className="workspace">
@@ -381,9 +328,9 @@ function Notebook({
         <main id="main-content" tabIndex={-1} className="workspace-main">
           <OfflineAttendance
             userId={neon.userId}
-            actor={neon.teacher.name}
-            reviewChanges
-            onSynced={() => void refresh()}
+            syncChanges={refresh}
+            syncing={ledger.busy}
+            offline={ledger.offline}
             close={() => setQuery({ view: changesOrigin.current })}
           />
         </main>
@@ -397,6 +344,7 @@ function Notebook({
         tabIndex={-1}
         className={history && administrator ? 'workspace-main role-page' : 'workspace-main'}
       >
+        {offlineNotice}
         {history && administrator && (
           <>
             <header className="role-heading">
@@ -559,6 +507,10 @@ function Notebook({
             refresh={ledger.refresh}
             busy={ledger.busy}
             canWrite={!disabled}
+            offline={ledger.offline}
+            save={ledger.save}
+            saveOfflinePhone={ledger.saveOfflinePhone}
+            date={query.date}
             administrator={administrator}
             userId={userId}
             onBack={returnToList}
@@ -576,7 +528,7 @@ function Notebook({
               <NotebookDashboard
                 projected={projected}
                 date={query.date}
-                canAdd={administrator}
+                canAdd={administrator && !ledger.offline}
                 canRecord={!disabled && selectedCourse?.open === true}
                 onStudent={openStudent}
                 onAttendance={(unmarked = false) =>
@@ -589,7 +541,7 @@ function Notebook({
                 }
                 onAdd={() => setQuery({ view: 'add-student', courseView: '', student: '' }, true)}
               >
-                {administrator && selectedCourse && (
+                {administrator && !ledger.offline && selectedCourse && (
                   <CourseReadiness
                     course={selectedCourse}
                     enrollments={selectedEnrollments}
@@ -638,12 +590,12 @@ function Notebook({
                 <button
                   className="primary mt-4"
                   onClick={() =>
-                    neon.teacher.role === 'administrator'
+                    neon.teacher.role === 'administrator' && !ledger.offline
                       ? setQuery({ view: 'courses', courseView: '', q: '' }, true)
                       : navigateNotebook('dashboard', preference.defaultCourse)
                   }
                 >
-                  {neon.teacher.role === 'administrator'
+                  {neon.teacher.role === 'administrator' && !ledger.offline
                     ? language === 'ar'
                       ? '\u0627\u0644\u062f\u0648\u0631\u0627\u062a'
                       : 'Go to courses'
@@ -688,7 +640,7 @@ function Notebook({
                 }
                 date={query.date}
                 save={ledger.save}
-                canCorrect={administrator}
+                canCorrect={administrator && !ledger.offline}
                 onOpenStudent={openStudent}
               />
             )}
@@ -770,6 +722,10 @@ function StudentDetails({
   refresh,
   busy,
   canWrite,
+  offline,
+  save,
+  saveOfflinePhone,
+  date,
   administrator,
   userId,
   onBack,
@@ -784,11 +740,23 @@ function StudentDetails({
   refresh?: () => Promise<boolean>
   busy: boolean
   canWrite: boolean
+  offline: boolean
+  save: Save
+  saveOfflinePhone: (
+    studentId: string,
+    expectedWhatsapp: string | null,
+    whatsapp: string | null,
+  ) => Promise<boolean>
+  date: string
   administrator: boolean
 }) {
   const { t, language } = useLanguage()
   const ar = language === 'ar'
   const [editing, setEditing] = useState(false)
+  const [note, setNote] = useState('')
+  const [tags, setTags] = useState('')
+  const [addingNote, setAddingNote] = useState(false)
+  const [saving, setSaving] = useState(false)
   const detailRecords = projected.attendance.filter(
     ({ value }) => value.studentId === student?.studentId,
   )
@@ -856,7 +824,7 @@ function StudentDetails({
       <div className="student-details-overview">
         <div className="student-details-heading">
           <h1 className="title">{ar ? 'معلومات الطالب' : 'Student information'}</h1>
-          {administrator && (
+          {administrator && !offline && (
             <button
               className="secondary"
               onClick={() =>
@@ -868,7 +836,7 @@ function StudentDetails({
                 : 'Edit student'}
             </button>
           )}
-          {!administrator && userId && canWrite && !editing && (
+          {((!administrator && !offline) || offline) && userId && canWrite && !editing && (
             <button className="secondary" onClick={() => setEditing(true)}>
               {ar
                 ? '\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u0637\u0627\u0644\u0628'
@@ -876,12 +844,14 @@ function StudentDetails({
             </button>
           )}
         </div>
-        {!administrator && userId && editing && (
+        {userId && editing && (
           <TeacherStudentForm
             key={student.studentId}
             student={student}
             userId={userId}
             disabled={!canWrite}
+            offline={offline}
+            saveOfflinePhone={saveOfflinePhone}
             cancel={() => setEditing(false)}
             saved={async () => {
               if (await refresh?.()) setEditing(false)
@@ -960,6 +930,81 @@ function StudentDetails({
             {ar ? 'تسجيل الحضور' : 'Take attendance'}
           </button>
         )}
+        {canWrite && (
+          <button className="secondary" onClick={() => setAddingNote(true)}>
+            {t('Add note')}
+          </button>
+        )}
+        {addingNote && (
+          <form
+            className="role-editor"
+            onSubmit={async (event) => {
+              event.preventDefault()
+              if (!canWrite || saving || !note.trim()) return
+              setSaving(true)
+              if (
+                await save([
+                  {
+                    kind: 'note',
+                    studentId: student.studentId,
+                    date,
+                    tags: normalizedNoteTags(tags),
+                    text: note,
+                  },
+                ])
+              ) {
+                setNote('')
+                setTags('')
+                setAddingNote(false)
+              }
+              setSaving(false)
+            }}
+          >
+            <label>
+              {t('Note')}
+              <textarea
+                required
+                maxLength={10000}
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+              />
+            </label>
+            <label>
+              {t('Tags, separated by commas')}
+              <input value={tags} onChange={(event) => setTags(event.target.value)} />
+            </label>
+            <button className="primary" disabled={!canWrite || saving || !note.trim()}>
+              {t('Save note')}
+            </button>
+            <button type="button" className="secondary" onClick={() => setAddingNote(false)}>
+              {t('Cancel')}
+            </button>
+          </form>
+        )}
+        <h2>
+          {ar
+            ? '\u0645\u0644\u0627\u062d\u0638\u0627\u062a \u0627\u0644\u0637\u0627\u0644\u0628'
+            : 'Student notes'}
+        </h2>
+        <ul
+          aria-label={
+            ar
+              ? '\u0645\u0644\u0627\u062d\u0638\u0627\u062a \u0627\u0644\u0637\u0627\u0644\u0628'
+              : 'Student notes'
+          }
+        >
+          {projected.notes
+            .filter(({ value }) => value.studentId === student.studentId)
+            .map(({ event, value }) => (
+              <li key={event.id}>
+                <time dateTime={value.date}>{value.date}</time>
+                {' \u00b7 '}
+                <span dir="auto" className="whitespace-pre-wrap break-words">
+                  {value.text}
+                </span>
+              </li>
+            ))}
+        </ul>
         <h2>{ar ? 'الدورات' : 'Courses'}</h2>
         <p>
           {courses
@@ -1235,7 +1280,9 @@ function AttendanceView({
             onSubmit={async (event) => {
               event.preventDefault()
               if (
-                await save([{ kind: 'reversal', targetId: correction.id, reason: reason.trim() }])
+                canCorrect &&
+                !disabled &&
+                (await save([{ kind: 'reversal', targetId: correction.id, reason: reason.trim() }]))
               )
                 correctionDialog.current?.close()
             }}
@@ -1258,7 +1305,7 @@ function AttendanceView({
             </label>
             {saveError && <p role="alert">{saveError}</p>}
             <div className="flex flex-wrap gap-2">
-              <button className="primary" disabled={disabled || !reason.trim()}>
+              <button className="primary" disabled={disabled || !canCorrect || !reason.trim()}>
                 {t('Append correction')}
               </button>
               <button
@@ -1707,12 +1754,20 @@ function TeacherStudentForm({
   student,
   userId,
   disabled,
+  offline,
+  saveOfflinePhone,
   cancel,
   saved,
 }: {
   student: import('../shared/neon').NeonRosterStudent
   userId: string
   disabled: boolean
+  offline: boolean
+  saveOfflinePhone: (
+    studentId: string,
+    expectedWhatsapp: string | null,
+    whatsapp: string | null,
+  ) => Promise<boolean>
   cancel: () => void
   saved: () => Promise<void>
 }) {
@@ -1735,12 +1790,34 @@ function TeacherStudentForm({
   const [busy, setBusy] = useState(false)
   const [committed, setCommitted] = useState(false)
   const [error, setError] = useState('')
+  const otherEdits =
+    firstName !== expected.firstName ||
+    lastName !== expected.lastName ||
+    group !== expected.group ||
+    location !== (expected.location ?? '') ||
+    birthYear !== (expected.birthYear?.toString() ?? '')
+  const waitingForConnection = offline && otherEdits
   return (
     <form
       className="role-editor"
       onSubmit={(event) => {
         event.preventDefault()
-        if (disabled || busy || committed) return
+        if (disabled || busy || committed || waitingForConnection) return
+        if (offline) {
+          setBusy(true)
+          void saveOfflinePhone(student.studentId, expected.whatsapp, whatsapp.trim() || null)
+            .then((success) => {
+              if (success) cancel()
+              else
+                setError(
+                  ar
+                    ? '\u062a\u0639\u0630\u0631 \u062d\u0641\u0638 \u0627\u0644\u0647\u0627\u062a\u0641'
+                    : 'Could not save phone update.',
+                )
+            })
+            .finally(() => setBusy(false))
+          return
+        }
         const input = teacherStudentUpdateSchema.safeParse({
           studentId: student.studentId,
           firstName,
@@ -1792,6 +1869,7 @@ function TeacherStudentForm({
             required
             maxLength={200}
             dir="auto"
+            disabled={offline}
             value={firstName}
             onChange={(e) => setFirstName(e.target.value)}
           />
@@ -1801,6 +1879,7 @@ function TeacherStudentForm({
           <input
             maxLength={200}
             dir="auto"
+            disabled={offline}
             value={lastName}
             onChange={(e) => setLastName(e.target.value)}
           />
@@ -1810,6 +1889,7 @@ function TeacherStudentForm({
           <LevelInput
             maxLength={100}
             dir="auto"
+            disabled={offline}
             value={group}
             onChange={(e) => setGroup(e.target.value)}
           />
@@ -1829,6 +1909,7 @@ function TeacherStudentForm({
           <input
             maxLength={200}
             dir="auto"
+            disabled={offline}
             value={location}
             onChange={(e) => setLocation(e.target.value)}
           />
@@ -1839,13 +1920,21 @@ function TeacherStudentForm({
             type="number"
             min={1900}
             max={maximumBirthYear}
+            disabled={offline}
             value={birthYear}
             onChange={(e) => setBirthYear(e.target.value)}
           />
         </label>
       </div>
       {error && <p role="alert">{error}</p>}
-      <button className="primary" disabled={disabled || busy || committed}>
+      {waitingForConnection && (
+        <p role="status">
+          {ar
+            ? 'اتصل بوارْتق لحفظ تعديلات الحقول الأخرى.'
+            : 'Reconnect to save changes to the other fields.'}
+        </p>
+      )}
+      <button className="primary" disabled={disabled || busy || committed || waitingForConnection}>
         {ar ? '\u062d\u0641\u0638' : 'Save'}
       </button>{' '}
       <button className="secondary" type="button" disabled={busy} onClick={cancel}>

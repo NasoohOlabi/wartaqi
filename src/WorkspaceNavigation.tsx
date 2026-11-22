@@ -12,6 +12,7 @@ const tabs: { id: Exclude<Tab, 'dashboard'>; label: TranslationKey }[] = [
 
 export function WorkspaceNavigation({
   administrator,
+  offline = false,
   courseName,
   courses,
   currentCourse,
@@ -22,6 +23,7 @@ export function WorkspaceNavigation({
   disabled,
 }: {
   administrator: boolean
+  offline?: boolean
   courseName?: string
   courses?: { id: string; name: string; closed?: boolean }[]
   currentCourse?: string
@@ -74,6 +76,7 @@ export function WorkspaceNavigation({
         <ProfileMenu
           profile={profile}
           administrator={administrator}
+          offline={offline}
           leave={leave}
           disabled={disabled}
         />
@@ -191,6 +194,7 @@ export function WorkspaceNavigation({
                 ? 'page'
                 : undefined
             }
+            disabled={offline}
             onClick={() => setQuery({ view: 'courses', courseView: '', course: '', q: '' }, true)}
           >
             <BookOpen size={20} strokeWidth={1.6} aria-hidden="true" focusable="false" />
