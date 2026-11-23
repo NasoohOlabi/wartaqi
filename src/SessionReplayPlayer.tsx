@@ -8,10 +8,13 @@ import {
 } from '../shared/sessionReplay'
 import { request } from './neon'
 import { AttendanceReplayView } from './AttendanceReplayView'
+import { describeAttendanceReplayAction } from './attendanceReplayLabels'
 import './SessionReplayPlayer.css'
 
 function eventLabel(frame: ReplayFrame, ar: boolean) {
   if (frame.kind === 'view') return ar ? 'عرض الصفحة' : 'Viewed page'
+  if (frame.attendance && frame.attendanceAction)
+    return describeAttendanceReplayAction(frame.attendance, frame.attendanceAction, ar)
   const target = frame.boxes
     .filter(
       (box) =>

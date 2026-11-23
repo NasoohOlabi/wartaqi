@@ -101,6 +101,7 @@ for (const language of ['en', 'ar'] as const) {
     const callsBeforePlayback = appCalls.length
     await player.getByRole('button', { name: ar ? 'النقرة التالية' : 'Next click' }).click()
     await expect(player.getByRole('status').filter({ hasText: student })).toBeVisible()
+    await expect(player.locator('button[aria-current="true"]')).toContainText(student)
     await expect(player.locator('[data-replay-highlight="true"]')).toContainText(student)
     await player
       .getByRole('slider', { name: ar ? 'موضع التشغيل' : 'Playback position' })
