@@ -119,7 +119,10 @@ test('remembers a validated course per account and keeps the header compact', as
   await page.getByRole('button', { name: 'Attendance', exact: true }).click()
   await expect(label).toHaveText(brandedNumber)
   for (const language of ['en', 'ar']) {
-    await page.evaluate((value) => localStorage.setItem('halaqa-language', value), language)
+    await page.evaluate(
+      (value) => localStorage.setItem('halaqa-language-preference', value),
+      language,
+    )
     for (const width of [320, 390, 701, 1440]) {
       await page.setViewportSize({ width, height: 900 })
       await page.goto(
@@ -179,7 +182,7 @@ test('remembers a validated course per account and keeps the header compact', as
   }
   for (const role of ['administrator', 'teacher']) {
     teacher.role = role
-    await page.evaluate(() => localStorage.setItem('halaqa-language', 'en'))
+    await page.evaluate(() => localStorage.setItem('halaqa-language-preference', 'en'))
     await page.goto('/?page=app&tab=roster&course=none')
     await expect(label).toHaveText('All students')
     await page.getByLabel(/Change course/).click()
@@ -203,7 +206,7 @@ test('remembers a validated course per account and keeps the header compact', as
   )
   await page.goto('/?page=app')
   await expect(label).toHaveText('Choose course')
-  await page.evaluate(() => localStorage.setItem('halaqa-language', 'en'))
+  await page.evaluate(() => localStorage.setItem('halaqa-language-preference', 'en'))
   await page.addInitScript(() => {
     const getItem = Storage.prototype.getItem
     const setItem = Storage.prototype.setItem

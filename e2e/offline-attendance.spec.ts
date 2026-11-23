@@ -194,7 +194,7 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
 
     networkAvailable = false
     await page.evaluate(() => {
-      localStorage.setItem('halaqa-language', 'ar')
+      localStorage.setItem('halaqa-language-preference', 'ar')
       const key = 'halaqa-offline-access'
       const access = JSON.parse(localStorage.getItem(key) ?? 'null')
       delete access.teacher
@@ -264,12 +264,14 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   await expect(offlinePage.getByRole('button', { name: 'Profile settings' })).toBeDisabled()
   await offlinePage.keyboard.press('Escape')
   const noteField = offlinePage.getByRole('textbox', { name: 'Note', exact: true })
+  const savedNotes = offlinePage.getByRole('list', { name: 'Student notes' })
   const phone = offlinePage.getByRole('textbox', { name: 'WhatsApp number' })
   for (const note of ['First offline note', 'Second offline note']) {
     await offlinePage.getByRole('button', { name: 'Add note', exact: true }).click()
     await noteField.fill(note)
     await offlinePage.getByRole('button', { name: 'Save note' }).click()
-    await expect(offlinePage.getByText(note, { exact: true })).toBeVisible()
+    await expect(savedNotes.getByText(note, { exact: true })).toBeVisible()
+    await expect(noteField).toHaveCount(0)
   }
   await offlinePage.getByRole('button', { name: /^Edit (student|phone)$/ }).click()
   await expect(phone).toHaveValue(oldPhone)
@@ -280,8 +282,8 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
     await offlinePage.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
   ).toBe(true)
   await offlinePage.reload()
-  await expect(offlinePage.getByText('First offline note', { exact: true })).toHaveCount(1)
-  await expect(offlinePage.getByText('Second offline note', { exact: true })).toHaveCount(1)
+  await expect(savedNotes.getByText('First offline note', { exact: true })).toHaveCount(1)
+  await expect(savedNotes.getByText('Second offline note', { exact: true })).toHaveCount(1)
   await offlinePage.getByRole('button', { name: /^Edit (student|phone)$/ }).click()
   await expect(phone).toHaveValue(updatedPhone)
   await offlinePage.goto(courseUrl)

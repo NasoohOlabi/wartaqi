@@ -5,7 +5,10 @@ for (const width of [320, 1440]) {
   for (const language of ['en', 'ar']) {
     for (const path of ['/mcp/login', '/mcp/consent']) {
       test(`MCP setup handoff at ${path} ${width}px ${language}`, async ({ browser, baseURL }) => {
-        const context = await browser.newContext({ viewport: { width, height: 800 } })
+        const context = await browser.newContext({
+          viewport: { width, height: 800 },
+          storageState: { cookies: [], origins: [] },
+        })
         let pending = true
         let consentQuery = ''
         let signInBody: unknown
@@ -52,7 +55,9 @@ for (const width of [320, 1440]) {
         const page = await context.newPage()
         const query = 'client_id=synthetic&scope=mcp%3Aread&signed=synthetic-signature'
         await page.goto(`${baseURL}${path}?${query}`)
-        if (language === 'ar') await page.locator('#language').click()
+        await expect(page.locator('html')).toHaveAttribute('lang', 'ar')
+        await expect(page.locator('html')).toHaveAttribute('dir', 'rtl')
+        if (language === 'en') await page.getByRole('button', { name: 'English' }).click()
         const signIn = page.locator('#login summary')
         await signIn.click()
         const form = page.getByRole('form', {
@@ -98,7 +103,7 @@ for (const width of [320, 1440]) {
         expect(new URL(page.url()).search.slice(1)).toBe(query)
         await page.reload()
         await expect(link).toBeHidden()
-        if (language === 'ar') await page.locator('#language').click()
+        await expect(page.locator('html')).toHaveAttribute('lang', language)
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
           true,
         )

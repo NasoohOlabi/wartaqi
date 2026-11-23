@@ -381,7 +381,7 @@ test('Arabic session placeholder fits a narrow screen', async ({ page }) => {
   const held = new Promise<void>((resolve) => {
     release = resolve
   })
-  await page.addInitScript(() => localStorage.setItem('halaqa-language', 'ar'))
+  await page.addInitScript(() => localStorage.setItem('halaqa-language-preference', 'ar'))
   await page.route(`${auth}/**`, async (route) => {
     await held
     await route.fulfill({ json: null }).catch(() => {})

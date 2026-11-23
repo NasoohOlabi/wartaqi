@@ -1,24 +1,27 @@
 import { Globe, Monitor, Moon, Sun } from 'lucide-react'
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useLayoutEffect, useState, useSyncExternalStore } from 'react'
 import { LanguageContext, useLanguage, type Language } from './useLanguage'
 
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [language, setLanguage] = useState<Language>(() => {
+  const [language, setSelectedLanguage] = useState<Language>(() => {
     try {
-      return localStorage.getItem('halaqa-language') === 'ar' ? 'ar' : 'en'
+      return localStorage.getItem('halaqa-language-preference') === 'en' ? 'en' : 'ar'
     } catch {
-      return 'en'
+      return 'ar'
     }
   })
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.lang = language
     document.documentElement.dir = language === 'ar' ? 'rtl' : 'ltr'
+  }, [language])
+  function setLanguage(language: Language) {
+    setSelectedLanguage(language)
     try {
-      localStorage.setItem('halaqa-language', language)
+      localStorage.setItem('halaqa-language-preference', language)
     } catch {
       /* Preference is optional. */
     }
-  }, [language])
+  }
   return (
     <LanguageContext.Provider value={{ language, setLanguage }}>
       {children}

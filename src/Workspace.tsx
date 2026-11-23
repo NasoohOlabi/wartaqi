@@ -840,42 +840,34 @@ function StudentDetails({
         </button>
       </section>
     )
-  const records = projected.attendance.filter(({ value }) => value.studentId === student.studentId)
   const counts = { present: 0, absent: 0, excused: 0 }
-  for (const { value } of records) counts[value.status]++
+  for (const { value } of detailRecords) counts[value.status]++
+  const notes = projected.notes.filter(({ value }) => value.studentId === student.studentId)
   const memberships = enrollments.filter((entry) => entry.studentId === student.studentId)
+  const courseMembership = memberships.find((entry) => entry.courseId === courseId)
+  const activeCourses = courses.filter((course) =>
+    memberships.some((entry) => entry.courseId === course.id && entry.active),
+  )
   const eligible =
     student.active &&
     (!courseId
       ? !memberships.length
-      : memberships.some((entry) => entry.courseId === courseId && entry.active) &&
-        courses.some((course) => course.id === courseId && course.open))
+      : courseMembership?.active && courses.some((course) => course.id === courseId && course.open))
   const editInSettings = administrator && !offline
   return (
-    <section className="panel student-details">
-      <div className="student-details-actions">
-        <button className="secondary inline-flex min-h-11 items-center gap-2" onClick={onBack}>
-          <ArrowLeft className="icon-directional shrink-0" size={18} aria-hidden="true" />
-          {ar ? '\u0639\u0648\u062f\u0629' : 'Back'}
-        </button>
-        {refresh && (
-          <button
-            className="icon-button"
-            aria-label={t('Refresh')}
-            title={t('Refresh')}
-            disabled={busy}
-            onClick={() => void refresh()}
-          >
-            <RefreshCw size={20} aria-hidden="true" />
+    <div className="student-details">
+      <section className="panel student-details-overview" aria-labelledby="student-details-title">
+        <header className="student-details-heading">
+          <button className="secondary inline-flex min-h-11 items-center gap-2" onClick={onBack}>
+            <ArrowLeft className="icon-directional shrink-0" size={18} aria-hidden="true" />
+            {ar ? '\u0639\u0648\u062f\u0629' : 'Back'}
           </button>
-        )}
-      </div>
-      <div className="student-details-overview">
-        <div className="student-details-heading">
-          <h1 className="title">{ar ? 'معلومات الطالب' : 'Student information'}</h1>
+          <h1 id="student-details-title" className="title">
+            {ar ? 'معلومات الطالب' : 'Student information'}
+          </h1>
           {(editInSettings || (userId && canWrite && !editing)) && (
             <button
-              className="primary inline-flex min-h-11 items-center gap-2"
+              className="secondary inline-flex min-h-11 items-center gap-2"
               onClick={() => {
                 if (editInSettings)
                   setQuery({ view: 'settings', student: student.studentId, account: '' }, true)
@@ -888,7 +880,18 @@ function StudentDetails({
                 : 'Edit student'}
             </button>
           )}
-        </div>
+          {refresh && (
+            <button
+              className="icon-button"
+              aria-label={t('Refresh')}
+              title={t('Refresh')}
+              disabled={busy}
+              onClick={() => void refresh()}
+            >
+              <RefreshCw size={20} aria-hidden="true" />
+            </button>
+          )}
+        </header>
         {userId && editing && (
           <TeacherStudentForm
             key={student.studentId}
@@ -904,70 +907,79 @@ function StudentDetails({
             }}
           />
         )}
-        <dl className="student-detail-fields">
-          <div>
-            <dt>{ar ? 'الاسم الأول' : 'First name'}</dt>
-            <dd dir="auto">{student.firstName ?? student.name}</dd>
+        <div className="student-detail-profile">
+          <dl className="student-detail-fields">
+            <div>
+              <dt>{ar ? 'الاسم الأول' : 'First name'}</dt>
+              <dd>
+                <bdi>{student.firstName ?? student.name}</bdi>
+              </dd>
+            </div>
+            <div>
+              <dt>{ar ? 'اسم العائلة' : 'Last name'}</dt>
+              <dd>
+                <bdi>{student.lastName || '—'}</bdi>
+              </dd>
+            </div>
+            <div>
+              <dt>{ar ? 'رقم الهاتف' : 'Phone'}</dt>
+              <dd>
+                {student.whatsapp ? (
+                  <PhoneNumber value={student.whatsapp} />
+                ) : ar ? (
+                  'غير متوفر'
+                ) : (
+                  'Not provided'
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>{ar ? 'المستوى' : 'Level'}</dt>
+              <dd>
+                <bdi>
+                  {formatLevel(courseId ? (courseMembership?.level ?? '') : student.group) || '—'}
+                </bdi>
+              </dd>
+            </div>
+            <div>
+              <dt>{ar ? '\u0627\u0644\u0645\u0646\u0637\u0642\u0629' : 'Location'}</dt>
+              <dd>
+                <bdi>{student.location || '—'}</bdi>
+              </dd>
+            </div>
+            <div>
+              <dt>
+                {ar
+                  ? '\u0633\u0646\u0629 \u0627\u0644\u0645\u064a\u0644\u0627\u062f'
+                  : 'Birth year'}
+              </dt>
+              <dd>{student.birthYear ?? '\u2014'}</dd>
+            </div>
+          </dl>
+          <div className="student-detail-courses">
+            <h2>{ar ? 'الدورات' : 'Courses'}</h2>
+            {activeCourses.length ? (
+              <ul>
+                {activeCourses.map((course) => (
+                  <li key={course.id}>
+                    <bdi>{course.name}</bdi>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">{ar ? 'لا يوجد' : 'None'}</p>
+            )}
           </div>
-          <div>
-            <dt>{ar ? 'اسم العائلة' : 'Last name'}</dt>
-            <dd dir="auto">{student.lastName || '—'}</dd>
-          </div>
-          <div>
-            <dt>{ar ? 'رقم الهاتف' : 'Phone'}</dt>
-            <dd dir="auto">
-              {student.whatsapp ? (
-                <PhoneNumber value={student.whatsapp} />
-              ) : ar ? (
-                'غير متوفر'
-              ) : (
-                'Not provided'
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt>{ar ? 'المستوى' : 'Level'}</dt>
-            <dd dir="auto">{studentLevel(student, !!courseId, memberships) || '—'}</dd>
-          </div>
-          <div>
-            <dt>{ar ? '\u0627\u0644\u0645\u0646\u0637\u0642\u0629' : 'Location'}</dt>
-            <dd dir="auto">{student.location || '\u2014'}</dd>
-          </div>
-          <div>
-            <dt>
-              {ar ? '\u0633\u0646\u0629 \u0627\u0644\u0645\u064a\u0644\u0627\u062f' : 'Birth year'}
-            </dt>
-            <dd>{student.birthYear ?? '\u2014'}</dd>
-          </div>
-        </dl>
-        <h2>{ar ? 'معلومات الحضور' : 'Attendance information'}</h2>
-        <dl className="student-detail-fields student-detail-totals">
-          <div>
-            <dt>{t('present')}</dt>
-            <dd>{counts.present}</dd>
-          </div>
-          <div>
-            <dt>{t('absent')}</dt>
-            <dd>{counts.absent}</dd>
-          </div>
-          <div>
-            <dt>{t('excused')}</dt>
-            <dd>{counts.excused}</dd>
-          </div>
-          <div>
-            <dt>{ar ? 'الجلسات المسجلة' : 'Recorded sessions'}</dt>
-            <dd>{records.length}</dd>
-          </div>
-          <div>
-            <dt>{ar ? 'نسبة الحضور' : 'Attendance percentage'}</dt>
-            <dd>
-              {records.length ? `${((counts.present / records.length) * 100).toFixed(1)}%` : '—'}
-            </dd>
-          </div>
-        </dl>
-        {canWrite && (
-          <div className="flex flex-wrap gap-2">
-            {eligible && (
+        </div>
+      </section>
+      <div className="student-details-activity">
+        <section
+          className="panel student-details-attendance"
+          aria-labelledby="student-attendance-title"
+        >
+          <header className="student-details-section-heading">
+            <h2 id="student-attendance-title">{t('Attendance')}</h2>
+            {canWrite && eligible && (
               <button
                 className="primary inline-flex min-h-11 items-center gap-2"
                 onClick={() =>
@@ -978,131 +990,149 @@ function StudentDetails({
                 {ar ? 'تسجيل الحضور' : 'Take attendance'}
               </button>
             )}
-            <button
-              className="secondary inline-flex min-h-11 items-center gap-2"
-              onClick={() => setAddingNote(true)}
+          </header>
+          <dl className="student-detail-fields student-detail-totals">
+            <div>
+              <dt>{t('present')}</dt>
+              <dd>{counts.present}</dd>
+            </div>
+            <div>
+              <dt>{t('absent')}</dt>
+              <dd>{counts.absent}</dd>
+            </div>
+            <div>
+              <dt>{t('excused')}</dt>
+              <dd>{counts.excused}</dd>
+            </div>
+            <div>
+              <dt>{ar ? 'الجلسات المسجلة' : 'Recorded sessions'}</dt>
+              <dd>{detailRecords.length}</dd>
+            </div>
+            <div>
+              <dt>{ar ? 'نسبة الحضور' : 'Attendance rate'}</dt>
+              <dd>
+                <bdi>
+                  {detailRecords.length
+                    ? `${((counts.present / detailRecords.length) * 100).toFixed(1)}%`
+                    : '—'}
+                </bdi>
+              </dd>
+            </div>
+          </dl>
+        </section>
+        <section className="panel student-details-notes" aria-labelledby="student-notes-title">
+          <header className="student-details-section-heading">
+            <h2 id="student-notes-title">{ar ? 'ملاحظات الطالب' : 'Student notes'}</h2>
+            {canWrite && (
+              <button
+                className="secondary inline-flex min-h-11 items-center gap-2"
+                onClick={() => setAddingNote(true)}
+              >
+                <StickyNote className="shrink-0" size={18} aria-hidden="true" />
+                {t('Add note')}
+              </button>
+            )}
+          </header>
+          {addingNote && (
+            <form
+              className="role-editor"
+              onSubmit={async (event) => {
+                event.preventDefault()
+                if (!canWrite || saving || !note.trim()) return
+                setSaving(true)
+                if (
+                  await save([
+                    {
+                      kind: 'note',
+                      studentId: student.studentId,
+                      date,
+                      tags: normalizedNoteTags(tags),
+                      text: note,
+                    },
+                  ])
+                ) {
+                  setNote('')
+                  setTags('')
+                  setAddingNote(false)
+                }
+                setSaving(false)
+              }}
             >
-              <StickyNote className="shrink-0" size={18} aria-hidden="true" />
-              {t('Add note')}
-            </button>
-          </div>
-        )}
-        {addingNote && (
-          <form
-            className="role-editor"
-            onSubmit={async (event) => {
-              event.preventDefault()
-              if (!canWrite || saving || !note.trim()) return
-              setSaving(true)
-              if (
-                await save([
-                  {
-                    kind: 'note',
-                    studentId: student.studentId,
-                    date,
-                    tags: normalizedNoteTags(tags),
-                    text: note,
-                  },
-                ])
-              ) {
-                setNote('')
-                setTags('')
-                setAddingNote(false)
-              }
-              setSaving(false)
-            }}
-          >
-            <label>
-              {t('Note')}
-              <textarea
-                required
-                maxLength={10000}
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-              />
-            </label>
-            <label>
-              {t('Tags, separated by commas')}
-              <input value={tags} onChange={(event) => setTags(event.target.value)} />
-            </label>
-            <button className="primary" disabled={!canWrite || saving || !note.trim()}>
-              {t('Save note')}
-            </button>
-            <button type="button" className="secondary" onClick={() => setAddingNote(false)}>
-              {t('Cancel')}
-            </button>
-          </form>
-        )}
-        <h2>
-          {ar
-            ? '\u0645\u0644\u0627\u062d\u0638\u0627\u062a \u0627\u0644\u0637\u0627\u0644\u0628'
-            : 'Student notes'}
-        </h2>
-        <ul
-          aria-label={
-            ar
-              ? '\u0645\u0644\u0627\u062d\u0638\u0627\u062a \u0627\u0644\u0637\u0627\u0644\u0628'
-              : 'Student notes'
-          }
-        >
-          {projected.notes
-            .filter(({ value }) => value.studentId === student.studentId)
-            .map(({ event, value }) => (
-              <li key={event.id}>
-                <time dateTime={value.date}>{value.date}</time>
-                {' \u00b7 '}
-                <span dir="auto" className="whitespace-pre-wrap break-words">
-                  {value.text}
-                </span>
-              </li>
-            ))}
-        </ul>
-        <h2>{ar ? 'الدورات' : 'Courses'}</h2>
-        <p>
-          {courses
-            .filter((course) =>
-              memberships.some((entry) => entry.courseId === course.id && entry.active),
-            )
-            .map((course) => course.name)
-            .join(', ') || (ar ? 'لا يوجد' : 'None')}
-        </p>
+              <label>
+                {t('Note')}
+                <textarea
+                  required
+                  maxLength={10000}
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                />
+              </label>
+              <label>
+                {t('Tags, separated by commas')}
+                <input value={tags} onChange={(event) => setTags(event.target.value)} />
+              </label>
+              <button className="primary" disabled={!canWrite || saving || !note.trim()}>
+                {t('Save note')}
+              </button>
+              <button type="button" className="secondary" onClick={() => setAddingNote(false)}>
+                {t('Cancel')}
+              </button>
+            </form>
+          )}
+          {notes.length ? (
+            <ul className="student-detail-notes" aria-labelledby="student-notes-title">
+              {notes.map(({ event, value }) => (
+                <li key={event.id}>
+                  <time className="muted" dateTime={value.date}>
+                    {value.date}
+                  </time>
+                  <p className="whitespace-pre-wrap">
+                    <bdi>{value.text}</bdi>
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            !addingNote && <p className="muted">{ar ? 'لا توجد ملاحظات' : 'No student notes'}</p>
+          )}
+        </section>
+        <section className="panel student-details-history">
+          <TableToolbar model={detailRecords.length ? detailTable : undefined} className="mb-2">
+            <h2>{ar ? 'سجل الحضور' : 'Attendance history'}</h2>
+          </TableToolbar>
+          {detailRecords.length ? (
+            <div
+              className="role-table-scroll"
+              tabIndex={0}
+              role="region"
+              aria-label={ar ? 'سجل الحضور' : 'Attendance history'}
+            >
+              <table className="mobile-record-table role-table">
+                <TableHeader model={detailTable} />
+                <tbody>
+                  {detailTable.rows.map(({ event, value }) => (
+                    <tr key={event.id}>
+                      <td data-label={ar ? 'التاريخ' : 'Date'}>{value.date}</td>
+                      <td data-label={ar ? 'الدورة' : 'Course'}>
+                        {courses.find((course) =>
+                          memberships.some(
+                            (entry) =>
+                              entry.id === value.enrollmentId && entry.courseId === course.id,
+                          ),
+                        )?.name || (ar ? 'بلا دورة' : 'No course')}
+                      </td>
+                      <td data-label={ar ? 'الحالة' : 'Status'}>{t(value.status)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="muted">{ar ? 'لا توجد سجلات حضور' : 'No attendance records'}</p>
+          )}
+        </section>
       </div>
-      <div className="student-details-history">
-        <TableToolbar model={records.length ? detailTable : undefined} className="mb-2">
-          <h2>{ar ? 'سجل الحضور' : 'Attendance history'}</h2>
-        </TableToolbar>
-        {records.length ? (
-          <div
-            className="role-table-scroll"
-            tabIndex={0}
-            role="region"
-            aria-label={ar ? 'سجل الحضور' : 'Attendance history'}
-          >
-            <table className="mobile-record-table role-table">
-              <TableHeader model={detailTable} />
-              <tbody>
-                {detailTable.rows.map(({ event, value }) => (
-                  <tr key={event.id}>
-                    <td data-label={ar ? 'التاريخ' : 'Date'}>{value.date}</td>
-                    <td data-label={ar ? 'الدورة' : 'Course'}>
-                      {courses.find((course) =>
-                        memberships.some(
-                          (entry) =>
-                            entry.id === value.enrollmentId && entry.courseId === course.id,
-                        ),
-                      )?.name || (ar ? 'بلا دورة' : 'No course')}
-                    </td>
-                    <td data-label={ar ? 'الحالة' : 'Status'}>{t(value.status)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p>{ar ? 'لا توجد سجلات حضور' : 'No attendance records'}</p>
-        )}
-      </div>
-    </section>
+    </div>
   )
 }
 

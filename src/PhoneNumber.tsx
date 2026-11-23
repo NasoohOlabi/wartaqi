@@ -7,9 +7,9 @@ export function PhoneNumber({ value }: { value: string }) {
     <a
       href={href}
       dir="ltr"
+      className="items-center"
       style={{
         display: 'inline-flex',
-        alignItems: 'center',
         minHeight: 44,
         minWidth: 44,
         maxWidth: '100%',

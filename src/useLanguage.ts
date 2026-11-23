@@ -142,7 +142,7 @@ export type Language = 'en' | 'ar'
 export const LanguageContext = createContext<{
   language: Language
   setLanguage: (language: Language) => void
-}>({ language: 'en', setLanguage: () => {} })
+}>({ language: 'ar', setLanguage: () => {} })
 
 export function useLanguage() {
   const { language, setLanguage } = useContext(LanguageContext)

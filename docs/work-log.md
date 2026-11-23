@@ -2289,3 +2289,11 @@ CodeQL flagged substring matching in the test's Telegram request mock. The mock 
 The owner reported that typing a question in the private chat returned the `/menu` hint. The worker now sends ordinary text to the assistant after handling commands, sign-in and active notebook prompts. The command list drops the old prefix, and the prompt explains the assistant's model and tool capabilities when asked.
 
 The old worker reproduced the reported behavior with zero inference calls. Focused tests check the same plain-text path, command and workflow routing, sensitive input rejection and report references. Live LM Studio answered the plain-text model and tools question with the configured model ID and explained the tool limits. An Arabic question returned the expected notebook command. Both used the worker's normal update handler with simulated Telegram delivery. The report command recorded the same trace as the first reply. The PR records Railway verification.
+
+## 2026-11-23 19:47 Asia/Damascus — Default to Arabic and reorganize student details
+
+The owner requested Arabic as the default and a clearer student profile on desktop and phones. The homepage, sign-in, notebook and application connection pages open in Arabic and RTL. Explicit language choices persist. Existing devices start in Arabic once because the previous setting mixed automatic defaults with explicit choices.
+
+Student details align the profile fields and courses, group attendance totals with history, and give notes their own panel. Phones keep Add note above attendance history and use labelled records without sideways scrolling. The Level field uses the active course selection or the roster level in the all-students view.
+
+Focused synthetic browser checks covered fresh and returning Arabic startup, English persistence, storage denial, bilingual application connections, attendance history sorting, and course-specific levels. Desktop coverage spans 1624/1920/2560px with the first attendance record visible at 560px tall. Phone coverage spans 320/390/430px in both languages. The PR records release and deployment verification. The local browser checks use synthetic records and emulated phones.

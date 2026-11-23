@@ -129,7 +129,8 @@ for (const width of [320, 390, 1280]) {
           return route.fulfill({ json: { accounts: [], teachers: [], students } })
         return route.fulfill({ json: { teacher, students, courses, enrollments, events } })
       })
-      if (ar) await page.addInitScript(() => localStorage.setItem('halaqa-language', 'ar'))
+      if (ar)
+        await page.addInitScript(() => localStorage.setItem('halaqa-language-preference', 'ar'))
       await page.goto('/?page=app')
       await page.getByRole('button', { name: ar ? 'الدورات' : 'Courses', exact: true }).click()
       await clickRecordAction(
