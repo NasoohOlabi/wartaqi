@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { AttendanceReplayAction, AttendanceReplaySnapshot } from '../shared/attendanceReplay'
+import { describeAttendanceReplayAction } from './attendanceReplayLabels'
 import { AttendanceRows } from './AttendanceRows'
 import { LanguageContext, type Language } from './useLanguage'
 import './AttendanceReplayView.css'
@@ -24,34 +25,7 @@ export function AttendanceReplayView({
     if (row.top < bounds.top || row.bottom > bounds.bottom)
       viewport.scrollTop += row.top - bounds.top
   }, [action])
-  const name =
-    action && 'studentId' in action
-      ? snapshot.rows.find((row) => row.id === action.studentId)?.name
-      : undefined
-  const status =
-    action?.kind === 'mark'
-      ? {
-          present: ar ? 'حاضر' : 'present',
-          absent: ar ? 'غائب' : 'absent',
-          excused: ar ? 'معذور' : 'excused',
-        }[action.status]
-      : ''
-  const actionLabels = {
-    mark: ar ? 'تسجيل الحضور' : 'Marked attendance',
-    student: ar ? 'فتح بيانات الطالب' : 'Opened student details',
-    note: ar ? 'فتح ملاحظة' : 'Opened note',
-    correction: ar ? 'فتح التصحيح' : 'Opened correction',
-    save: ar ? 'ضغط حفظ الحضور' : 'Clicked Save attendance',
-    bulk: ar ? 'تسجيل غير المسجلين حاضرين' : 'Marked unrecorded students present',
-    unmarked: ar ? 'تبديل عرض غير المسجلين' : 'Toggled unmarked filter',
-    date: ar ? 'فتح تاريخ الجلسة' : 'Opened session date',
-  }
-  const label =
-    action?.kind === 'mark' && name
-      ? ar
-        ? `تم تسجيل ${name}: ${status}`
-        : `Marked ${name} ${status}`
-      : action && `${actionLabels[action.kind]}${name ? ` · ${name}` : ''}`
+  const label = action && describeAttendanceReplayAction(snapshot, action, ar)
 
   return (
     <LanguageContext.Provider value={{ language, setLanguage: () => {} }}>

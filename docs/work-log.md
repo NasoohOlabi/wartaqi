@@ -2319,3 +2319,9 @@ The offline check reproduced a broken image because the service worker excluded 
 The owner showed WhatsApp stopping the link at the first quote in the Grades table state. Wartaqi now encodes table sorts and filters with URL-safe Base64 and rewrites legacy JSON links when opened. The existing validation still guards decoded table settings.
 
 The Chromium regression reproduced the punctuation in the decoded link before the fix. After the fix, copied Grades links restored Result order in English and Arabic on desktop and emulated phones. Legacy links and Arabic filter text also survived reopening. The PR records release and deployment verification. Native WhatsApp link detection was outside the browser checks.
+
+## 2026-11-24 00:03 Asia/Damascus — Make session replay easier to read
+
+The owner reported that an Arabic Courses replay showed an almost empty phone-shaped canvas. The player now shows selectable, localized screen and click events with timestamps and grouped playback controls. Attendance frames still show recorded rows, marks, and click highlights. Other screens show the recorded activity. The three-day retention policy stays in place.
+
+Synthetic replay checks exercise a real Courses control click in dark mode on desktop and 320px Arabic mobile. The Attendance checks exercise the recorded table, click highlighting and scrubbing without live notebook requests. The PR records the release and Railway verification.
