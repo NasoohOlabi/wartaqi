@@ -104,6 +104,8 @@ export async function mockSyntheticNotebook(
         return route.fulfill({ json: { accounts: [] } })
       case '/api/me':
         return route.fulfill({ json: { account: teacher } })
+      case '/api/diagnostics':
+        return route.fulfill({ json: { ok: true } })
       case '/api/admin':
         return route.fulfill({ json: { accounts: [], teachers: [], students: [] } })
       case '/api/events': {

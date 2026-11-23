@@ -27,7 +27,7 @@ async function expectSettingsRow(navigation: Locator, rtl: boolean) {
       return { top, width, height, right, left, viewport: innerWidth }
     }),
   )
-  expect(boxes).toHaveLength(3)
+  expect(boxes).toHaveLength(4)
   for (const box of boxes) {
     expect(box.width).toBeGreaterThanOrEqual(44)
     expect(box.height).toBeGreaterThanOrEqual(44)
@@ -35,7 +35,7 @@ async function expectSettingsRow(navigation: Locator, rtl: boolean) {
     expect(box.left).toBeGreaterThanOrEqual(0)
     expect(box.right).toBeLessThanOrEqual(box.viewport)
   }
-  expect(rtl ? boxes[0].left >= boxes[2].right : boxes[0].right <= boxes[2].left).toBe(true)
+  expect(rtl ? boxes[0].left >= boxes[3].right : boxes[0].right <= boxes[3].left).toBe(true)
 }
 
 async function mockAuth(page: Page, id: string, image: string | null = null) {
@@ -126,6 +126,7 @@ test('student sees only their attendance and loses it after access is denied', a
     const headers = cors(req.headers()['access-control-request-headers'])
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
     const path = new URL(req.url()).pathname
+    if (path === '/api/diagnostics') return route.fulfill({ json: { ok: true }, headers })
     paths.push(path)
     if (path === '/api/device-accounts')
       return route.fulfill({
@@ -307,6 +308,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     const headers = cors(req.headers()['access-control-request-headers'])
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
     const path = new URL(req.url()).pathname
+    if (path === '/api/diagnostics') return route.fulfill({ json: { ok: true }, headers })
     if (path === '/api/notebook') {
       notebookReads++
       return route.fulfill({
@@ -486,6 +488,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     'Accounts',
     'Students',
     'History & corrections',
+    'Diagnostics',
   ])
   const accountsSection = settingsSections.getByRole('link', { name: 'Accounts' })
   const studentsSection = settingsSections.getByRole('link', { name: 'Students' })

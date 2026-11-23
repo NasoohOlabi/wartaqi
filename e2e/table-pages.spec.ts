@@ -103,6 +103,7 @@ async function syntheticTables(
   await page.route('**/api/**', async (route) => {
     const req = route.request()
     const path = new URL(req.url()).pathname
+    if (path === '/api/diagnostics') return route.fulfill({ json: { ok: true } })
     if (req.method() !== 'GET') writes.push(path)
     if (path.startsWith('/api/auth/')) {
       const now = new Date().toISOString()

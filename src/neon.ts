@@ -1,5 +1,8 @@
 ﻿import { createAuthClient } from 'better-auth/react'
 import { z } from 'zod'
+import { accountFetch } from './accountRequest'
+import { recordDiagnosticAction } from './diagnostics'
+import type { DiagnosticsAction } from '../shared/diagnostics'
 import { neonAccountSchema, neonBatchSchema, neonSnapshotSchema } from '../shared/neon'
 import type { LedgerEvent } from '../shared/ledger'
 
@@ -52,6 +55,26 @@ export class AccessDeniedEvent extends Event {
   }
 }
 
+const diagnosticWrites: Readonly<Partial<Record<string, DiagnosticsAction>>> = {
+  '/api/admin/accounts/disable': 'account',
+  '/api/admin/accounts/grant': 'account',
+  '/api/admin/accounts/invite': 'account',
+  '/api/admin/accounts/invite-message': 'account',
+  '/api/admin/accounts/reset-password-generated': 'account',
+  '/api/admin/accounts/verify-phone': 'account',
+  '/api/admin/courses': 'course',
+  '/api/admin/courses/settings': 'course',
+  '/api/admin/courses/status': 'course',
+  '/api/admin/enrollments/decision': 'grade',
+  '/api/admin/enrollments/grades': 'grade',
+  '/api/admin/enrollments/handbook': 'enrollment',
+  '/api/admin/enrollments/membership': 'enrollment',
+  '/api/admin/students': 'student',
+  '/api/admin/students/enroll': 'enrollment',
+  '/api/me/invitation-profile': 'profile',
+  '/api/student/update': 'student',
+}
+
 export async function request(
   path: string,
   userId: string,
@@ -67,15 +90,15 @@ export async function request(
     throw new NeonRequestError(403)
   }
   if (!signedInUserId) throw new Error('Your session changed. Please sign in again.')
-  const response = await fetch(`${apiUrl}${path}`, {
-    method: body !== undefined ? 'POST' : 'GET',
-    headers: {
-      'X-User-Id': userId,
-      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    signal: AbortSignal.timeout(15000),
-  })
+  const action = body !== undefined ? diagnosticWrites[path] : undefined
+  let response: Response
+  try {
+    response = await accountFetch(path, userId, body)
+  } catch (error) {
+    if (action) recordDiagnosticAction(userId, action, 'failed')
+    throw error
+  }
+  if (action) recordDiagnosticAction(userId, action, response.ok ? 'saved' : 'failed')
   if (!response.ok) {
     if (reportDenial && (response.status === 401 || response.status === 403))
       window.dispatchEvent(new AccessDeniedEvent(userId, response.status))

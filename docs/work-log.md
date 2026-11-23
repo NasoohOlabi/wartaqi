@@ -2249,3 +2249,9 @@ The profile browser scenarios check bilingual button labels, icons, touch target
 The owner reported that Telegram accepted their shared contact, then rejected sign-in even though the number matched the student roster. The server now uses the contact from **Share my phone** to open **My attendance** when the phone belongs to one active roster record. A roster grant needs no website account and checks the current phone and access on each request. Verified account sign-in still takes precedence.
 
 A disposable PostgreSQL test reproduced the 403 on the previous server and exercises the successful roster sign-in, attendance projection, duplicate numbers, phone changes, withdrawal, expiry and unlinking. Bilingual Telegram tests simulate the contact share and recovery flow. Native Telegram delivery requires a separate client check. The PR records the release checks and Railway deployment.
+
+## 2026-11-23 15:06 Asia/Damascus — Add website diagnostics
+
+The owner requested database-backed journeys, interactions and Web Vitals. The signed-in website records fixed screen and action labels, safe browser metrics and error categories using the shared account-bound request transport. Settings → Diagnostics shows 30 days of journeys and timelines to Administrators. The notebook's save and sync path retains its own durability rules.
+
+The disposable PostgreSQL test covers authorization, strict input, concurrent replay, saved rows, chronological paging and expiry. The English and Arabic browser scenarios cover capture, timeline and narrow layout. A browser against the Bun server and disposable Postgres saved a synthetic profile change, verified the diagnostic row and Administrator timeline, and confirmed Teacher read denial. The additive migration was applied over the private Railway connection before merge, and PostgreSQL confirmed the table and its account foreign key. The PR records the guarded release and live verification.

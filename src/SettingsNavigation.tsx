@@ -3,13 +3,18 @@ import { NavigationMenu } from '@base-ui/react/navigation-menu'
 import { queryHref, setQuery } from './queryState'
 import { useLanguage } from './useLanguage'
 
-export function SettingsNavigation({ current }: { current: 'accounts' | 'students' | 'history' }) {
+export function SettingsNavigation({
+  current,
+}: {
+  current: 'accounts' | 'students' | 'history' | 'diagnostics'
+}) {
   const { language, t } = useLanguage()
   const ar = language === 'ar'
   const sections = [
     { id: 'accounts', label: ar ? 'الحسابات' : 'Accounts' },
     { id: 'students', label: t('Students') },
     { id: 'history', label: t('History & corrections') },
+    { id: 'diagnostics', label: ar ? 'التشخيص' : 'Diagnostics' },
   ]
   return (
     <DirectionProvider direction={ar ? 'rtl' : 'ltr'}>
@@ -23,7 +28,7 @@ export function SettingsNavigation({ current }: { current: 'accounts' | 'student
               id === 'history' && current === 'history'
                 ? {}
                 : {
-                    view: id === 'history' ? 'history' : 'settings',
+                    view: id === 'history' || id === 'diagnostics' ? id : 'settings',
                     settingsSection: id === 'students' ? id : '',
                     student: '',
                     account: '',

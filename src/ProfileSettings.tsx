@@ -62,6 +62,11 @@ export function ProfileSettings({
         {ar ? 'العودة' : 'Back'}
       </button>
       <h1>{ar ? 'إعدادات الملف الشخصي' : 'Profile settings'}</h1>
+      <p className="muted">
+        {ar
+          ? 'يسجّل وارتق نشاط استخدام التطبيق وأداء المتصفح لأغراض التشخيص لمدة 30 يومًا.'
+          : 'Wartaq keeps app activity and browser performance diagnostics for 30 days.'}
+      </p>
       <form
         onSubmit={async (event) => {
           event.preventDefault()

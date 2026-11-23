@@ -52,6 +52,9 @@ import type { Profile } from './ProfileMenu'
 import { ProfileSettings } from './ProfileSettings'
 import { teacherStudentUpdateSchema, type NeonTeacher } from '../shared/neon'
 import { OfflineAttendance } from './OfflineAttendance'
+import { DiagnosticsPage } from './DiagnosticsPage'
+import { useDiagnostics } from './diagnostics'
+import { diagnosticsScreenSchema, type DiagnosticsScreen } from '../shared/diagnostics'
 
 type Projection = ReturnType<typeof projectEvents>
 type Save = (payloads: Payload[]) => Promise<boolean>
@@ -62,44 +65,86 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
   const query = useQueryState()
   return (
     <NeonAuth onSignOut={goHome}>
-      {(userId, account, signOut, profile, cached) =>
-        !cached && query.view === 'invitation-message' && account.role === 'administrator' ? (
-          <InvitationMessageViewer
-            key={`${userId}:${query.inviteMessage}`}
+      {(userId, account, signOut, profile, cached) => (
+        <>
+          <DiagnosticsCapture
+            key={userId}
             userId={userId}
-            requestId={query.inviteMessage}
-          />
-        ) : !cached && query.view === 'profile' ? (
-          <ProfileSettings key={userId} profile={profile} signOut={signOut} role={account.role} />
-        ) : account.role === 'student' ? (
-          <StudentAttendance key={userId} userId={userId} signOut={signOut} profile={profile} />
-        ) : !cached &&
-          account.role === 'administrator' &&
-          (query.view === 'settings' ||
-            query.view === 'administration' ||
-            query.view === 'add-student') ? (
-          <AdminConsole
-            key={`${userId}:${query.view === 'add-student'}`}
-            userId={userId}
-            signOut={signOut}
-            profile={profile}
-            initialCreateStudent={query.view === 'add-student'}
-            courseId={
-              query.view === 'add-student' && query.courseView === 'students' ? query.course : ''
+            cached={Boolean(cached)}
+            screen={
+              query.view === 'diagnostics'
+                ? null
+                : query.view === 'profile' && !cached
+                  ? 'profile'
+                  : account.role === 'student'
+                    ? 'student-portal'
+                    : query.view === 'notebook'
+                      ? query.tab
+                      : query.view === 'settings' || query.view === 'administration'
+                        ? query.settingsSection === 'students'
+                          ? 'settings-students'
+                          : 'settings-accounts'
+                        : query.view === 'courses'
+                          ? (diagnosticsScreenSchema.safeParse(`course-${query.courseView}`).data ??
+                            'courses')
+                          : query.view === 'invitation-message'
+                            ? 'invitation'
+                            : query.view
             }
           />
-        ) : (
-          <Notebook
-            key={userId}
-            neon={{ userId, teacher: account }}
-            leave={signOut}
-            profile={profile}
-            cached={cached}
-          />
-        )
-      }
+          {!cached && query.view === 'diagnostics' && account.role === 'administrator' ? (
+            <DiagnosticsPage userId={userId} profile={profile} signOut={signOut} />
+          ) : !cached && query.view === 'invitation-message' && account.role === 'administrator' ? (
+            <InvitationMessageViewer
+              key={`${userId}:${query.inviteMessage}`}
+              userId={userId}
+              requestId={query.inviteMessage}
+            />
+          ) : !cached && query.view === 'profile' ? (
+            <ProfileSettings key={userId} profile={profile} signOut={signOut} role={account.role} />
+          ) : account.role === 'student' ? (
+            <StudentAttendance key={userId} userId={userId} signOut={signOut} profile={profile} />
+          ) : !cached &&
+            account.role === 'administrator' &&
+            (query.view === 'settings' ||
+              query.view === 'administration' ||
+              query.view === 'add-student') ? (
+            <AdminConsole
+              key={`${userId}:${query.view === 'add-student'}`}
+              userId={userId}
+              signOut={signOut}
+              profile={profile}
+              initialCreateStudent={query.view === 'add-student'}
+              courseId={
+                query.view === 'add-student' && query.courseView === 'students' ? query.course : ''
+              }
+            />
+          ) : (
+            <Notebook
+              key={userId}
+              neon={{ userId, teacher: account }}
+              leave={signOut}
+              profile={profile}
+              cached={cached}
+            />
+          )}
+        </>
+      )}
     </NeonAuth>
   )
+}
+
+function DiagnosticsCapture({
+  userId,
+  screen,
+  cached,
+}: {
+  userId: string
+  screen: DiagnosticsScreen | null
+  cached: boolean
+}) {
+  useDiagnostics(userId, screen, cached)
+  return null
 }
 
 function Notebook({
