@@ -2296,6 +2296,8 @@ The owner asked to remove reports and trace IDs from chat replies and review the
 
 Focused worker tests verify plain replies, the authenticated transcript write and failures independent of Telegram delivery. A live LM Studio reply reached simulated Telegram without a reference and was stored in disposable Postgres. Real sessions against the Bun server verified Administrator access and denial for Teachers and forged accounts. Database tests also cover deduplication, pagination and retention. Synthetic browser tests exercise conversation navigation and text rendering in English and Arabic at phone and desktop widths. The PR records the guarded migration and live verification.
 
+The release check found that the Arabic bot description and `/help` still lacked the three-day disclosure. Both Arabic surfaces now explain who can review assistant messages and remind users to keep personal information out of questions.
+
 ## 2026-11-23 19:47 Asia/Damascus — Default to Arabic and reorganize student details
 
 The owner requested Arabic as the default and a clearer student profile on desktop and phones. The homepage, sign-in, notebook and application connection pages open in Arabic and RTL. Explicit language choices persist. Existing devices start in Arabic once because the previous setting mixed automatic defaults with explicit choices.
