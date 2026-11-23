@@ -88,10 +88,12 @@ test('only explicit private questions reach inference and reports are chat bound
   globalThis.fetch = Object.assign(
     async (input: string | URL | Request, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body))
-      if (String(input).includes('api.telegram.org')) {
+      const url = new URL(input instanceof Request ? input.url : input)
+      if (url.origin === 'https://api.telegram.org') {
         messages.push(body.text)
         return Response.json({ ok: true, result: { message_id: 1 } })
       }
+      expect(url.href).toBe('https://model.example/v1/chat/completions')
       requests.push(JSON.stringify(body))
       return Response.json({
         choices: [{ finish_reason: 'stop', message: { content: 'Use /menu.' } }],

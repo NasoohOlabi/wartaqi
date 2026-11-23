@@ -2281,3 +2281,5 @@ The owner requested local inference with a clear prompt and traceable assistant 
 Railway logs correlate inference, validation, delivery and user reports by a reference shown in the reply. The worker records timing, outcomes and token counts when available. A chat-bound report reference expires after 24 hours. The startup probe checks inference independently of polling health. The three LM Studio variables are scoped to the Telegram service.
 
 Focused tests cover reply routing, credential flow isolation, report ownership, redaction and malformed or timed-out provider responses. The Telegram image completed a synthetic request with Railway variables injected locally. Real LM Studio also answered English and Arabic synthetic questions through the worker, using a simulated Telegram endpoint. Native Telegram chat delivery requires a client check. The PR records the CI and deployed startup probe results.
+
+CodeQL flagged substring matching in the test's Telegram request mock. The mock now checks the parsed Telegram origin and asserts the exact LM Studio endpoint. The production transport was unaffected.
