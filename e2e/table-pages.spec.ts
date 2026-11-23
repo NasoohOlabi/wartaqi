@@ -563,6 +563,16 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
     await page.getByRole('button', { name: ar ? 'إغلاق' : 'Close', exact: true }).click()
     await expect(rows).toHaveCount(1)
     await expect(rows.first().locator('.roster-mobile-open')).toHaveText('Zulu Family')
+    if (ar) {
+      await filter.click()
+      const search = page.getByRole('dialog').getByRole('searchbox')
+      const value = '"طالب"'
+      await search.fill(value)
+      await page.goto(page.url())
+      await filter.click()
+      await expect(search).toHaveValue(value)
+      await page.keyboard.press('Escape')
+    }
     await sort.click()
     await page
       .getByRole('button', { name: ar ? 'مسح الفرز والتصفية' : 'Clear sort and filters' })
@@ -766,18 +776,22 @@ test('grade sorting is numeric, keeps drafts, and ignores stale filters', async 
 
 test('result sorting ranks status then average without writes', async ({ page }) => {
   const { writes, snapshot } = await syntheticTables(page, 'administrator', 'Alpha course', true)
-  await page.goto(`/?page=app&view=courses&course=${courseId}&courseView=grades`)
+  const grades = `/?page=app&view=courses&course=${courseId}&courseView=grades`
+  await page.goto(grades)
   const names = page.locator('table tbody tr td:first-child')
   for (const language of ['en', 'ar']) {
     await expect(page.locator('.profile-trigger')).toBeVisible()
     if (language === 'ar')
       await clickAccountAction(page, '\u0627\u0644\u0639\u0631\u0628\u064a\u0629')
-    await page.goto(`/?page=app&view=courses&course=${courseId}&courseView=grades`)
+    await page.goto(grades)
     await sortFromToolbar(page, { column: 'result', ar: language === 'ar' })
     await expect(names).toHaveText(['Echo', 'Foxtrot', 'Delta', 'Charlie', 'Alpha', 'Zulu'])
     await sortFromToolbar(page, { column: 'result', descending: true, ar: language === 'ar' })
     await expect(names).toHaveText(['Zulu', 'Alpha', 'Charlie', 'Delta', 'Foxtrot', 'Echo'])
-    await page.reload()
+    const shared = page.url()
+    expect(new URL(shared).searchParams.get('tables')).toMatch(/^[A-Za-z0-9_-]+$/)
+    await page.goto(grades)
+    await page.goto(shared)
     await expect(names).toHaveText(['Zulu', 'Alpha', 'Charlie', 'Delta', 'Foxtrot', 'Echo'])
     await page
       .getByLabel(
@@ -790,6 +804,12 @@ test('result sorting ranks status then average without writes', async ({ page })
     await expect(names).toHaveText(['Alpha', 'Charlie', 'Delta', 'Zulu', 'Foxtrot', 'Echo'])
     await page.reload()
   }
+  const legacy = encodeURIComponent(
+    JSON.stringify({ grades: { sorting: [{ id: 'result', desc: true }], filters: [] } }),
+  ).replaceAll('%22', '"')
+  await page.goto(`${grades}&tables=${legacy}`)
+  await expect(names).toHaveText(['Zulu', 'Alpha', 'Charlie', 'Delta', 'Foxtrot', 'Echo'])
+  expect(new URL(page.url()).searchParams.get('tables')).toMatch(/^[A-Za-z0-9_-]+$/)
   for (const entry of snapshot.enrollments) {
     if (entry.studentId !== studentIds[1] && entry.studentId !== studentIds[4]) continue
     entry.gradeDecisions.push({
