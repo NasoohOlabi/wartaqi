@@ -412,7 +412,7 @@ test('private updates use bound, single-use choices and never replay a duplicate
     await worker.process(callback(5, 123))
     expect(mcpCalls).toBe(after)
     await worker.process(message(6, 'unsolicited'))
-    expect(deliveries.at(-1)?.text).toContain('/menu')
+    expect(deliveries.at(-1)?.text).toContain('assistant is unavailable')
     worker.store.set('generation:123', 'prompt-generation')
     worker.store.set('prompt:123', {
       user: 123,
@@ -565,7 +565,7 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
           ...extra,
         },
       })
-    await send(2, 'invalid')
+    await send(2, '0912')
     expect(String(messages.at(-1)?.text)).toContain('/linkaccount')
     await send(3, '0991234567')
     expect(requests).toHaveLength(0)

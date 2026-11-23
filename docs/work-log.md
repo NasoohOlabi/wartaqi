@@ -2283,3 +2283,9 @@ Railway logs correlate inference, validation, delivery and user reports by a ref
 Focused tests cover reply routing, credential flow isolation, report ownership, redaction and malformed or timed-out provider responses. The Telegram image completed a synthetic request with Railway variables injected locally. Real LM Studio also answered English and Arabic synthetic questions through the worker, using a simulated Telegram endpoint. Native Telegram chat delivery requires a client check. The PR records the CI and deployed startup probe results.
 
 CodeQL flagged substring matching in the test's Telegram request mock. The mock now checks the parsed Telegram origin and asserts the exact LM Studio endpoint. The production transport was unaffected.
+
+## 2026-11-23 19:44 Asia/Damascus — Answer ordinary Telegram messages
+
+The owner reported that typing a question in the private chat returned the `/menu` hint. The worker now sends ordinary text to the assistant after handling commands, sign-in and active notebook prompts. The command list drops the old prefix, and the prompt explains the assistant's model and tool capabilities when asked.
+
+The old worker reproduced the reported behavior with zero inference calls. Focused tests check the same plain-text path, command and workflow routing, sensitive input rejection and report references. Live LM Studio answered the plain-text model and tools question with the configured model ID and explained the tool limits. An Arabic question returned the expected notebook command. Both used the worker's normal update handler with simulated Telegram delivery. The report command recorded the same trace as the first reply. The PR records Railway verification.

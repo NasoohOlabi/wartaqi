@@ -21,9 +21,9 @@ Teacher phone sign-in uses the same classroom tools and assignment permissions a
 
 ## Ask about Wartaq
 
-In the private bot chat, send `/ask How do I take attendance?` or `/ask كيف أسجّل الحضور؟`. You can ask how to link an account, use the menus or find a feature before signing in. The assistant gives instructions. Open `/menu` to view or change records through the usual account checks.
+Type a question directly in the private bot chat, such as **How do I take attendance?** or **كيف أسجّل الحضور؟**. You can ask how to link an account, use the menus or find a feature before signing in. The assistant gives instructions. Open `/menu` to view or change records through the usual account checks.
 
-The bot sends the question to the Wartaq operator's LM Studio host for inference. Keep passwords, link codes, phone numbers and student details out of questions. Use `/report <reference>` in the same private chat to flag an answer or a failure within 24 hours. Copy the reference from the bot reply.
+The bot sends ordinary chat text to the Wartaq operator's LM Studio host for inference. Commands, button actions and replies requested by an active sign-in or notebook workflow follow their usual paths. Use `/cancel` to exit an active workflow and ask a question. Keep passwords, link codes, phone numbers and student details out of questions. Use `/report <reference>` in the same private chat to flag an answer or a failure within 24 hours. Copy the reference from the bot reply.
 
 ## Editing a conversation
 
