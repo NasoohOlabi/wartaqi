@@ -364,7 +364,7 @@ test('wide student details align profile fields, attendance and notes', async ({
       kind: 'note',
       studentId: studentIds[0],
       date: '2026-11-14',
-      tags: [],
+      tags: ['revision'],
       text: 'Review the next passage.',
     }),
   )

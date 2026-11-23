@@ -1,5 +1,5 @@
 import { mockSyntheticNotebook } from './syntheticNotebook'
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import { createServer, type Server } from 'node:http'
 import { readFile, readdir, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -87,6 +87,11 @@ test.afterAll(async () => {
   )
 })
 
+async function openInEnglish(page: Page) {
+  await page.goto(origin + prefix)
+  await page.getByRole('button', { name: 'English', exact: true }).click()
+}
+
 test('repository-scoped PWA installs its real manifest and opens the public shell offline', async ({
   page,
   context,
@@ -163,7 +168,7 @@ test('repository-scoped PWA installs its real manifest and opens the public shel
   })
   expect(cachedUrls.every((url) => url.startsWith(origin + prefix))).toBe(true)
   expect(cachedUrls.some((url) => /private|token=|page=|api\//.test(url))).toBe(false)
-  await page.getByRole('combobox', { name: 'Color theme' }).selectOption('dark')
+  await page.getByRole('combobox', { name: 'المظهر' }).selectOption('dark')
   await context.setOffline(true)
   const bypasses = await page.evaluate(async () =>
     Promise.all(
@@ -183,10 +188,12 @@ test('repository-scoped PWA installs its real manifest and opens the public shel
   expect(bypasses).toEqual([true, true, true, true])
   await page.reload()
   await expect(page.locator('.wartaq-home h1')).toBeVisible()
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ar')
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl')
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#181a1b')
-  await expect(page.getByRole('combobox', { name: 'Color theme' })).toHaveValue('dark')
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+  await expect(page.getByRole('combobox', { name: 'المظهر' })).toHaveValue('dark')
+  await page.getByRole('button', { name: 'تسجيل الدخول', exact: true }).click()
   await expect(page.locator('.workspace-loading, .workspace-auth')).toBeVisible()
   await expect(page.locator('.workspace')).toHaveCount(0)
   await page.goto(origin + prefix + '?page=app&tab=attendance&date=2026-11-18')
@@ -233,7 +240,7 @@ test('normal refresh upgrades a legacy worker without disturbing another tab', a
   legacyWorker = true
   htmlVersion = 'one'
   try {
-    await page.goto(origin + prefix)
+    await openInEnglish(page)
     await page.evaluate(() => navigator.serviceWorker.ready)
     await page.reload()
     await expect(page.locator('meta[name=test-version]')).toHaveAttribute('content', 'one')
@@ -345,7 +352,7 @@ for (const outcome of ['empty', 'rejected', 'unrelated']) {
               ),
       })
     }, outcome)
-    await page.goto(origin + prefix)
+    await openInEnglish(page)
     await page.getByRole('button', { name: 'Install Wartaq', exact: true }).click()
     await expect(page.getByRole('button', { name: 'Close install help' })).toBeVisible()
   })
@@ -366,7 +373,7 @@ test('install button uses the Web Install API without a deferred prompt and hand
       },
     })
   })
-  await page.goto(origin + prefix)
+  await openInEnglish(page)
   await page.getByRole('button', { name: 'Install Wartaq', exact: true }).click()
   await expect(page.locator('html')).toHaveAttribute('data-install-calls', '1')
   await expect(page.locator('html')).toHaveAttribute('data-install-activation', 'true')
@@ -381,7 +388,7 @@ test('install button calls the deferred native prompt once and localizes dismiss
   page,
 }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, 'install', { value: undefined }))
-  await page.goto(origin + prefix)
+  await openInEnglish(page)
   await page.evaluate(() => {
     const event = new Event('beforeinstallprompt', { cancelable: true })
     Object.defineProperties(event, {
@@ -418,7 +425,7 @@ test('phone install help preserves language and is hidden when already standalon
     Object.defineProperty(navigator, 'maxTouchPoints', { value: 5 })
   })
   await page.setViewportSize({ width: 320, height: 568 })
-  await page.goto(origin + prefix)
+  await openInEnglish(page)
   await page.getByRole('button', { name: 'Install Wartaq', exact: true }).click()
   await expect(page.locator('.install-guidance')).toContainText(
     'In Safari, tap Share, then Add to Home Screen.',
