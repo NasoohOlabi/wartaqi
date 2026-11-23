@@ -1,0 +1,12 @@
+.attendance-replay [data-replay-highlight='true'] {
+  outline: 3px solid #2563eb;
+  outline-offset: -3px;
+}
+.attendance-replay-rows {
+  max-height: min(55vh, 32rem);
+  overflow: auto;
+}
+.attendance-replay .attendance-segment:disabled,
+.attendance-replay .student-name-link:disabled {
+  opacity: 1;
+}

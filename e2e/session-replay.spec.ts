@@ -23,10 +23,11 @@ for (const language of ['en', 'ar'] as const) {
       const url = new URL(route.request().url())
       if (url.pathname === replayPath && route.request().method() === 'POST') {
         const body = route.request().postData() ?? ''
-        expect(body).not.toMatch(
-          /Private Student Example|hidden-search-example|hidden-form-example/,
-        )
+        expect(body).not.toMatch(/hidden-search-example|hidden-form-example/)
         const batch = replayBatchSchema.parse(JSON.parse(body))
+        expect(JSON.stringify(batch.frames.filter((frame) => !frame.attendance))).not.toContain(
+          'Private Student Example',
+        )
         journeyId = batch.journeyId
         frames.push(...batch.frames)
         return route.fulfill({ json: { ok: true } })
@@ -52,7 +53,9 @@ for (const language of ['en', 'ar'] as const) {
       expect(url.pathname).toBe(replayPath)
       expect(url.searchParams.get('journey')).toBe(journeyId)
       expect(url.searchParams.get('actor')).toBe(actorId)
-      return route.fulfill({ json: { items: frames.slice(0, 20), nextAfter: null } })
+      return route.fulfill({
+        json: { items: frames.filter((frame) => !frame.attendance).slice(0, 20), nextAfter: null },
+      })
     })
     await page.goto('/?page=app&q=hidden-search-example')
     await expect(page.getByRole('heading', { name: 'Attendance & notes' })).toBeVisible()

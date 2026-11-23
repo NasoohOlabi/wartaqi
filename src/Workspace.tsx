@@ -1,6 +1,4 @@
 import { DirectionProvider } from '@base-ui/react/direction-provider'
-import { Toggle } from '@base-ui/react/toggle'
-import { ToggleGroup } from '@base-ui/react/toggle-group'
 import { RowActions } from './RowActions'
 import { LevelInput } from './level'
 import { formatLevel } from './levelFormat'
@@ -10,7 +8,6 @@ import { useDataTable } from './useDataTable'
 import { matchesText } from './studentSearch'
 import {
   ArrowLeft,
-  Check,
   ChevronRight,
   CircleCheck,
   CircleMinus,
@@ -19,10 +16,12 @@ import {
   RefreshCw,
   StickyNote,
   UserRound,
-  X,
 } from 'lucide-react'
 import { useLanguage, type TranslationKey } from './useLanguage'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { AttendanceRows } from './AttendanceRows'
+import { registerAttendanceReplay } from './attendanceReplayCapture'
+import { attendanceReplayMaxRows } from '../shared/attendanceReplay'
 import {
   projectEvents,
   normalizeStatus,
@@ -655,6 +654,7 @@ function Notebook({
             {tab === 'attendance' && query.course && !closedCourse && (
               <AttendanceView
                 key={`${query.date}:${query.course}`}
+                userId={userId}
                 draft={sessionDrafts[sessionKey] ?? {}}
                 setDraft={(draft) =>
                   setSessionDrafts((previous) => ({ ...previous, [sessionKey]: draft }))
@@ -1117,6 +1117,7 @@ function studentLevel(
 }
 
 function AttendanceView({
+  userId,
   draft,
   setDraft,
   students,
@@ -1132,6 +1133,7 @@ function AttendanceView({
   canCorrect,
   onOpenStudent,
 }: {
+  userId: string
   draft: Record<string, string>
   setDraft: (draft: Record<string, string>) => void
   canCorrect: boolean
@@ -1192,128 +1194,35 @@ function AttendanceView({
   const unmarked = visible.filter(
     (student) => !current.has(student.studentId) && !draft[student.studentId],
   )
-  const addNoteButton = (student: Student) => (
-    <button
-      type="button"
-      className="attendance-note-button"
-      aria-label={`${t('Add note for')} ${student.name}`}
-      title={t('Add note')}
-      aria-haspopup="dialog"
-      onClick={() => {
-        setNoteStudent(student)
-        noteDialog.current?.showModal()
-      }}
-    >
-      <StickyNote size={18} aria-hidden="true" />
-    </button>
-  )
-  const rows = (items: Student[]) => (
-    <div
-      className="role-table-scroll"
-      role="region"
-      aria-label={language === 'ar' ? 'قائمة الحضور' : 'Attendance list'}
-      tabIndex={0}
-    >
-      <table className="mobile-record-table role-table roster-table">
-        <colgroup>
-          <col />
-          <col className="roster-level-column" />
-          <col />
-          <col
-            className={
-              canCorrect ? 'roster-attendance-correction-column' : 'roster-attendance-column'
-            }
-          />
-        </colgroup>
-        <TableHeader model={attendanceTable} />
-        <tbody>
-          {items.map((student) => (
-            <tr key={student.studentId} data-student-id={student.studentId}>
-              <td className="record-title" data-label={t('Student')}>
-                <button
-                  type="button"
-                  className="student-name-link"
-                  onClick={(event) => onOpenStudent(student.studentId, event.currentTarget)}
-                >
-                  <bdi>{student.name}</bdi>
-                </button>
-              </td>
-              <td data-label={language === 'ar' ? 'المستوى' : 'Level'}>
-                <bdi>{level(student) || '—'}</bdi>
-              </td>
-              <td
-                data-label={language === 'ar' ? '\u0627\u0644\u0645\u0639\u0644\u0645' : 'Teacher'}
-              >
-                <bdi>
-                  {enrollments.find((entry) => entry.studentId === student.studentId)
-                    ?.teacherName || '\u2014'}
-                </bdi>
-              </td>
-              <td data-label={language === 'ar' ? 'الحضور' : 'Attendance'}>
-                <div className="attendance-row-controls">
-                  {language === 'ar' && addNoteButton(student)}
-                  <ToggleGroup
-                    className="attendance-segments"
-                    aria-label={`${t('Attendance for')} ${student.name}`}
-                    value={[
-                      draft[student.studentId] ?? current.get(student.studentId) ?? '',
-                    ].filter(Boolean)}
-                    disabled={disabled}
-                    onValueChange={(value) => {
-                      if (!value.length && current.has(student.studentId)) return
-                      setDraft({ ...draft, [student.studentId]: value[0] ?? '' })
-                    }}
-                  >
-                    {statuses.map((status) => {
-                      const Icon =
-                        status === 'present' ? Check : status === 'absent' ? X : CircleMinus
-                      return (
-                        <Toggle
-                          key={status}
-                          value={status}
-                          className={`attendance-segment attendance-segment-${status}`}
-                          aria-label={t(status)}
-                          title={t(status)}
-                        >
-                          <Icon size={18} aria-hidden="true" />
-                        </Toggle>
-                      )
-                    })}
-                  </ToggleGroup>
-                  {language === 'en' && addNoteButton(student)}
-                  {canCorrect && current.has(student.studentId) && (
-                    <button
-                      type="button"
-                      className="attendance-correct-button"
-                      aria-label={`${language === 'ar' ? 'تصحيح العلامة' : 'Correct this mark'}: ${student.name}`}
-                      title={language === 'ar' ? 'تصحيح العلامة' : 'Correct this mark'}
-                      aria-haspopup="dialog"
-                      disabled={disabled}
-                      onClick={() => {
-                        const record = projected.attendance.find(
-                          ({ value }) =>
-                            value.date === date && value.studentId === student.studentId,
-                        )
-                        if (record) {
-                          setCorrection({ id: record.event.id, name: student.name })
-                          correctionDialog.current?.showModal()
-                        }
-                      }}
-                    >
-                      <Pencil size={16} aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  )
   const changed = allStudents.filter(
     (student) =>
       draft[student.studentId] && draft[student.studentId] !== current.get(student.studentId),
+  )
+  const replayRows = visible.map((student) => ({
+    id: student.studentId,
+    name: student.name,
+    level: level(student),
+    teacherName:
+      enrollments.find((entry) => entry.studentId === student.studentId)?.teacherName ?? '',
+    saved: statusSchema.safeParse(current.get(student.studentId)).data ?? null,
+    draft: statusSchema.safeParse(draft[student.studentId]).data ?? null,
+  }))
+  useLayoutEffect(() =>
+    registerAttendanceReplay(userId, {
+      courseName: courseName ?? '',
+      date,
+      rows: replayRows.slice(0, attendanceReplayMaxRows),
+      totalRows: replayRows.length,
+      pendingCount: changed.length,
+      unmarkedCount: unmarked.length,
+      unmarkedOnly: Boolean(query.unmarked),
+      canCorrect,
+      dialog: noteStudent
+        ? { kind: 'note', name: noteStudent.name }
+        : correction
+          ? { kind: 'correction', name: correction.name }
+          : null,
+    }),
   )
   return (
     <section className="panel attendance-session">
@@ -1490,6 +1399,7 @@ function AttendanceView({
           {t('Session date')}
           <input
             type="date"
+            data-replay-action="date"
             required
             value={date}
             onChange={(event) => {
@@ -1500,6 +1410,7 @@ function AttendanceView({
         {candidates.length > 0 && (
           <button
             className="secondary unmarked-toggle"
+            data-replay-action="unmarked"
             aria-pressed={query.unmarked}
             onClick={() => setQuery({ unmarked: query.unmarked ? '' : '1' }, true)}
           >
@@ -1522,6 +1433,7 @@ function AttendanceView({
           {unmarked.length > 0 && (
             <button
               className="secondary mb-3"
+              data-replay-action="bulk"
               disabled={disabled}
               onClick={() =>
                 setDraft({
@@ -1536,12 +1448,40 @@ function AttendanceView({
             </button>
           )}
           <DirectionProvider direction={language === 'ar' ? 'rtl' : 'ltr'}>
-            {rows(visible)}
+            <AttendanceRows
+              rows={replayRows}
+              header={<TableHeader model={attendanceTable} />}
+              canCorrect={canCorrect}
+              disabled={disabled}
+              onOpenStudent={onOpenStudent}
+              onNote={(id) => {
+                const student = visible.find((item) => item.studentId === id)
+                if (student) {
+                  setNoteStudent(student)
+                  noteDialog.current?.showModal()
+                }
+              }}
+              onMark={(id, value) => {
+                if (!value.length && current.has(id)) return
+                setDraft({ ...draft, [id]: value[0] ?? '' })
+              }}
+              onCorrect={(id) => {
+                const record = projected.attendance.find(
+                  ({ value }) => value.date === date && value.studentId === id,
+                )
+                const student = visible.find((item) => item.studentId === id)
+                if (record && student) {
+                  setCorrection({ id: record.event.id, name: student.name })
+                  correctionDialog.current?.showModal()
+                }
+              }}
+            />
           </DirectionProvider>
           {changed.length > 0 && (
             <div className="attendance-save">
               <button
                 className="primary"
+                data-replay-action="save"
                 disabled={disabled}
                 onClick={async () => {
                   const payloads: Payload[] = changed.map((student) => ({
@@ -1590,7 +1530,11 @@ function RosterView({
   const { t, language } = useLanguage()
   const ar = language === 'ar'
   const rosterTable = useDataTable('roster', students, [
-    { id: 'first', label: ar ? 'الاسم الأول' : 'First name', value: (s) => s.firstName ?? s.name },
+    {
+      id: 'first',
+      label: ar ? 'الاسم الأول' : 'First name',
+      value: (s) => s.firstName ?? s.name,
+    },
     { id: 'last', label: ar ? 'اسم العائلة' : 'Last name', value: (s) => s.lastName },
     {
       id: 'phone',

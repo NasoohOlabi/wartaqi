@@ -535,8 +535,8 @@ export function NeonAuth({
         </p>
         <p className="muted">
           {language === 'ar'
-            ? 'يحتفظ وارتق بتشخيصات الاستخدام لمدة 30 يومًا، وبتسجيلات تفاعلات مخفية المحتوى الخاص لمدة 3 أيام.'
-            : 'Wartaq keeps usage diagnostics for 30 days and masked session replays for 3 days.'}
+            ? 'يحتفظ وارتق بتشخيصات الاستخدام لمدة 30 يومًا، وبتسجيلات الجلسات لمدة 3 أيام. قد تتضمن تسجيلات الحضور أسماء الطلاب وعلامات الحضور.'
+            : 'Wartaq keeps usage diagnostics for 30 days and session replays for 3 days. Attendance replays can include student names and marks.'}
         </p>
       </form>
     </main>

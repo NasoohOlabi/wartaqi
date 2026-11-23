@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { attendanceReplayActionSchema, attendanceReplaySnapshotSchema } from './attendanceReplay'
 import { diagnosticsScreenSchema } from './diagnostics'
 
 export const replayPath = '/api/diagnostics/replay'
@@ -62,6 +63,7 @@ const frameFields = {
   theme: z.enum(['light', 'dark']),
   language: z.enum(['en', 'ar']),
   boxes: z.array(boxSchema).max(replayMaxBoxes),
+  attendance: attendanceReplaySnapshotSchema.optional(),
 }
 export const replayFrameSchema = z
   .discriminatedUnion('kind', [
@@ -70,12 +72,17 @@ export const replayFrameSchema = z
       ...frameFields,
       kind: z.literal('click'),
       click: z.strictObject({ x: coordinate, y: coordinate }),
+      attendanceAction: attendanceReplayActionSchema.optional(),
     }),
   ])
   .refine(
     (frame) =>
       frame.boxes.every((box) => box.x + box.w <= frame.width && box.y + box.h <= frame.height) &&
-      (frame.kind === 'view' || (frame.click.x <= frame.width && frame.click.y <= frame.height)),
+      (!frame.attendance || frame.screen === 'attendance') &&
+      (frame.kind === 'view' ||
+        (frame.click.x <= frame.width &&
+          frame.click.y <= frame.height &&
+          (!frame.attendanceAction || frame.attendance !== undefined))),
   )
 
 export const replayBatchSchema = z.strictObject({
