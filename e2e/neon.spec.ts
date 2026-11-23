@@ -175,6 +175,8 @@ test('sign in, reload and switch teacher without mixing notebook data', async ({
       (user) => user.id === request.headers()['x-user-id'] && user.id === current?.id,
     )
     if (!selected) return route.fulfill({ status: 401, json: { error: 'Unauthorized' }, headers })
+    if (new URL(request.url()).pathname === '/api/diagnostics')
+      return route.fulfill({ json: { ok: true }, headers })
     const teacher = {
       role: 'teacher',
       id: selected.id,
@@ -550,6 +552,8 @@ async function mockTeacher(page: Page, post: () => Promise<void>) {
     if (new URL(route.request().url()).pathname.startsWith('/api/auth/')) return route.fallback()
     if (route.request().url().endsWith('/api/me'))
       return route.fulfill({ json: { account: teacher } })
+    if (new URL(route.request().url()).pathname === '/api/diagnostics')
+      return route.fulfill({ json: { ok: true } })
     if (route.request().method() === 'POST') await post()
     return route.fulfill({
       json: {

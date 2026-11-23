@@ -1,5 +1,6 @@
 import { offlineStudentOutcomeSchema } from '../shared/offlineStudent'
 import { NeonRequestError, request } from './neon'
+import { recordDiagnosticAction } from './diagnostics'
 import {
   attendanceKey,
   listPendingAttendance,
@@ -45,6 +46,11 @@ export async function syncOfflineAttendance(userId: string, retryForbidden = fal
         throw new Error('The attendance sync response did not match the queued record.')
       const outcome = response.outcomes[0]
       await recordAttendanceOutcome(userId, outcome)
+      recordDiagnosticAction(
+        userId,
+        'attendance',
+        outcome.kind === 'saved' || outcome.kind === 'unchanged' ? 'synced' : 'failed',
+      )
       outcomes.push(outcome)
       if (outcome.kind !== 'saved' && outcome.kind !== 'unchanged') blocked.add(key)
     }
@@ -75,6 +81,11 @@ export async function syncOfflineStudent(userId: string, retryForbidden = false)
       if (outcome.id !== studentOperationId(operation))
         throw new Error('The student sync response did not match the queued record.')
       await recordStudentOutcome(userId, outcome)
+      recordDiagnosticAction(
+        userId,
+        operation.kind === 'contact' ? 'student' : 'note',
+        outcome.kind === 'saved' ? 'synced' : 'failed',
+      )
       outcomes.push(outcome)
       if (outcome.kind !== 'saved') blocked.add(key)
     }

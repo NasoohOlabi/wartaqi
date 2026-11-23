@@ -13,6 +13,7 @@ Run the affected scenarios and the full UI suite as directed by the [verificatio
 | [Access and delivery](access.md)        | Session, role scope, retries, storage and tabs.                       |
 | [Courses](courses.md)                   | Course enrollment and independent attendance.                         |
 | [Assignments](assigned.md)              | Teacher scope and reassignment.                                       |
+| [Website diagnostics](diagnostics.md)   | Authenticated capture and Administrator journey timelines.            |
 
 `e2e/neon.spec.ts` covers sign-in, session restoration, account switching, failed and uncertain requests, retries, storage denial/corruption, competing tabs, malformed snapshots and reassignment. `e2e/roles.spec.ts` covers Student privacy and denial, Administrator approval, roster management, self-protection and reset validation. `tests/neon-api.test.ts` tests server authorization and projection; `tests/railway-integration.test.ts` exercises password reset against a disposable database. The historically named files exercise Railway-compatible same-origin boundaries.
 

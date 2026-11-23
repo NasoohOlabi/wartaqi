@@ -130,6 +130,7 @@ export function WorkspaceNavigation({
                 <button
                   key={course.id}
                   type="button"
+                  data-diagnostic-action="course-switch"
                   aria-pressed={
                     (roster && (!currentCourse || currentCourse === 'none')
                       ? 'all'

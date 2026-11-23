@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { useLanguage } from './useLanguage'
 import { resetWorkspace } from './neon'
 import { clearOfflineAccess, offlineAccess } from './offlineAccess'
+import { flushDiagnostics, recordDiagnosticAction } from './diagnostics'
 
 const accountsSchema = z.object({
   accounts: z.array(z.object({ userId: z.string(), name: z.string(), identifier: z.string() })),
@@ -45,6 +46,10 @@ export function AccountChoices({
             type="button"
             disabled={disabled || busy || account.userId === currentUserId}
             onClick={async () => {
+              if (currentUserId) {
+                recordDiagnosticAction(currentUserId, 'account-switch', 'activated')
+                flushDiagnostics(currentUserId)
+              }
               setBusy(true)
               setError(false)
               try {
