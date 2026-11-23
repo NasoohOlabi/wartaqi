@@ -5,6 +5,7 @@ import { createHttp } from './runtime/http'
 import { createNavigation } from './runtime/navigation'
 import { telegramApi } from './runtime/telegram'
 import { createUpdates } from './runtime/updates'
+import { assistantConfig, createAssistant } from './runtime/assistant'
 
 const configSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1),
@@ -33,7 +34,8 @@ export function createWorker(env: Record<string, string | undefined>) {
   )
   const api = telegramApi(config.TELEGRAM_BOT_TOKEN)
   const navigation = createNavigation(store, auth, api, config.WARTAQI_ORIGIN)
-  const { process, notifyFailure } = createUpdates(store, auth, api, navigation)
+  const assistant = createAssistant(assistantConfig(env), store)
+  const { process, notifyFailure } = createUpdates(store, auth, api, navigation, assistant)
   let ready = false
   return {
     store,
@@ -58,7 +60,7 @@ export function createWorker(env: Record<string, string | undefined>) {
           ready = true
           for (const update of updates) {
             try {
-              await process(update)
+              await process(update, true)
             } catch {
               await notifyFailure(update)
             }
@@ -73,7 +75,13 @@ export function createWorker(env: Record<string, string | undefined>) {
 }
 
 if (import.meta.main) {
+  if (process.argv.includes('--assistant-smoke')) {
+    const ok = await createAssistant(assistantConfig(process.env)).smoke('smoke')
+    process.exit(ok ? 0 : 1)
+  }
   const worker = createWorker(process.env)
+  const config = assistantConfig(process.env)
+  if (config) void createAssistant(config).smoke('startup')
   Bun.serve({ port: Number(process.env.PORT ?? 3000), fetch: worker.fetch })
   await worker.poll()
 }

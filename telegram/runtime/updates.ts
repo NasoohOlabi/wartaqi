@@ -5,6 +5,7 @@ import { isBotRoute, type BotRoute } from '../routes'
 import { Storage } from '../storage'
 import type { createNavigation } from './navigation'
 import type { telegramApi } from './telegram'
+import type { createAssistant } from './assistant'
 
 const updateSchema = z.object({
   update_id: z.number().int(),
@@ -47,9 +48,11 @@ export function createUpdates(
   auth: Auth,
   api: ReturnType<typeof telegramApi>,
   navigation: ReturnType<typeof createNavigation>,
+  assistant: ReturnType<typeof createAssistant>,
 ) {
   const { language, say, show, requestPhone } = navigation
-  const process = async (raw: unknown) => {
+  const assistantChats = new Set<string>()
+  const process = async (raw: unknown, detach = false) => {
     const update = updateSchema.parse(raw)
     const previous = z.number().nullable().parse(store.get('offset')) ?? 0
     if (update.update_id < previous) return
@@ -191,7 +194,77 @@ export function createUpdates(
     const text = message.text.trim()
     if (store.get(`lang:${chat}`) === null && message.from.language_code?.startsWith('ar'))
       store.set(`lang:${chat}`, 'ar')
-    const command = text.split(/\s/)[0].split('@')[0]
+    const commandToken = text.split(/\s/, 1)[0]
+    const command = commandToken.split('@')[0]
+    if (command === '/report') {
+      const accepted = assistant.report(chat, text.slice(commandToken.length).trim())
+      await say(
+        chat,
+        language(chat) === 'ar'
+          ? accepted
+            ? 'شكراً، تم تسجيل البلاغ.'
+            : 'المرجع غير صالح أو انتهت صلاحيته.'
+          : accepted
+            ? 'Thank you, the report was recorded.'
+            : 'That reference is invalid or expired.',
+      )
+      return
+    }
+    if (command === '/ask') {
+      const question = text.slice(commandToken.length).trim()
+      const reason =
+        message.forward_origin || message.forward_date
+          ? 'forwarded'
+          : pendingPhone.success || auth.hasPendingCode(chat)
+            ? 'pending_auth'
+            : !question
+              ? 'empty'
+              : question.length > 1000
+                ? 'input_limit'
+                : /(?:\p{Decimal_Number}[\s()+-]*){8,}|(?:password|passcode|token|secret|كلمة السر|رمز التحقق)\s*[:=]\s*\S+/iu.test(
+                      question,
+                    )
+                  ? 'sensitive_input'
+                  : assistantChats.has(chat) || assistantChats.size >= 3
+                    ? 'busy'
+                    : ''
+      if (reason) {
+        assistant.reject(reason)
+        const ar = language(chat) === 'ar'
+        if (reason === 'busy') {
+          await say(
+            chat,
+            ar ? 'المساعد مشغول الآن. حاول بعد قليل.' : 'The assistant is busy. Try again shortly.',
+          )
+        } else if (reason === 'pending_auth') {
+          await say(
+            chat,
+            ar
+              ? 'أكمل تسجيل الدخول أو استخدم /cancel، ثم أرسل سؤالك.'
+              : 'Finish signing in or use /cancel, then send your question.',
+          )
+        } else {
+          await say(
+            chat,
+            ar
+              ? 'أرسل سؤالاً قصيراً بعد /ask عن استخدام وارتق، دون معلومات شخصية.'
+              : 'Type /ask followed by a short Wartaq question. Leave out personal information.',
+          )
+        }
+        return
+      }
+      assistantChats.add(chat)
+      const task = assistant
+        .deliver(chat, question, language(chat), say)
+        .catch(() => {
+          assistant.reject('delivery_failure')
+        })
+        .finally(() => {
+          assistantChats.delete(chat)
+        })
+      if (!detach) await task
+      return
+    }
     const dismissPhone = async () => {
       store.delete(`phone-input:${chat}`)
       if (!pendingPhone.success) return
