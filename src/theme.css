@@ -132,7 +132,6 @@
 :root[data-theme='dark'] .role-editor,
 :root[data-theme='dark'] .sort-pill,
 :root[data-theme='dark'] .roster-course-badge,
-:root[data-theme='dark'] .home-illustration,
 :root[data-theme='dark'] .dashboard-mark {
   background: var(--dark-card);
   color: var(--dark-text);
@@ -148,9 +147,6 @@
 }
 :root[data-theme='dark'] .dashboard-mark-excused {
   border-block-start-color: var(--dark-excused);
-}
-:root[data-theme='dark'] .home-illustration img {
-  filter: brightness(1.8) saturate(0.65);
 }
 :root[data-theme='dark'] .home-curriculum li::marker {
   color: var(--dark-accent);

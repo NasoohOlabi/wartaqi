@@ -56,6 +56,7 @@ test.beforeAll(async () => {
       svg: 'image/svg+xml',
       webmanifest: 'application/manifest+json',
       png: 'image/png',
+      jpg: 'image/jpeg',
       woff2: 'font/woff2',
     }
     response.writeHead(200, {
@@ -188,6 +189,10 @@ test('repository-scoped PWA installs its real manifest and opens the public shel
   expect(bypasses).toEqual([true, true, true, true])
   await page.reload()
   await expect(page.locator('.wartaq-home h1')).toBeVisible()
+  await page.locator('.home-photo').evaluate(async (image) => {
+    if (!(image instanceof HTMLImageElement)) throw new Error('Missing homepage photo')
+    await image.decode()
+  })
   await expect(page.locator('html')).toHaveAttribute('lang', 'ar')
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl')
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')

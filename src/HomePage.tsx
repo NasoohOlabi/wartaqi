@@ -9,6 +9,7 @@ const copy = {
     outline: 'Course outline',
     details: 'Course details',
     signIn: 'Sign in',
+    photoAlt: 'A teacher speaking to students in a mosque',
     eyebrow: 'A journey with the Quran',
     title: 'Recite with care. Grow with every verse.',
     intro:
@@ -59,6 +60,7 @@ const copy = {
     outline: 'محاور الدورة',
     details: 'تفاصيل الدورة',
     signIn: 'تسجيل الدخول',
+    photoAlt: 'معلم يتحدث إلى طلاب في مسجد',
     eyebrow: 'رحلة مع القرآن',
     title: 'تلاوة بعناية، ونمو مع كل آية.',
     intro: 'دورة في تلاوة القرآن الكريم، تقوم على الممارسة المتأنية والصلة المستمرة بكلمات الله.',
@@ -146,9 +148,13 @@ export function HomePage({ onOpenApp, error }: { onOpenApp: () => void; error?: 
               <a href="#enrollment">{c.enrollment}</a>
             </div>
           </div>
-          <div className="home-illustration">
-            <img src={`${import.meta.env.BASE_URL}brand/wartaq/quran-book.svg`} alt="" />
-          </div>
+          <img
+            className="home-photo"
+            src={`${import.meta.env.BASE_URL}brand/wartaq/quran-class.jpg`}
+            alt={c.photoAlt}
+            width="1660"
+            height="924"
+          />
         </section>
         <div className="home-wrap">
           <p className="home-notice">{c.notice}</p>
