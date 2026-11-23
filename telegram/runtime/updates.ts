@@ -289,7 +289,7 @@ export function createUpdates(
       await say(
         chat,
         language(chat) === 'ar'
-          ? '/menu القائمة، /linkaccount ربط الحساب عبر المتصفح، /sharephone مشاركة رقم الهاتف، /cancel إلغاء، /language اللغة، /unlink إلغاء الربط. اكتب سؤالك مباشرة للمساعدة'
+          ? '/menu القائمة، /linkaccount ربط الحساب عبر المتصفح، /sharephone مشاركة رقم الهاتف، /cancel إلغاء، /language اللغة، /unlink إلغاء الربط. اكتب سؤالك مباشرة للمساعدة. يمكن لمسؤولي وارتق مراجعة أسئلتك للمساعد وردوده لمدة ثلاثة أيام. تجنّب إرسال المعلومات الشخصية في أسئلتك.'
           : '/menu opens the menu, /linkaccount links through your browser, /sharephone shares your phone, /cancel cancels, /language changes language, /unlink disconnects. Type a question directly for help. Administrators may review assistant questions and replies for three days; leave out personal information.',
       )
       return

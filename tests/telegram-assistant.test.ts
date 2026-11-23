@@ -168,6 +168,10 @@ test('private questions reach inference while protected flows stay separate', as
         text: 'group question',
       },
     })
+    await worker.process(update(18, '/help'))
+    expect(messages.at(-1)).toContain('for three days')
+    await worker.process(update(19, '/help', 2, { from: { id: 2, language_code: 'ar' } }))
+    expect(messages.at(-1)).toContain('لمدة ثلاثة أيام')
     expect(requests).toHaveLength(2)
   } finally {
     worker.store.close()
