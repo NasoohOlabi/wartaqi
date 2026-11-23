@@ -93,8 +93,6 @@ export function NeonAuth({
   const addAccount = () => {
     clearOfflineAccess()
     setError('')
-    setPassword('')
-    setLoginIdentifier('')
     setAddingAccount(true)
     setChoosingAccount(false)
   }
@@ -128,8 +126,6 @@ export function NeonAuth({
       channel?.close()
     }
   }, [])
-  const [loginIdentifier, setLoginIdentifier] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [stalled, setStalled] = useState(false)
@@ -429,25 +425,33 @@ export function NeonAuth({
           onClick={() => {
             setAddingAccount(false)
             setError('')
-            setPassword('')
           }}
         >
           {t('Cancel')}
         </button>
       )}
       <form
+        key={addingAccount ? 'add-account' : 'sign-in'}
+        id="sign-in-form"
+        method="post"
+        aria-labelledby="sign-in-title"
         aria-busy={busy}
         className="panel space-y-3 auth-form"
         onSubmit={async (event) => {
           event.preventDefault()
           if (session.isPending || session.error || busy) return
+          const form = event.currentTarget
+          const credentials = new FormData(form)
+          const phone = credentials.get('username')
+          const password = credentials.get('password')
+          if (typeof phone !== 'string' || typeof password !== 'string') return
           setBusy(true)
           setError('')
           try {
             const response = await fetch('/api/auth/sign-in/phone', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phone: loginIdentifier, password }),
+              body: JSON.stringify({ phone, password }),
             })
             if (!response.ok) {
               setError(
@@ -455,7 +459,7 @@ export function NeonAuth({
               )
               return
             }
-            setPassword('')
+            form.reset()
             if (addingAccount) {
               resetWorkspace()
             } else {
@@ -474,18 +478,21 @@ export function NeonAuth({
           }
         }}
       >
-        <h1 className="title">{addingAccount ? t('Sign in to another account') : t('Sign in')}</h1>
-        <label>
+        <h1 id="sign-in-title" className="title">
+          {addingAccount ? t('Sign in to another account') : t('Sign in')}
+        </h1>
+        <label htmlFor="sign-in-phone">
           {language === 'ar' ? 'رقم الهاتف' : 'Phone number'}
           <input
+            id="sign-in-phone"
+            name="username"
             required
             type="tel"
             autoComplete="username"
+            enterKeyHint="next"
             dir="ltr"
             placeholder="09xx xxx xxx / +963 9xx xxx xxx"
             aria-describedby="phone-hint"
-            value={loginIdentifier}
-            onChange={(event) => setLoginIdentifier(event.target.value)}
           />
         </label>
         <span id="phone-hint">
@@ -493,16 +500,16 @@ export function NeonAuth({
             ? 'يمكن أن يبدأ الرقم السوري بـ 09 أو +9639.'
             : 'Syrian numbers can start with 09 or +9639.'}
         </span>
-        <label>
+        <label htmlFor="current-password">
           {t('Password')}
           <input
+            id="current-password"
+            name="password"
             required
             type="password"
             dir="ltr"
             enterKeyHint="go"
             autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
           />
         </label>
         {error && (
@@ -515,6 +522,7 @@ export function NeonAuth({
           </p>
         )}
         <button
+          type="submit"
           className="primary auth-sign-in"
           disabled={busy || session.isPending || Boolean(session.error)}
         >

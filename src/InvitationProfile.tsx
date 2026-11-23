@@ -15,21 +15,27 @@ export function InvitationSetupForm({
 }) {
   const { language } = useLanguage()
   const ar = language === 'ar'
-  const [newPassword, setNewPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const phone = invitation.verifiedPhone
   return (
     <form
+      id="invitation-setup-form"
+      method="post"
+      aria-labelledby="invitation-setup-title"
+      aria-busy={busy}
       className="panel space-y-3"
       onSubmit={async (event) => {
         event.preventDefault()
         if (busy) return
+        const form = event.currentTarget
+        const newPassword = new FormData(form).get('new-password')
+        if (typeof newPassword !== 'string') return
         setBusy(true)
         setFailed(false)
         try {
           await complete(newPassword)
-          setNewPassword('')
+          form.reset()
         } catch {
           setFailed(true)
         } finally {
@@ -37,24 +43,33 @@ export function InvitationSetupForm({
         }
       }}
     >
-      <h2>{ar ? 'اختر كلمة مرور جديدة' : 'Choose a new password'}</h2>
+      <h2 id="invitation-setup-title">{ar ? 'اختر كلمة مرور جديدة' : 'Choose a new password'}</h2>
       {phone && (
-        <label>
+        <label htmlFor="invitation-sign-in-phone">
           {ar ? 'رقم الهاتف' : 'Phone'}
-          <input readOnly dir="ltr" autoComplete="username" value={phone} />
+          <input
+            id="invitation-sign-in-phone"
+            name="username"
+            type="tel"
+            readOnly
+            dir="ltr"
+            autoComplete="username"
+            value={phone}
+          />
         </label>
       )}
-      <label>
+      <label htmlFor="invitation-new-password">
         {ar ? 'كلمة المرور الجديدة' : 'New password'}
         <input
+          id="invitation-new-password"
+          name="new-password"
           required
           minLength={8}
           maxLength={128}
           type="password"
           autoComplete="new-password"
+          enterKeyHint="done"
           dir="ltr"
-          value={newPassword}
-          onChange={(event) => setNewPassword(event.target.value)}
         />
       </label>
       {failed && (
@@ -65,7 +80,7 @@ export function InvitationSetupForm({
         </p>
       )}
       <div className="flex flex-wrap gap-3">
-        <button className="primary" disabled={busy}>
+        <button type="submit" className="primary" disabled={busy}>
           {busy ? (ar ? 'يرجى الانتظار…' : 'Please wait…') : ar ? 'حفظ البيانات' : 'Save details'}
         </button>
         <button type="button" className="secondary" disabled={busy} onClick={signOut}>
