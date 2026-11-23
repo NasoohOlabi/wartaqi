@@ -6,6 +6,7 @@ import {
   type ReplayFrame,
 } from '../shared/sessionReplay'
 import { request } from './neon'
+import { AttendanceReplayView } from './AttendanceReplayView'
 
 export function SessionReplayPlayer({
   userId,
@@ -49,6 +50,12 @@ export function SessionReplayPlayer({
         if (active) {
           setFrames(page.items)
           setNextAfter(page.nextAfter)
+          setIndex(
+            Math.max(
+              0,
+              page.items.findIndex((frame) => frame.attendance),
+            ),
+          )
         }
       })
       .catch(() => {
@@ -131,24 +138,18 @@ export function SessionReplayPlayer({
 
   return (
     <section className="space-y-3" aria-label={ar ? 'إعادة تشغيل الجلسة' : 'Session replay'}>
-      <p className="muted">{ar ? 'تم إخفاء المحتوى الخاص.' : 'Private content is redacted.'}</p>
       {frame && (
         <>
-          <canvas
-            ref={canvas}
-            width={Math.max(1, Math.round(frame.width * scale))}
-            height={Math.max(1, Math.round(frame.height * scale))}
-            className="block h-auto max-w-full border"
-            aria-hidden="true"
-          />
-          <p>
-            {ar ? 'الشاشة' : 'Screen'}: {frame.screen} ·{' '}
-            {frame.kind === 'click'
-              ? `${ar ? 'نقرة' : 'Click'} (${frame.click.x}, ${frame.click.y})`
-              : ar
-                ? 'عرض'
-                : 'View'}
-          </p>
+          {!frame.attendance && (
+            <p className="muted">
+              {ar ? 'الشاشة' : 'Screen'}: {frame.screen} ·{' '}
+              {frame.kind === 'click'
+                ? `${ar ? 'نقرة' : 'Click'} (${frame.click.x}, ${frame.click.y})`
+                : ar
+                  ? 'عرض'
+                  : 'View'}
+            </p>
+          )}
           <p>
             {index + 1} / {frames.length} · {(frame.timeMs / 1000).toFixed(1)}s
           </p>
@@ -207,6 +208,21 @@ export function SessionReplayPlayer({
               {ar ? 'النقرة التالية' : 'Next click'}
             </button>
           </div>
+          {frame.attendance ? (
+            <AttendanceReplayView
+              snapshot={frame.attendance}
+              action={frame.kind === 'click' ? frame.attendanceAction : undefined}
+              language={frame.language}
+            />
+          ) : (
+            <canvas
+              ref={canvas}
+              width={Math.max(1, Math.round(frame.width * scale))}
+              height={Math.max(1, Math.round(frame.height * scale))}
+              className="block h-auto max-w-full border"
+              aria-hidden="true"
+            />
+          )}
         </>
       )}
       {nextAfter !== null && (

@@ -1,4 +1,4 @@
-﻿import {
+import {
   replayLabels,
   replayLabelSchema,
   replayMaxBoxes,
@@ -10,7 +10,10 @@
 } from '../shared/sessionReplay'
 import type { ReplayBox, ReplayFrame } from '../shared/sessionReplay'
 import type { DiagnosticsScreen } from '../shared/diagnostics'
+import { attendanceReplayActionSchema } from '../shared/attendanceReplay'
+import type { AttendanceReplayAction } from '../shared/attendanceReplay'
 import { accountFetch } from './accountRequest'
+import { readAttendanceReplay } from './attendanceReplayCapture'
 
 const labels = new Map(
   Object.entries(replayLabels).flatMap(([key, values]) =>
@@ -125,18 +128,48 @@ export function startSessionReplay(userId: string, journeyId: string) {
         )
     }
   }
-  function capture(click?: { x: number; y: number }) {
+  function capture(click?: { x: number; y: number }, action?: AttendanceReplayAction) {
     if (!enabled || !screen || stopped || step >= replayMaxFrames) return
     const width = Math.max(1, limit(window.innerWidth)),
       height = Math.max(1, limit(window.innerHeight))
+    const attendance = screen === 'attendance' ? readAttendanceReplay(userId) : undefined
     const view = {
       screen,
       width,
       height,
       theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
       language: document.documentElement.lang.startsWith('ar') ? 'ar' : 'en',
-      boxes: boxes(width, height),
+      boxes: attendance ? [] : boxes(width, height),
+      ...(attendance && { attendance: { ...attendance, rows: attendance.rows.slice(0, 0) } }),
     } satisfies Pick<ReplayFrame, 'screen' | 'width' | 'height' | 'theme' | 'language' | 'boxes'>
+    if (attendance && view.attendance) {
+      const encoder = new TextEncoder()
+      const budget =
+        replayMaxBodyBytes -
+        encoder.encode(
+          JSON.stringify({
+            journeyId,
+            frames: [
+              {
+                ...view,
+                step: replayMaxFrames,
+                timeMs: 86_400_000,
+                kind: 'click',
+                click: { x: width, y: height },
+                attendanceAction: action,
+              },
+            ],
+          }),
+        ).length -
+        16
+      let used = 0
+      for (const row of attendance.rows) {
+        const size = encoder.encode(JSON.stringify(row)).length + 1
+        if (used + size > budget) break
+        view.attendance.rows.push(row)
+        used += size
+      }
+    }
     if (!click) {
       const serialized = JSON.stringify(view)
       if (serialized === lastView) return
@@ -147,7 +180,16 @@ export function startSessionReplay(userId: string, journeyId: string) {
       step: ++step,
       timeMs: Math.min(Math.round(performance.now() - started), 86_400_000),
     }
-    queue.push(click ? { ...base, kind: 'click', click } : { ...base, kind: 'view' })
+    queue.push(
+      click
+        ? {
+            ...base,
+            kind: 'click',
+            click,
+            ...(attendance && action && { attendanceAction: action }),
+          }
+        : { ...base, kind: 'view' },
+    )
     if (queue.length > 60) queue.shift()
     if (!sending && !timer) void flush()
   }
@@ -158,20 +200,40 @@ export function startSessionReplay(userId: string, journeyId: string) {
   function clicked(event: MouseEvent) {
     if (!screen || !event.isTrusted) return
     const rect = event.target instanceof Element ? event.target.getBoundingClientRect() : null
-    capture({
-      x: limit(
-        Math.min(
-          window.innerWidth,
-          event.detail === 0 && rect ? rect.left + rect.width / 2 : event.clientX,
+    const target =
+      event.target instanceof Element ? event.target.closest('[data-replay-action]') : null
+    const kind = target?.getAttribute('data-replay-action')
+    const parsed = attendanceReplayActionSchema.safeParse(
+      kind === 'mark'
+        ? {
+            kind,
+            studentId: target?.closest('[data-student-id]')?.getAttribute('data-student-id'),
+            status: target?.getAttribute('data-replay-status'),
+          }
+        : kind === 'student' || kind === 'note' || kind === 'correction'
+          ? {
+              kind,
+              studentId: target?.closest('[data-student-id]')?.getAttribute('data-student-id'),
+            }
+          : { kind },
+    )
+    capture(
+      {
+        x: limit(
+          Math.min(
+            window.innerWidth,
+            event.detail === 0 && rect ? rect.left + rect.width / 2 : event.clientX,
+          ),
         ),
-      ),
-      y: limit(
-        Math.min(
-          window.innerHeight,
-          event.detail === 0 && rect ? rect.top + rect.height / 2 : event.clientY,
+        y: limit(
+          Math.min(
+            window.innerHeight,
+            event.detail === 0 && rect ? rect.top + rect.height / 2 : event.clientY,
+          ),
         ),
-      ),
-    })
+      },
+      parsed.success ? parsed.data : undefined,
+    )
     schedule()
   }
   const hidden = () => {
@@ -186,7 +248,14 @@ export function startSessionReplay(userId: string, journeyId: string) {
       childList: true,
       characterData: true,
       attributes: true,
-      attributeFilter: ['data-theme', 'hidden', 'open', 'aria-expanded', 'aria-selected'],
+      attributeFilter: [
+        'data-theme',
+        'hidden',
+        'open',
+        'aria-expanded',
+        'aria-selected',
+        'aria-pressed',
+      ],
     })
     document.addEventListener('click', clicked, true)
     document.addEventListener('visibilitychange', hidden)

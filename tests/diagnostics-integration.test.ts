@@ -106,6 +106,7 @@ integration(
       expect(older.items.map(({ event }) => event.step)).toEqual([1])
       expect(older.nextCursor).toBeNull()
 
+      const studentId = crypto.randomUUID()
       const frame = {
         kind: 'click',
         step: 1,
@@ -117,6 +118,27 @@ integration(
         language: 'en',
         click: { x: 90, y: 180 },
         boxes: [{ x: 20, y: 160, w: 150, h: 40, kind: 'control', label: 'attendance' }],
+        attendance: {
+          courseName: 'Synthetic recorded course',
+          date: '2026-11-23',
+          rows: [
+            {
+              id: studentId,
+              name: 'Synthetic recorded student',
+              level: '2',
+              teacherName: '',
+              saved: null,
+              draft: 'present',
+            },
+          ],
+          totalRows: 1,
+          unmarkedCount: 0,
+          pendingCount: 1,
+          unmarkedOnly: false,
+          canCorrect: false,
+          dialog: null,
+        },
+        attendanceAction: { kind: 'mark', studentId, status: 'present' },
       } satisfies ReplayFrame
       const postReplay = (frames: unknown[], headers = {}) =>
         fetch(origin + replayPath, {
@@ -132,6 +154,14 @@ integration(
           .status,
       ).toBe(400)
       expect((await postReplay([{ ...frame, click: { x: 321, y: 180 } }])).status).toBe(400)
+      expect(
+        (
+          await postReplay([
+            { ...frame, attendance: { ...frame.attendance, password: 'synthetic-secret' } },
+          ])
+        ).status,
+      ).toBe(400)
+      expect((await postReplay([{ ...frame, screen: 'profile' }])).status).toBe(400)
       const replayRetries = await Promise.all([postReplay([frame]), postReplay([frame])])
       expect(replayRetries.map((response) => response.status)).toEqual([200, 200])
       for (let step = 2; step <= 20; step += 3) {
@@ -148,6 +178,13 @@ integration(
         return replayPageSchema.parse(await response.json())
       }
       expect((await readReplay()).items[0]).toEqual(frame)
+      const persisted = await pool.query(
+        "SELECT frame ? 'attendance' AS in_legacy_frame, attendance_payload->'attendance'->'rows'->0->>'name' AS name FROM website_session_replay WHERE actor_id = $1 AND step = 1",
+        [teacher.userId],
+      )
+      expect(persisted.rows).toEqual([
+        { in_legacy_frame: false, name: 'Synthetic recorded student' },
+      ])
       expect((await readReplay()).nextAfter).toBe(20)
       expect((await readReplay('&after=20')).items.map(({ step }) => step)).toEqual([21, 22])
       await pool.query(

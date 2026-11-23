@@ -48,8 +48,13 @@ export async function sessionReplay(
     if (count >= 60) return reply({ error: 'Too many replay requests' }, 429)
     writes.set(actorId, count + 1)
     await pool.query(
-      `INSERT INTO website_session_replay (actor_id, journey_id, step, frame)
-      SELECT $1, $2::uuid, (f->>'step')::int, f FROM jsonb_array_elements($3::jsonb) f
+      `INSERT INTO website_session_replay (actor_id, journey_id, step, frame, attendance_payload)
+      SELECT $1, $2::uuid, (f->>'step')::int, f - 'attendance' - 'attendanceAction',
+        CASE WHEN f ? 'attendance' THEN jsonb_build_object('attendance', f->'attendance') ||
+          CASE WHEN f ? 'attendanceAction' THEN jsonb_build_object('attendanceAction', f->'attendanceAction')
+            ELSE '{}'::jsonb END
+        END
+      FROM jsonb_array_elements($3::jsonb) f
       ON CONFLICT (actor_id, journey_id, step) DO NOTHING`,
       [actorId, batch.data.journeyId, JSON.stringify(batch.data.frames)],
     )
@@ -75,7 +80,9 @@ export async function sessionReplay(
   if (!actor.success || !journey.success || (afterText !== null && !after?.success))
     return reply({ error: 'Invalid query' }, 400)
   const rows = await pool.query<{ frame: unknown }>(
-    `SELECT frame FROM website_session_replay WHERE actor_id = $1 AND journey_id = $2 AND step > $3 AND NOT (${expired}) ORDER BY step LIMIT 21`,
+    `SELECT frame || COALESCE(attendance_payload, '{}'::jsonb) AS frame
+     FROM website_session_replay WHERE actor_id = $1 AND journey_id = $2 AND step > $3 AND NOT (${expired})
+     ORDER BY step LIMIT 21`,
     [actor.data, journey.data, after?.success ? after.data : 0],
   )
   const items = rows.rows.slice(0, 20).map((row) => replayFrameSchema.parse(row.frame))
