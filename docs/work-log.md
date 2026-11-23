@@ -2313,3 +2313,9 @@ The owner supplied the photo and asked to crop out the left doorway. The public 
 `bun run verify` passed. Focused Chromium and emulated phone checks verified image loading, bilingual descriptions, fit at 320/390/844/1440px, and navigation to the separate sign-in screen. The PR records the release checks and Railway verification. No signed-in production records were used.
 
 The offline check reproduced a broken image because the service worker excluded JPEGs. The worker now precaches the photo. The built homepage successfully decoded it offline in desktop Chromium and on an emulated phone.
+
+## 2026-11-24 00:03 Asia/Damascus — Make session replay easier to read
+
+The owner reported that an Arabic Courses replay showed an almost empty phone-shaped canvas. The player now shows selectable, localized screen and click events with timestamps and grouped playback controls. Attendance frames still show recorded rows, marks, and click highlights. Other screens show the recorded activity. The three-day retention policy stays in place.
+
+Synthetic replay checks exercise a real Courses control click in dark mode on desktop and 320px Arabic mobile. The Attendance checks exercise the recorded table, click highlighting and scrubbing without live notebook requests. The PR records the release and Railway verification.

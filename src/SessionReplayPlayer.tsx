@@ -1,4 +1,5 @@
-﻿import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { DiagnosticsScreen } from '../shared/diagnostics'
 import {
   replayLabels,
   replayPageSchema,
@@ -7,17 +8,49 @@ import {
 } from '../shared/sessionReplay'
 import { request } from './neon'
 import { AttendanceReplayView } from './AttendanceReplayView'
+import './SessionReplayPlayer.css'
+
+function eventLabel(frame: ReplayFrame, ar: boolean) {
+  if (frame.kind === 'view') return ar ? 'عرض الصفحة' : 'Viewed page'
+  const target = frame.boxes
+    .filter(
+      (box) =>
+        box.label &&
+        box.kind === 'control' &&
+        frame.click.x >= box.x &&
+        frame.click.x <= box.x + box.w &&
+        frame.click.y >= box.y &&
+        frame.click.y <= box.y + box.h,
+    )
+    .sort((a, b) => a.w * a.h - b.w * b.h)[0]
+  const label = target?.label ? replayLabels[target.label][ar ? 1 : 0] : null
+  return label
+    ? ar
+      ? `نقر على ${label}`
+      : `Clicked ${label}`
+    : ar
+      ? 'نقر على الصفحة'
+      : 'Clicked on page'
+}
+
+function elapsed(timeMs: number) {
+  const seconds = Math.floor(timeMs / 1000)
+  const tenths = Math.floor((timeMs % 1000) / 100)
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}.${tenths}`
+}
 
 export function SessionReplayPlayer({
   userId,
   actor,
   journey,
   ar,
+  screenLabel,
 }: {
   userId: string
   actor: string
   journey: string
   ar: boolean
+  screenLabel: (screen: DiagnosticsScreen) => string
 }) {
   const [frames, setFrames] = useState<ReplayFrame[]>([])
   const [nextAfter, setNextAfter] = useState<number | null>(null)
@@ -25,7 +58,7 @@ export function SessionReplayPlayer({
   const [playing, setPlaying] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
-  const canvas = useRef<HTMLCanvasElement>(null)
+  const activityRef = useRef<HTMLOListElement>(null)
   const frame = frames[index]
   const activePlayback = playing && index < frames.length - 1
   const previousClick = frames.findLastIndex(
@@ -34,7 +67,6 @@ export function SessionReplayPlayer({
   const nextClick = frames.findIndex(
     (entry, position) => position > index && entry.kind === 'click',
   )
-  const scale = frame ? Math.min(1, 1600 / frame.width, 1200 / frame.height) : 1
 
   function seek(position: number) {
     setPlaying(false)
@@ -53,7 +85,7 @@ export function SessionReplayPlayer({
           setIndex(
             Math.max(
               0,
-              page.items.findIndex((frame) => frame.attendance),
+              page.items.findIndex((item) => item.attendance),
             ),
           )
         }
@@ -91,149 +123,139 @@ export function SessionReplayPlayer({
       200,
       Math.min(3000, (frames[index + 1]?.timeMs ?? 0) - (frame?.timeMs ?? 0)),
     )
-    const timer = window.setTimeout(() => setIndex((value) => value + 1), delay)
+    const timer = window.setTimeout(() => {
+      const nextIndex = index + 1
+      setIndex(nextIndex)
+      if (nextIndex === frames.length - 1) setPlaying(false)
+    }, delay)
     return () => window.clearTimeout(timer)
   }, [activePlayback, index, frames, frame])
 
   useEffect(() => {
-    const viewport = canvas.current
-    const context = viewport?.getContext('2d')
-    if (!context || !frame || !viewport) return
-    const dark = frame.theme === 'dark'
-    context.setTransform(viewport.width / frame.width, 0, 0, viewport.height / frame.height, 0, 0)
-    context.fillStyle = dark ? '#171717' : '#ffffff'
-    context.fillRect(0, 0, frame.width, frame.height)
-    for (const box of frame.boxes) {
-      if (box.fill || box.kind === 'image' || box.kind === 'field' || box.kind === 'control') {
-        context.fillStyle = box.fill ?? (dark ? '#323d48' : '#e2edf0')
-        context.fillRect(box.x, box.y, box.w, box.h)
-      }
-      if (box.label) {
-        context.fillStyle = dark ? '#ffffff' : '#111111'
-        context.font = `${Math.max(10, Math.min(18, box.h * 0.6))}px sans-serif`
-        context.direction = frame.language === 'ar' ? 'rtl' : 'ltr'
-        context.textAlign = frame.language === 'ar' ? 'right' : 'left'
-        context.fillText(
-          replayLabels[box.label][frame.language === 'ar' ? 1 : 0],
-          frame.language === 'ar' ? box.x + box.w - 4 : box.x + 4,
-          box.y + box.h * 0.7,
-          Math.max(1, box.w - 8),
-        )
-      } else if (box.kind === 'line' || box.kind === 'text') {
-        const width = Math.min(128, box.w * 0.7)
-        const x = frame.language === 'ar' ? box.x + box.w - width : box.x
-        const height = Math.min(8, box.h * 0.5)
-        context.fillStyle = dark ? '#64748b' : '#c0d0d4'
-        context.fillRect(x, box.y + (box.h - height) / 2, width, height)
-      }
-    }
-    if (frame.kind === 'click') {
-      context.strokeStyle = '#ef4444'
-      context.lineWidth = 4
-      context.beginPath()
-      context.arc(frame.click.x, frame.click.y, 12, 0, Math.PI * 2)
-      context.stroke()
-    }
-  }, [frame])
+    const activity = activityRef.current
+    const selected = activity?.querySelector<HTMLButtonElement>('button[aria-current="true"]')
+    if (!activity || !selected) return
+    const top = selected.offsetTop
+    const bottom = top + selected.offsetHeight
+    if (top < activity.scrollTop) activity.scrollTop = top
+    else if (bottom > activity.scrollTop + activity.clientHeight)
+      activity.scrollTop = bottom - activity.clientHeight
+  }, [index])
 
   return (
-    <section className="space-y-3" aria-label={ar ? 'إعادة تشغيل الجلسة' : 'Session replay'}>
+    <section className="session-replay" aria-label={ar ? 'إعادة تشغيل الجلسة' : 'Session replay'}>
       {frame && (
         <>
-          {!frame.attendance && (
-            <p className="muted">
-              {ar ? 'الشاشة' : 'Screen'}: {frame.screen} ·{' '}
-              {frame.kind === 'click'
-                ? `${ar ? 'نقرة' : 'Click'} (${frame.click.x}, ${frame.click.y})`
-                : ar
-                  ? 'عرض'
-                  : 'View'}
-            </p>
-          )}
-          <p>
-            {index + 1} / {frames.length} · {(frame.timeMs / 1000).toFixed(1)}s
-          </p>
-          <input
-            type="range"
-            className="w-full"
-            aria-label={ar ? 'موضع التشغيل' : 'Playback position'}
-            min={0}
-            max={frames.length - 1}
-            value={index}
-            disabled={frames.length < 2}
-            onChange={(event) => seek(event.currentTarget.valueAsNumber)}
-          />
-          <div className="flex flex-wrap gap-2">
-            <button
-              className="secondary"
-              type="button"
-              disabled={index === 0}
-              onClick={() => seek(index - 1)}
-            >
-              {ar ? 'السابق' : 'Previous'}
-            </button>
-            <button
-              className="secondary"
-              type="button"
-              onClick={() => {
-                if (index === frames.length - 1) setIndex(0)
-                setPlaying(!activePlayback)
-              }}
-              disabled={frames.length < 2}
-            >
-              {activePlayback ? (ar ? 'إيقاف مؤقت' : 'Pause') : ar ? 'تشغيل' : 'Play'}
-            </button>
-            <button
-              className="secondary"
-              type="button"
-              disabled={index === frames.length - 1}
-              onClick={() => seek(index + 1)}
-            >
-              {ar ? 'التالي' : 'Next'}
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={previousClick < 0}
-              onClick={() => seek(previousClick)}
-            >
-              {ar ? 'النقرة السابقة' : 'Previous click'}
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              disabled={nextClick < 0}
-              onClick={() => seek(nextClick)}
-            >
-              {ar ? 'النقرة التالية' : 'Next click'}
-            </button>
+          <div className="session-replay-transport">
+            <div className="session-replay-controls">
+              <button
+                className="secondary"
+                type="button"
+                disabled={index === 0}
+                onClick={() => seek(index - 1)}
+              >
+                {ar ? 'السابق' : 'Previous'}
+              </button>
+              <button
+                className="primary"
+                type="button"
+                onClick={() => {
+                  if (index === frames.length - 1) setIndex(0)
+                  setPlaying(!activePlayback)
+                }}
+                disabled={frames.length < 2}
+              >
+                {activePlayback ? (ar ? 'إيقاف مؤقت' : 'Pause') : ar ? 'تشغيل' : 'Play'}
+              </button>
+              <button
+                className="secondary"
+                type="button"
+                disabled={index === frames.length - 1}
+                onClick={() => seek(index + 1)}
+              >
+                {ar ? 'التالي' : 'Next'}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={previousClick < 0}
+                onClick={() => seek(previousClick)}
+              >
+                {ar ? 'النقرة السابقة' : 'Previous click'}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={nextClick < 0}
+                onClick={() => seek(nextClick)}
+              >
+                {ar ? 'النقرة التالية' : 'Next click'}
+              </button>
+            </div>
+            <div className="session-replay-progress">
+              <bdi dir="ltr">{elapsed(frame.timeMs)}</bdi>
+              <input
+                type="range"
+                aria-label={ar ? 'موضع التشغيل' : 'Playback position'}
+                min={0}
+                max={frames.length - 1}
+                value={index}
+                disabled={frames.length < 2}
+                onChange={(event) => seek(event.currentTarget.valueAsNumber)}
+              />
+              <bdi dir="ltr">{elapsed(frames[frames.length - 1].timeMs)}</bdi>
+            </div>
           </div>
-          {frame.attendance ? (
-            <AttendanceReplayView
-              snapshot={frame.attendance}
-              action={frame.kind === 'click' ? frame.attendanceAction : undefined}
-              language={frame.language}
-            />
-          ) : (
-            <canvas
-              ref={canvas}
-              width={Math.max(1, Math.round(frame.width * scale))}
-              height={Math.max(1, Math.round(frame.height * scale))}
-              className="block h-auto max-w-full border"
-              aria-hidden="true"
-            />
-          )}
+          <div className={`session-replay-content${frame.attendance ? ' with-attendance' : ''}`}>
+            <div className="session-replay-activity">
+              <div className="session-replay-activity-header">
+                <h3>{ar ? 'النشاط' : 'Activity'}</h3>
+                {!frame.attendance && (
+                  <p className="muted">
+                    {ar
+                      ? 'سُجّل النشاط فقط لهذه الشاشة.'
+                      : 'Only activity was recorded for this screen.'}
+                  </p>
+                )}
+              </div>
+              <ol ref={activityRef}>
+                {frames.map((entry, position) => (
+                  <li key={entry.step}>
+                    <button
+                      type="button"
+                      aria-current={position === index ? 'true' : undefined}
+                      onClick={() => seek(position)}
+                    >
+                      <span className="session-replay-dot" aria-hidden="true" />
+                      <span className="session-replay-event">
+                        <strong>{screenLabel(entry.screen)}</strong>
+                        <span>{eventLabel(entry, ar)}</span>
+                      </span>
+                      <bdi dir="ltr">{elapsed(entry.timeMs)}</bdi>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+              {nextAfter !== null && (
+                <button
+                  className="secondary session-replay-more"
+                  type="button"
+                  disabled={loading}
+                  onClick={() => void loadMore()}
+                >
+                  {ar ? 'تحميل المزيد' : 'Load more'}
+                </button>
+              )}
+            </div>
+            {frame.attendance && (
+              <AttendanceReplayView
+                snapshot={frame.attendance}
+                action={frame.kind === 'click' ? frame.attendanceAction : undefined}
+                language={frame.language}
+              />
+            )}
+          </div>
         </>
-      )}
-      {nextAfter !== null && (
-        <button
-          className="secondary"
-          type="button"
-          disabled={loading}
-          onClick={() => void loadMore()}
-        >
-          {ar ? 'تحميل المزيد' : 'Load more'}
-        </button>
       )}
       {loading && <p role="status">{ar ? 'جار التحميل…' : 'Loading…'}</p>}
       {error && <p role="alert">{ar ? 'تعذر تحميل التسجيل.' : 'Could not load replay.'}</p>}

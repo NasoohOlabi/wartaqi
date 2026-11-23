@@ -204,6 +204,7 @@ export function DiagnosticsPage({
                 actor={selected.actorId}
                 journey={selected.journeyId}
                 ar={ar}
+                screenLabel={(screen) => screens[screen][locale]}
               />
             )}
             {timeline?.items.length === 0 && (

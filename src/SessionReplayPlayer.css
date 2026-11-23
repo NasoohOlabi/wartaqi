@@ -1,0 +1,152 @@
+.session-replay {
+  --replay-border: #d6e8ea;
+  --replay-surface: #f4f9f9;
+  --replay-selected: #e0f2f2;
+  --replay-accent: #007d8d;
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.session-replay-transport {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--replay-border);
+  border-radius: 0.75rem;
+  background: var(--replay-surface);
+}
+
+.session-replay-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.session-replay-controls button {
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.session-replay-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-replay-progress input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--replay-accent);
+}
+
+.session-replay-content {
+  display: grid;
+  align-items: start;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.session-replay-activity {
+  min-width: 0;
+  border: 1px solid var(--replay-border);
+  border-radius: 0.75rem;
+}
+
+.session-replay-activity-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  padding: 0.9rem 1rem;
+}
+
+.session-replay-activity h3 {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.session-replay-activity ol {
+  position: relative;
+  max-height: 18rem;
+  overflow-y: auto;
+  border-top: 1px solid var(--replay-border);
+  padding: 0.4rem;
+  list-style: none;
+}
+
+.session-replay-activity li button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.7rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: inherit;
+  text-align: start;
+}
+
+.session-replay-activity li button:is(:hover, [aria-current='true']) {
+  background: var(--replay-selected);
+}
+
+.session-replay-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border: 1px solid var(--replay-accent);
+  border-radius: 50%;
+}
+
+.session-replay-activity [aria-current='true'] .session-replay-dot {
+  background: var(--replay-accent);
+}
+
+.session-replay-event {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 0.125rem;
+}
+
+.session-replay-event span,
+.session-replay-activity bdi {
+  font-size: 0.8125rem;
+}
+
+.session-replay-event span {
+  overflow-wrap: anywhere;
+}
+
+.session-replay-activity bdi {
+  align-self: start;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-replay-more {
+  margin: 0.5rem;
+}
+
+:root[data-theme='dark'] .session-replay {
+  --replay-border: #3f4649;
+  --replay-surface: #252b2d;
+  --replay-selected: #24494d;
+  --replay-accent: #71cbd2;
+}
+
+@media (min-width: 850px) {
+  .session-replay-content.with-attendance {
+    grid-template-columns: minmax(13rem, 17rem) minmax(0, 1fr);
+  }
+
+  .session-replay-content:not(.with-attendance) .session-replay-event {
+    grid-template-columns: minmax(10rem, 15rem) minmax(0, 1fr);
+    align-items: baseline;
+    gap: 0.75rem;
+  }
+}

@@ -4,17 +4,21 @@ import { clickAccountAction } from './profileActions'
 import { mockSyntheticNotebook } from './syntheticNotebook'
 
 for (const language of ['en', 'ar'] as const) {
-  test(`session replay shows a redacted viewport and the recorded click (${language})`, async ({
+  test(`session replay shows a compact Courses activity timeline (${language})`, async ({
     page,
-  }) => {
-    await page.setViewportSize({ width: language === 'en' ? 1280 : 320, height: 800 })
-    await page.addInitScript(() => {
+  }, testInfo) => {
+    const ar = language === 'ar'
+    const courses = ar ? 'الدورات' : 'Courses'
+    await page.setViewportSize({ width: ar ? 320 : 1280, height: 800 })
+    await page.addInitScript((locale) => {
+      localStorage.setItem('halaqa-language-preference', locale)
+      localStorage.setItem('halaqa-theme', 'dark')
       const enable = () => {
         document.documentElement.dataset.sessionReplay = 'test'
       }
       if (document.documentElement) enable()
       else document.addEventListener('DOMContentLoaded', enable, { once: true })
-    })
+    }, language)
     await mockSyntheticNotebook(page, { names: ['Private Student Example'] })
     const frames: ReplayFrame[] = []
     let journeyId = ''
@@ -58,7 +62,9 @@ for (const language of ['en', 'ar'] as const) {
       })
     })
     await page.goto('/?page=app&q=hidden-search-example')
-    await expect(page.getByRole('heading', { name: 'Attendance & notes' })).toBeVisible()
+    await expect(
+      page.getByRole('heading', { name: ar ? 'الحضور والملاحظات' : 'Attendance & notes' }),
+    ).toBeVisible()
     await expect.poll(() => frames.some((frame) => frame.kind === 'view')).toBe(true)
     await page.evaluate(() => {
       const paragraph = document.createElement('p')
@@ -67,12 +73,13 @@ for (const language of ['en', 'ar'] as const) {
       input.value = 'hidden-form-example'
       document.querySelector('main')?.prepend(paragraph, input)
     })
-    await page.getByRole('button', { name: 'Take attendance' }).click()
+    await page.getByRole('button', { name: courses, exact: true }).click()
+    await expect(page.getByRole('heading', { name: courses, exact: true })).toBeVisible()
     const click = () =>
       frames.find((frame) => frame.kind === 'click' && frame.screen === 'dashboard')
     await expect.poll(click).toBeDefined()
     expect(click()?.boxes.some((box) => box.kind === 'field')).toBe(true)
-    if (language === 'ar') await clickAccountAction(page, 'العربية')
+    await expect.poll(() => frames.some((frame) => frame.screen === 'courses')).toBe(true)
     await clickAccountAction(page, language === 'ar' ? 'الإعدادات' : 'Settings')
     await page
       .getByRole('link', { name: language === 'ar' ? 'التشخيص' : 'Diagnostics', exact: true })
@@ -86,21 +93,30 @@ for (const language of ['en', 'ar'] as const) {
     const player = page.getByRole('region', {
       name: language === 'ar' ? 'إعادة تشغيل الجلسة' : 'Session replay',
     })
-    await expect(player.locator('canvas')).toBeVisible()
+    await expect(player.getByRole('heading', { name: ar ? 'النشاط' : 'Activity' })).toBeVisible()
+    await expect(player.locator('canvas')).toHaveCount(0)
+    await expect(
+      player.getByText(
+        ar ? 'سُجّل النشاط فقط لهذه الشاشة.' : 'Only activity was recorded for this screen.',
+      ),
+    ).toBeVisible()
+    const selected = player.locator('button[aria-current="true"]')
     await player
       .getByRole('button', { name: language === 'ar' ? 'النقرة التالية' : 'Next click' })
       .click()
-    await expect(player.getByText(/(?:Click|نقرة) \(\d+, \d+\)/)).toBeVisible()
-    const recorded = click()
-    if (!recorded || recorded.kind !== 'click') throw new Error('Click frame missing')
-    const marker = await player.locator('canvas').evaluate((canvas, position) => {
-      if (!(canvas instanceof HTMLCanvasElement)) return false
-      const pixel = canvas.getContext('2d')?.getImageData(position.x + 12, position.y, 1, 1).data
-      return pixel?.[0] === 239 && pixel[1] === 68 && pixel[2] === 68
-    }, recorded.click)
-    expect(marker).toBe(true)
+    await expect(selected).toContainText(courses)
+    const courseView = player
+      .getByRole('button', {
+        name: ar ? /عرض.*الدورات|الدورات.*عرض/ : /Viewed.*Courses|Courses.*Viewed/,
+      })
+      .first()
+    await courseView.click()
+    await expect(courseView).toHaveAttribute('aria-current', 'true')
+    await expect(player).toHaveCSS('direction', ar ? 'rtl' : 'ltr')
+    expect((await player.boundingBox())?.height).toBeLessThan(800)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     )
+    await player.screenshot({ path: testInfo.outputPath(`replay-${language}.png`) })
   })
 }
