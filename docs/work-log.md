@@ -2305,3 +2305,9 @@ The owner requested Arabic as the default and a clearer student profile on deskt
 Student details align the profile fields and courses, group attendance totals with history, and give notes their own panel. Phones keep Add note above attendance history and use labelled records without sideways scrolling. The Level field uses the active course selection or the roster level in the all-students view.
 
 Focused synthetic browser checks covered fresh and returning Arabic startup, English persistence, storage denial, bilingual application connections, attendance history sorting, and course-specific levels. Desktop coverage spans 1624/1920/2560px with the first attendance record visible at 560px tall. Phone coverage spans 320/390/430px in both languages. The PR records release and deployment verification. The local browser checks use synthetic records and emulated phones.
+
+## 2026-11-23 23:21 Asia/Damascus — Add the mosque class photo to the signed-out homepage
+
+The owner supplied the photo and asked to crop out the left doorway. The public course hero shows the cropped image beside the introduction on desktop and below it on phones. The crop keeps the speaker and audience in frame. The JPEG has bilingual alternative text and contains no EXIF metadata.
+
+`bun run verify` passed. Focused Chromium and emulated phone checks verified image loading, bilingual descriptions, fit at 320/390/844/1440px, and navigation to the separate sign-in screen. The PR records the release checks and Railway verification. No signed-in production records were used.

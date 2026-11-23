@@ -2,6 +2,8 @@
 
 The public homepage, sign-in and notebook screens have no development-release banner. `e2e/home.spec.ts` checks its absence in English/Arabic across page transitions and mobile overflow.
 
+The signed-out course homepage shows the supplied mosque class photo in its hero. Verify the left doorway is cropped out and the speaker and audience stay in frame. `e2e/home.spec.ts` checks that the image loads, fits the viewport in Arabic and English, and is absent from the sign-in screen.
+
 Run the affected scenarios and the full UI suite as directed by the [verification skill](../SKILL.md). The synthetic same-origin fixtures exercise real browser controls and storage; they do not establish live Railway behavior.
 
 | Area                                                | Proof                                                                 |

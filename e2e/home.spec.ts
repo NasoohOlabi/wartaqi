@@ -79,6 +79,14 @@ test('public Midad homepage is bilingual, phone friendly and separate from the a
     ),
   ).toBeVisible()
   await expect(page.getByRole('group', { name: 'Language / اللغة' })).toHaveCount(1)
+  const heroPhoto = page.locator('.home-hero img')
+  await expect(heroPhoto).toHaveAttribute('src', /\/quran-class\.jpg$/)
+  await expect(heroPhoto).toBeVisible()
+  await expect
+    .poll(() =>
+      heroPhoto.evaluate((image) => image instanceof HTMLImageElement && image.naturalWidth > 0),
+    )
+    .toBe(true)
   const languageSwitch = page.getByRole('group', { name: 'Language / اللغة' })
   await expect(languageSwitch.getByRole('button')).toHaveCount(1)
   await expect(languageSwitch.getByRole('button').locator('svg[aria-hidden="true"]')).toHaveCount(1)
@@ -90,6 +98,12 @@ test('public Midad homepage is bilingual, phone friendly and separate from the a
     await button.focus()
     await expect(button).toBeFocused()
     await page.keyboard.press('Enter')
+    await expect(heroPhoto).toHaveAttribute(
+      'alt',
+      language === 'العربية'
+        ? 'معلم يتحدث إلى طلاب في مسجد'
+        : 'A teacher speaking to students in a mosque',
+    )
     if (language === 'العربية') {
       await expect(page.getByText('v0.1.0 · قيد التطوير')).toHaveCount(0)
       await expect(page).toHaveTitle('وارتق · دورة تلاوة القرآن')
@@ -102,9 +116,16 @@ test('public Midad homepage is bilingual, phone friendly and separate from the a
       { width: 320, height: 568 },
       { width: 390, height: 844 },
       { width: 844, height: 390 },
+      { width: 1440, height: 1040 },
     ]) {
       await page.setViewportSize(viewport)
       await mobileLayout(page)
+      expect(
+        await heroPhoto.evaluate((image) => {
+          const photo = image.getBoundingClientRect()
+          return photo.left >= 0 && photo.right <= innerWidth && photo.height > 0
+        }),
+      ).toBe(true)
     }
   }
   await page.getByRole('link', { name: 'Course outline', exact: true }).click()
@@ -129,6 +150,7 @@ test('public Midad homepage is bilingual, phone friendly and separate from the a
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
   await expect(page.locator('.workspace')).toHaveCount(0)
   await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible()
+  await expect(heroPhoto).toHaveCount(0)
   await expect(page.locator('main')).not.toContainText(/notebook/i)
   await expect(page.getByText('v0.1.0 · In development')).toHaveCount(0)
   await mobileLayout(page)
