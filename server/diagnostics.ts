@@ -6,6 +6,8 @@ import {
   diagnosticsRoleSchema,
 } from '../shared/diagnostics'
 import { readBoundedBody } from './profile'
+import { sessionReplay } from './sessionReplay'
+import { replayPath } from '../shared/sessionReplay'
 
 const reply = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } })
@@ -52,6 +54,7 @@ export async function diagnostics(
   if (!account.success || account.data.account.invitationProfile?.requiresSetup)
     return reply({ error: 'Forbidden' }, 403)
   const role = account.data.account.role
+  if (url.pathname === replayPath) return sessionReplay(request, pool, actorId, role)
   if (url.pathname === '/api/diagnostics' && request.method === 'POST') {
     if (
       request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json'
