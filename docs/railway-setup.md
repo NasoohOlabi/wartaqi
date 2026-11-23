@@ -20,6 +20,8 @@ Apply the ordered `railway/*.sql` authentication migrations, then ordered `neon/
 
 Apply `neon/015-website-diagnostics.sql` against the private Railway Postgres connection before deploying website diagnostics. Use `psql` with `ON_ERROR_STOP=1` and a single transaction. `/health` checks for the table. The selective notebook transfer omits this 30-day diagnostic stream. See [Website diagnostics](website-diagnostics.md).
 
+Apply `neon/016-session-replay.sql` using the same private migration procedure before deploying session replay. The separate replay table uses a three-day read cutoff and hourly cleanup. The health check verifies the table and the selective notebook transfer omits its contents.
+
 Apply `railway/002-mcp-oauth.sql` before deploying the [MCP endpoint](mcp.md). Run the file with `psql` using `ON_ERROR_STOP=1` and a single transaction through the private Railway database network. The migration creates only Better Auth provider tables in `neon_auth`. `/health` checks that those tables exist. The same `BETTER_AUTH_URL` determines the public OAuth issuer and MCP resource. Clients must reconnect after an origin change or a restore that omits OAuth and session data.
 
 The separate-name student editor requires `neon/004-student-names.sql` before deploying its API/UI. The migration adds nullable `first_name` and `last_name` columns without guessing how existing full names should split. Version 3 backups retain name parts, courses, enrollment levels/scores and attendance enrollment references in dependency order. Version 1 (original schema) and version 2 (name parts only) remain supported; legacy comparisons refuse to hide courses in the target. Partial schemas fail closed. Keep the protected original recovery snapshots unchanged.

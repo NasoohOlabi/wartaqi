@@ -14,6 +14,7 @@ import {
   telegramTeacherGrantBinding,
 } from '../shared/telegram-grants'
 import { diagnostics, pruneDiagnostics } from './diagnostics'
+import { pruneSessionReplay } from './sessionReplay'
 import { createMcpHandler } from './mcp'
 import { invitationReceipts } from './mcp-invitation'
 import { mcpConsentPage } from './mcp-consent'
@@ -506,7 +507,7 @@ export async function handle(request: Request): Promise<Response> {
   if (url.pathname === '/health' && request.method === 'GET') {
     try {
       await pool.query(
-        'SELECT course_enrollments.teacher_id, course_enrollments.active, course_enrollments.handbook_received, course_enrollments.notes, course_enrollments.grade_decisions, app_accounts.invitation_request_id, app_accounts.invitation_username, app_accounts.verified_phone, app_accounts.invitation_phone, app_accounts.invitation_birth_date, app_accounts.invitation_requires_setup, students.whatsapp, students.location, students.birth_year, courses.open, courses.attendance_minimum, courses.practical_minimum, courses.theory_minimum FROM app_accounts, teachers, students, courses, course_enrollments, events, website_diagnostics, neon_auth."user", neon_auth.account, neon_auth.session, neon_auth.verification LIMIT 0',
+        'SELECT course_enrollments.teacher_id, course_enrollments.active, course_enrollments.handbook_received, course_enrollments.notes, course_enrollments.grade_decisions, app_accounts.invitation_request_id, app_accounts.invitation_username, app_accounts.verified_phone, app_accounts.invitation_phone, app_accounts.invitation_birth_date, app_accounts.invitation_requires_setup, students.whatsapp, students.location, students.birth_year, courses.open, courses.attendance_minimum, courses.practical_minimum, courses.theory_minimum FROM app_accounts, teachers, students, courses, course_enrollments, events, website_diagnostics, website_session_replay, neon_auth."user", neon_auth.account, neon_auth.session, neon_auth.verification LIMIT 0',
       )
       await authPool.query(
         'SELECT 1 FROM "oauthClient", "oauthClientResource", "oauthResource", "oauthAccessToken", "oauthRefreshToken", "oauthConsent", "oauthClientAssertion" LIMIT 0',
@@ -753,6 +754,7 @@ export async function handle(request: Request): Promise<Response> {
 if (import.meta.main) {
   const cleanup = () => {
     void pruneDiagnostics(pool).catch(() => console.warn('Diagnostics cleanup failed'))
+    void pruneSessionReplay(pool).catch(() => console.warn('Replay cleanup failed'))
   }
   cleanup()
   setInterval(cleanup, 60 * 60 * 1000).unref()

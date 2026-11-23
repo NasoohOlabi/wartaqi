@@ -28,3 +28,13 @@ The analytics queue is best effort and isolated from notebook save and sync. A f
 - Apply `neon/015-website-diagnostics.sql` over the private Railway database connection before merging the web release. `/health` verifies the migration. Follow the ordered migration procedure in [Railway setup](railway-setup.md). The migration is additive, so a web rollback can leave the table in place.
 - Events age out by server receipt time after 30 days. The diagnostics list and timeline honor that cutoff independently of the cleanup pass. Active web deployments remove expired rows periodically. Full infrastructure backups can contain diagnostic data and follow the provider backup lifecycle. The selective notebook transfer omits diagnostic history.
 - Use synthetic accounts and records when verifying. Before merging, prove role and origin checks, rejection of unexpected fields, stable retry IDs, persistence across reload, account switch isolation, pagination, retention, and the English/Arabic layout at phone and desktop widths. After deployment, verify the exact `main` commit and health, then prove one synthetic journey from a browser through the Administrator timeline and remove its fixtures.
+
+## Session replay
+
+Open a journey and choose **Replay session**. Play the recorded frames or jump between clicks. The player draws a reconstruction of the browser viewport with the recorded control positions, layout, colors, and approved interface labels. Click markers show where the person clicked, tapped, or activated a control by keyboard. The recording includes the view before the action and settled view changes from navigation, scrolling or page updates.
+
+The collector sends geometry and fixed interface labels. Private text appears as masked shapes. Form values, user names, notes, photos, raw markup, URLs and media stay out of the replay. The player draws frames on a canvas. A reload starts a separate journey. Delivery is best effort and each journey records up to 600 frames. A closed tab or network interruption can leave gaps.
+
+Replay uses the current account-bound diagnostics write transport and lives in the separate `website_session_replay` Postgres table. Only Administrators can load frames. Reads exclude frames once they are three days old, and the web service deletes expired rows at startup and hourly. The existing event and vital timeline retains its 30-day window. Selective notebook transfers omit replay, and full infrastructure backups follow the provider backup lifecycle.
+
+Apply `neon/016-session-replay.sql` through the private Railway database connection before deploying the player. `/health` verifies the migration. A web rollback can leave the table in place. See [Railway setup](railway-setup.md).

@@ -527,8 +527,8 @@ export function NeonAuth({
         </p>
         <p className="muted">
           {language === 'ar'
-            ? 'يسجّل وارتق نشاط استخدام التطبيق وأداء المتصفح لأغراض التشخيص لمدة 30 يومًا.'
-            : 'Wartaq keeps app activity and browser performance diagnostics for 30 days.'}
+            ? 'يحتفظ وارتق بتشخيصات الاستخدام لمدة 30 يومًا، وبتسجيلات تفاعلات مخفية المحتوى الخاص لمدة 3 أيام.'
+            : 'Wartaq keeps usage diagnostics for 30 days and masked session replays for 3 days.'}
         </p>
       </form>
     </main>
