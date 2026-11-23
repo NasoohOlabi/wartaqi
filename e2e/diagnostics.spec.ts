@@ -63,9 +63,7 @@ for (const language of ['en', 'ar'] as const) {
     await page.goto('/?page=app&privateQuery=secret-value')
     await expect(page.getByRole('heading', { name: 'Attendance & notes' })).toBeVisible()
     if (language === 'ar') await clickAccountAction(page, 'العربية')
-    await page
-      .getByRole('button', { name: language === 'ar' ? 'تغيير الدورة' : 'Change course' })
-      .click()
+    await page.getByLabel(language === 'ar' ? 'تغيير الدورة' : 'Change course').click()
     await page.getByRole('button', { name: 'Synthetic course', exact: true }).click()
     await clickAccountAction(page, language === 'ar' ? 'الإعدادات' : 'Settings')
     await page

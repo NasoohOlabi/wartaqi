@@ -27,7 +27,7 @@ async function expectSettingsRow(navigation: Locator, rtl: boolean) {
       return { top, width, height, right, left, viewport: innerWidth }
     }),
   )
-  expect(boxes).toHaveLength(3)
+  expect(boxes).toHaveLength(4)
   for (const box of boxes) {
     expect(box.width).toBeGreaterThanOrEqual(44)
     expect(box.height).toBeGreaterThanOrEqual(44)
@@ -35,7 +35,7 @@ async function expectSettingsRow(navigation: Locator, rtl: boolean) {
     expect(box.left).toBeGreaterThanOrEqual(0)
     expect(box.right).toBeLessThanOrEqual(box.viewport)
   }
-  expect(rtl ? boxes[0].left >= boxes[2].right : boxes[0].right <= boxes[2].left).toBe(true)
+  expect(rtl ? boxes[0].left >= boxes[3].right : boxes[0].right <= boxes[3].left).toBe(true)
 }
 
 async function mockAuth(page: Page, id: string, image: string | null = null) {
@@ -488,6 +488,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     'Accounts',
     'Students',
     'History & corrections',
+    'Diagnostics',
   ])
   const accountsSection = settingsSections.getByRole('link', { name: 'Accounts' })
   const studentsSection = settingsSections.getByRole('link', { name: 'Students' })
