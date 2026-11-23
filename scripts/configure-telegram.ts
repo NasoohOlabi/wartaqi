@@ -5,6 +5,8 @@ if (!token) throw new Error('Set TELEGRAM_BOT_TOKEN in the private environment.'
 
 const commands = [
   ['menu', 'Open my notebook', 'فتح دفتري'],
+  ['ask', 'Ask how to use Wartaq', 'اسأل عن طريقة استخدام وارتق'],
+  ['report', 'Report an assistant reply by reference', 'أبلغ عن رد المساعد باستخدام الرقم المرجعي'],
   ['cancel', 'Cancel the current action', 'إلغاء الإجراء الحالي'],
   ['language', 'Switch between English and Arabic', 'تبديل اللغة بين العربية والإنجليزية'],
   ['help', 'Show help', 'عرض المساعدة'],

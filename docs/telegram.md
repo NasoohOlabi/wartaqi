@@ -19,6 +19,12 @@ Choose a task from the buttons under the message. Type a reply when a screen ask
 
 Teacher phone sign-in uses the same classroom tools and assignment permissions as [browser linking](mcp.md). Password changes open Wartaq in the browser. Student phone sign-in opens the student's own attendance in Telegram. Offline attendance, chart-image exports and device settings are available in the browser. A message already delivered to Telegram may remain visible after unlinking or withdrawal of access.
 
+## Ask about Wartaq
+
+In the private bot chat, send `/ask How do I take attendance?` or `/ask كيف أسجّل الحضور؟`. You can ask how to link an account, use the menus or find a feature before signing in. The assistant gives instructions. Open `/menu` to view or change records through the usual account checks.
+
+The bot sends the question to the Wartaq operator's LM Studio host for inference. Keep passwords, link codes, phone numbers and student details out of questions. Use `/report <reference>` in the same private chat to flag an answer or a failure within 24 hours. Copy the reference from the bot reply.
+
 ## Editing a conversation
 
 Each workflow returns a `Screen` with text, button rows and an optional next action for a typed reply. A button identifies the next route and its arguments. A workflow may return a new screen after a successful write. Telegram receives opaque button handles. The worker stores the route and arguments in its encrypted volume.
@@ -82,5 +88,19 @@ Set `TELEGRAM_WORKER_SECRET` on the `wartaqi` service and reference it from `war
 The worker claims each Telegram update before handling it. After an interruption or uncertain write, reopen the record to check its state. Buttons expire after fifteen minutes and are tied to their user, private chat and message. The bot edits the open message as you navigate. `/unlink` clears local access and requests provider revocation.
 
 To restore the Telegram command menu and both public descriptions, run `bun scripts/configure-telegram.ts` with the bot token in the private environment. Use a separate bot identity for local long polling. Run `bun run verify:release` and build the worker with `docker build -f telegram/Dockerfile .`. A migrated disposable `TEST_RAILWAY_DATABASE_URL` enables the actual OAuth, role-switching and roster-write test.
+
+### Assistant setup and diagnostics
+
+Configure `LM_STUDIO_BASE_URL` with the inference tunnel's HTTPS URL ending in `/v1`, `LM_STUDIO_MODEL` with `prism-ml/bonsai-27b`, and `LM_STUDIO_API_KEY` with the proxy bearer token. Set them on `wartaq-telegram` in `production`. Pass the token through Railway's private variable input. The Windows host must be online with LM Studio and the tunnel running. Removing the three variables disables inference.
+
+Use the reply reference to find the matching structured events in the worker's [Railway deployment logs](https://docs.railway.com/observability/logs). For example, replace `REFERENCE` in this command with the value from Telegram.
+
+```powershell
+railway logs --service wartaq-telegram --environment production --since 24h --filter '@trace:REFERENCE'
+```
+
+Read the inference outcome and delivery outcome together. The events record the prompt version, configured model, timing, provider status and token usage when available. User reports add a feedback event to that trace. The worker's diagnostics exclude questions, replies, chat identities, credentials and provider error bodies. To reproduce an issue, use a synthetic question that describes the same workflow.
+
+When inference is configured, the worker logs a synthetic probe at startup. Check this outcome after a deployment. Telegram polling health is available independently at `/health`. To run the same check on demand from the linked AppSuite project, use `railway ssh --service wartaq-telegram --environment production -- bun /app/bot.js --assistant-smoke`. The check emits a trace, makes no Telegram calls and exits with a failure status if it cannot get a usable answer.
 
 To roll back a bot release, redeploy the previous successful worker image or take only the bot service offline. Keep its volume. Changes users already saved through Wartaq follow the website's normal correction and management workflows.

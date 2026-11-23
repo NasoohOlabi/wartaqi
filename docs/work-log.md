@@ -2273,3 +2273,11 @@ The focused desktop and emulated phone tests reproduced empty submissions before
 The owner requested a readable replay using the actual Attendance view and allowed names and marks in the three-day log. Attendance playback reuses the real row module with recorded state and disabled controls. It shows actual names, highlighted actions, drafts and saved marks. Typed Attendance data stays in the original replay table in an additive column, with credentials, contact details and notes outside the payload.
 
 The English and Arabic browser scenarios verify named student playback, the captured draft and saved mark, zero notebook requests from playback, and legacy geometry. A browser against the Bun server and disposable Postgres verified the stored name and mark, the Administrator player, and Teacher read denial, then removed the synthetic fixtures. The private Railway migration was applied and PostgreSQL confirmed the payload column. The PR records the guarded deployment and production verification.
+
+## 2026-11-23 18:34 Asia/Damascus — Add LM Studio help to Telegram
+
+The owner requested local inference with a clear prompt and traceable assistant behavior. In the bot's private chat, `/ask` provides Arabic or English help with Wartaq workflows. The model receives one explicit question and the versioned help prompt. Existing buttons handle account and notebook actions with their current permissions.
+
+Railway logs correlate inference, validation, delivery and user reports by a reference shown in the reply. The worker records timing, outcomes and token counts when available. A chat-bound report reference expires after 24 hours. The startup probe checks inference independently of polling health. The three LM Studio variables are scoped to the Telegram service.
+
+Focused tests cover reply routing, credential flow isolation, report ownership, redaction and malformed or timed-out provider responses. The Telegram image completed a synthetic request with Railway variables injected locally. Real LM Studio also answered English and Arabic synthetic questions through the worker, using a simulated Telegram endpoint. Native Telegram chat delivery requires a client check. The PR records the CI and deployed startup probe results.
