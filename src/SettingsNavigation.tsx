@@ -6,7 +6,7 @@ import { useLanguage } from './useLanguage'
 export function SettingsNavigation({
   current,
 }: {
-  current: 'accounts' | 'students' | 'history' | 'diagnostics'
+  current: 'accounts' | 'students' | 'history' | 'diagnostics' | 'telegram'
 }) {
   const { language, t } = useLanguage()
   const ar = language === 'ar'
@@ -15,6 +15,7 @@ export function SettingsNavigation({
     { id: 'students', label: t('Students') },
     { id: 'history', label: t('History & corrections') },
     { id: 'diagnostics', label: ar ? 'التشخيص' : 'Diagnostics' },
+    { id: 'telegram', label: ar ? 'تيليغرام' : 'Telegram' },
   ]
   return (
     <DirectionProvider direction={ar ? 'rtl' : 'ltr'}>
@@ -28,7 +29,10 @@ export function SettingsNavigation({
               id === 'history' && current === 'history'
                 ? {}
                 : {
-                    view: id === 'history' || id === 'diagnostics' ? id : 'settings',
+                    view:
+                      id === 'history' || id === 'diagnostics' || id === 'telegram'
+                        ? id
+                        : 'settings',
                     settingsSection: id === 'students' ? id : '',
                     student: '',
                     account: '',

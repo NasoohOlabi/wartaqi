@@ -23,7 +23,7 @@ Teacher phone sign-in uses the same classroom tools and assignment permissions a
 
 Type a question directly in the private bot chat, such as **How do I take attendance?** or **كيف أسجّل الحضور؟**. You can ask how to link an account, use the menus or find a feature before signing in. The assistant gives instructions. Open `/menu` to view or change records through the usual account checks.
 
-The bot sends ordinary chat text to the Wartaq operator's LM Studio host for inference. Commands, button actions and replies requested by an active sign-in or notebook workflow follow their usual paths. Use `/cancel` to exit an active workflow and ask a question. Keep passwords, link codes, phone numbers and student details out of questions. Use `/report <reference>` in the same private chat to flag an answer or a failure within 24 hours. Copy the reference from the bot reply.
+The bot sends ordinary chat text to the Wartaq operator's LM Studio host for inference. Wartaq Administrators can review assistant exchanges for three days. Keep passwords, link codes, phone numbers and student details out of questions. Commands, button actions and replies requested by an active sign-in or notebook workflow follow their usual paths. Use `/cancel` to exit an active workflow and ask a question.
 
 ## Editing a conversation
 
@@ -93,13 +93,15 @@ To restore the Telegram command menu and both public descriptions, run `bun scri
 
 Configure `LM_STUDIO_BASE_URL` with the inference tunnel's HTTPS URL ending in `/v1`, `LM_STUDIO_MODEL` with `prism-ml/bonsai-27b`, and `LM_STUDIO_API_KEY` with the proxy bearer token. Set them on `wartaq-telegram` in `production`. Pass the token through Railway's private variable input. The Windows host must be online with LM Studio and the tunnel running. Removing the three variables disables inference.
 
-Use the reply reference to find the matching structured events in the worker's [Railway deployment logs](https://docs.railway.com/observability/logs). For example, replace `REFERENCE` in this command with the value from Telegram.
+Administrators open **Settings → Telegram** on the website to browse recent conversations. Select a conversation to read its questions, replies and delivery status. The worker groups exchanges under an opaque identifier that it derives from the private chat. It stores the assistant exchange with backend trace metadata and masks recognizable contact details, URLs and credential values. Commands, forwarded messages, contact sharing, sign-in replies and notebook prompt replies are excluded. Exchange capture is best effort and the Telegram reply is sent first. The web service hides exchanges after three days and removes expired rows hourly. Selective notebook transfers omit them. Full infrastructure backups follow the provider's retention lifecycle.
+
+The worker records inference and delivery metadata in [Railway deployment logs](https://docs.railway.com/observability/logs). Use a trace value from the logs or an authorized backend diagnostic response to correlate events.
 
 ```powershell
 railway logs --service wartaq-telegram --environment production --since 24h --filter '@trace:REFERENCE'
 ```
 
-Read the inference outcome and delivery outcome together. The events record the prompt version, configured model, timing, provider status and token usage when available. User reports add a feedback event to that trace. The worker's diagnostics exclude questions, replies, chat identities, credentials and provider error bodies. To reproduce an issue, use a synthetic question that describes the same workflow.
+Read the inference outcome and delivery outcome together. The events record the prompt version, configured model, timing, provider status and token usage when available. A transcript write failure is logged under the same trace. Railway logs contain metadata only. To reproduce an issue, use a synthetic question that describes the same workflow.
 
 When inference is configured, the worker logs a synthetic probe at startup. Check this outcome after a deployment. Telegram polling health is available independently at `/health`. To run the same check on demand from the linked AppSuite project, use `railway ssh --service wartaq-telegram --environment production -- bun /app/bot.js --assistant-smoke`. The check emits a trace, makes no Telegram calls and exits with a failure status if it cannot get a usable answer.
 

@@ -489,6 +489,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     'Students',
     'History & corrections',
     'Diagnostics',
+    'Telegram',
   ])
   const accountsSection = settingsSections.getByRole('link', { name: 'Accounts' })
   const studentsSection = settingsSections.getByRole('link', { name: 'Students' })

@@ -5,7 +5,6 @@ if (!token) throw new Error('Set TELEGRAM_BOT_TOKEN in the private environment.'
 
 const commands = [
   ['menu', 'Open my notebook', 'فتح دفتري'],
-  ['report', 'Report an assistant reply by reference', 'أبلغ عن رد المساعد باستخدام الرقم المرجعي'],
   ['cancel', 'Cancel the current action', 'إلغاء الإجراء الحالي'],
   ['language', 'Switch between English and Arabic', 'تبديل اللغة بين العربية والإنجليزية'],
   ['help', 'Show help', 'عرض المساعدة'],
@@ -45,7 +44,7 @@ for (const lang of ['', 'ar']) {
     language_code: lang,
     description: ar
       ? 'اكتب سؤالك عن استخدام وارتق مباشرةً في المحادثة. تجنّب إرسال المعلومات الشخصية في أسئلتك. اضغط على بدء لتسجيل الدخول، ثم استخدم الأزرار للحضور والطلاب والدورات. يرى الطالب سجل حضوره فقط.'
-      : 'Type a question about using Wartaq directly in the chat. Leave personal details out of questions. Tap Start to sign in, then use the buttons for attendance, students or courses. Students can check their own attendance.',
+      : 'Type a question about using Wartaq directly in the chat. Administrators may review assistant questions and replies for three days to support the service. Leave personal details out of questions. Tap Start to sign in, then use the buttons for attendance, students or courses. Students can check their own attendance.',
   })
 }
 await configure('setChatMenuButton', { menu_button: { type: 'commands' } })
