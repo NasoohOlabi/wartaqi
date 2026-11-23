@@ -82,7 +82,7 @@ test('provider body failures and unsafe finish metadata produce safe diagnostics
   }
 })
 
-test('only explicit private questions reach inference and reports are chat bound', async () => {
+test('private questions reach inference while protected flows and reports stay separate', async () => {
   const requests: string[] = []
   const messages: string[] = []
   globalThis.fetch = Object.assign(
@@ -122,12 +122,11 @@ test('only explicit private questions reach inference and reports are chat bound
     },
   })
   try {
-    worker.store.set('prompt:1', { user: 1, generation: 'existing', action: { route: 'home' } })
     worker.store.set('phone-input:1', 1)
-    await worker.process(update(1, '/ask How do I open the menu?'))
+    await worker.process(update(1, 'Are you Bonsai and can you call tools?'))
     expect(requests).toHaveLength(1)
-    expect(requests[0]).toContain('How do I open the menu?')
-    expect(worker.store.get('prompt:1')).not.toBeNull()
+    expect(requests[0]).toContain('Are you Bonsai and can you call tools?')
+    expect(requests[0]).toContain('powered by model')
     expect(worker.store.get('phone-input:1')).toBe(1)
     const reference = messages[0].match(/\/report ([\w-]+)/)?.[1]
     expect(reference).toBeDefined()
@@ -135,23 +134,46 @@ test('only explicit private questions reach inference and reports are chat bound
     expect(messages.at(-1)).toContain('invalid')
     await worker.process(update(3, `/report ${reference}`))
     expect(messages.at(-1)).toContain('recorded')
-    await worker.process(update(4, '/ask 12345678'))
-    await worker.process(update(5, '/ask hidden', 1, { forward_date: 1 }))
-    await worker.process(update(6, '/ask ' + 'x'.repeat(1001)))
-    await worker.process(update(6, '/ask duplicate'))
+    await worker.process(update(4, '12345678'))
+    await worker.process(update(5, 'hidden', 1, { forward_date: 1 }))
+    await worker.process(update(6, 'x'.repeat(1001)))
+    await worker.process(update(6, 'duplicate'))
+    await worker.process(update(7, '/unknown question'))
+    await worker.process(update(8, '/ask question'))
+    await worker.process(update(9, 'My password is hunter2'))
+    await worker.process(update(10, 'My code is \u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668'))
+    await worker.process(update(11, '0912'))
+    expect(messages.at(-1)).toContain('Check the digits')
+    worker.store.set('phone:1', { user: 1, message: 2 })
+    await worker.process(update(12, 'While sharing a contact'))
+    worker.store.delete('phone:1')
+    worker.store.set('link:1', { pending: true })
+    await worker.process(update(13, 'While linking'))
+    worker.store.delete('link:1')
+    worker.store.set('oauth-active:1', 'exchange')
+    await worker.process(update(14, 'While exchanging'))
+    worker.store.delete('oauth-active:1')
+    expect(requests).toHaveLength(1)
+    await worker.process(update(15, 'How do I reset my password?'))
+    expect(requests).toHaveLength(2)
+    worker.store.set('generation:1', 'existing')
+    worker.store.set('prompt:1', {
+      user: 1,
+      generation: 'existing',
+      action: { route: 'nb.search' },
+    })
+    await worker.process(update(16, 'Student name'))
+    expect(worker.store.get('prompt:1')).toBeNull()
     await worker.process({
-      update_id: 7,
+      update_id: 17,
       message: {
-        message_id: 7,
+        message_id: 17,
         chat: { id: 1, type: 'group' },
         from: { id: 1 },
-        text: '/ask group',
+        text: 'group question',
       },
     })
-    await worker.process(update(8, '/ask My code is ١٢٣٤٥٦٧٨'))
-    worker.store.set('phone:1', { user: 1, message: 2 })
-    await worker.process(update(9, '/ask While sharing a contact'))
-    expect(requests).toHaveLength(1)
+    expect(requests).toHaveLength(2)
   } finally {
     worker.store.close()
   }

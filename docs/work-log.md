@@ -2284,6 +2284,12 @@ Focused tests cover reply routing, credential flow isolation, report ownership, 
 
 CodeQL flagged substring matching in the test's Telegram request mock. The mock now checks the parsed Telegram origin and asserts the exact LM Studio endpoint. The production transport was unaffected.
 
+## 2026-11-23 19:44 Asia/Damascus — Answer ordinary Telegram messages
+
+The owner reported that typing a question in the private chat returned the `/menu` hint. The worker now sends ordinary text to the assistant after handling commands, sign-in and active notebook prompts. The command list drops the old prefix, and the prompt explains the assistant's model and tool capabilities when asked.
+
+The old worker reproduced the reported behavior with zero inference calls. Focused tests check the same plain-text path, command and workflow routing, sensitive input rejection and report references. Live LM Studio answered the plain-text model and tools question with the configured model ID and explained the tool limits. An Arabic question returned the expected notebook command. Both used the worker's normal update handler with simulated Telegram delivery. The report command recorded the same trace as the first reply. The PR records Railway verification.
+
 ## 2026-11-23 19:47 Asia/Damascus — Default to Arabic and reorganize student details
 
 The owner requested Arabic as the default and a clearer student profile on desktop and phones. The homepage, sign-in, notebook and application connection pages open in Arabic and RTL. Explicit language choices persist. Existing devices start in Arabic once because the previous setting mixed automatic defaults with explicit choices.
