@@ -2256,6 +2256,12 @@ The owner requested database-backed journeys, interactions and Web Vitals. The s
 
 The disposable PostgreSQL test covers authorization, strict input, concurrent replay, saved rows, chronological paging and expiry. The English and Arabic browser scenarios cover capture, timeline and narrow layout. A browser against the Bun server and disposable Postgres saved a synthetic profile change, verified the diagnostic row and Administrator timeline, and confirmed Teacher read denial. The additive migration was applied over the private Railway connection before merge, and PostgreSQL confirmed the table and its account foreign key. The PR records the guarded release and live verification.
 
+## 2026-11-23 15:49 Asia/Damascus — Add masked session replay
+
+The owner requested clickable visual replays and a log that keeps three days of recordings. The browser captures signed-in viewport layouts and click locations using fixed labels and typed geometry. Administrators open a replay from the journey timeline. Read-time expiry and hourly Postgres cleanup use the three-day window. The existing diagnostics timeline keeps its 30-day retention.
+
+The replay screens disclose masking and retention. The browser verification uses synthetic records and checks the click marker, redaction and phone layout. A browser against the Bun server and disposable Postgres recorded a click, opened it in the Administrator player, verified Teacher denial, and removed the synthetic fixtures after checking expiry. The private Railway migration was applied and its account foreign key confirmed. The PR records the deployment and live verification.
+
 ## 2026-11-23 16:14 Asia/Damascus — Improve sign-in and account setup autofill
 
 The owner reported that their phone and password manager only partly recognized the credential fields. Phone sign-in, including the MCP authorization page, and first-time invitation setup now have named forms, explicitly associated labels, stable field identifiers and native submit controls. The account phone is tagged as the username, and the existing and new password fields use their respective autocomplete values. Sign-in and setup submit the values in the HTML form so credentials inserted without React change events reach the same Auth endpoints.

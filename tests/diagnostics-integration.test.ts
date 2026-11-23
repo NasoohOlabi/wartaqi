@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test'
 import { Pool } from 'pg'
 import { diagnosticsJourneysSchema, diagnosticsTimelineSchema } from '../shared/diagnostics'
+import { replayPageSchema, replayPath, type ReplayFrame } from '../shared/sessionReplay'
 import { pruneDiagnostics } from '../server/diagnostics'
+import { pruneSessionReplay } from '../server/sessionReplay'
 import { createIdentity } from './integration-identity'
 import { startIntegrationServer } from './integration-server'
 
@@ -103,6 +105,65 @@ integration(
       const older = await read(`${timelineUrl}&before=${timeline.nextCursor}`)
       expect(older.items.map(({ event }) => event.step)).toEqual([1])
       expect(older.nextCursor).toBeNull()
+
+      const frame = {
+        kind: 'click',
+        step: 1,
+        timeMs: 200,
+        screen: 'attendance',
+        width: 320,
+        height: 600,
+        theme: 'light',
+        language: 'en',
+        click: { x: 90, y: 180 },
+        boxes: [{ x: 20, y: 160, w: 150, h: 40, kind: 'control', label: 'attendance' }],
+      } satisfies ReplayFrame
+      const postReplay = (frames: unknown[], headers = {}) =>
+        fetch(origin + replayPath, {
+          method: 'POST',
+          headers: { ...teacher.headers, origin, 'content-type': 'application/json', ...headers },
+          body: JSON.stringify({ journeyId, frames }),
+        })
+      expect((await postReplay([frame], { origin: 'https://foreign.example' })).status).toBe(403)
+      expect((await postReplay([frame], { 'x-user-id': administrator.userId })).status).toBe(401)
+      expect((await postReplay([{ ...frame, html: '<p>Private student</p>' }])).status).toBe(400)
+      expect(
+        (await postReplay([{ ...frame, boxes: [{ ...frame.boxes[0], label: 'Private student' }] }]))
+          .status,
+      ).toBe(400)
+      expect((await postReplay([{ ...frame, click: { x: 321, y: 180 } }])).status).toBe(400)
+      const replayRetries = await Promise.all([postReplay([frame]), postReplay([frame])])
+      expect(replayRetries.map((response) => response.status)).toEqual([200, 200])
+      for (let step = 2; step <= 20; step += 3) {
+        expect(
+          (await postReplay([0, 1, 2].map((offset) => ({ ...frame, step: step + offset })))).status,
+        ).toBe(200)
+      }
+      const replayUrl = `${origin}${replayPath}?actor=${teacher.userId}&journey=${journeyId}`
+      expect((await fetch(replayUrl, { headers: teacher.headers })).status).toBe(403)
+      const readReplay = async (after = '') => {
+        const response = await fetch(replayUrl + after, { headers: administrator.headers })
+        expect(response.status).toBe(200)
+        expect(response.headers.get('cache-control')).toBe('no-store')
+        return replayPageSchema.parse(await response.json())
+      }
+      expect((await readReplay()).items[0]).toEqual(frame)
+      expect((await readReplay()).nextAfter).toBe(20)
+      expect((await readReplay('&after=20')).items.map(({ step }) => step)).toEqual([21, 22])
+      await pool.query(
+        "UPDATE website_session_replay SET received_at = now() - CASE WHEN step = 1 THEN interval '2 days 23 hours' ELSE interval '3 days 1 hour' END WHERE actor_id = $1",
+        [teacher.userId],
+      )
+      expect((await readReplay()).items).toEqual([frame])
+      await pruneSessionReplay(pool)
+      expect(
+        (
+          await pool.query('SELECT step FROM website_session_replay WHERE actor_id = $1', [
+            teacher.userId,
+          ])
+        ).rows,
+      ).toEqual([{ step: 1 }])
+      expect((await read(timelineUrl)).items).toHaveLength(50)
 
       await pool.query(
         'UPDATE app_accounts SET invitation_request_id = $2, invitation_requires_setup = true WHERE auth_user_id = $1',
