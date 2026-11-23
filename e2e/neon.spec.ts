@@ -52,6 +52,7 @@ test.beforeAll(({ browserName }, testInfo) => {
 test('Arabic authentication keeps mobile input semantics and localized feedback', async ({
   page,
 }) => {
+  let submitted: unknown
   await page.setViewportSize({ width: 320, height: 568 })
   await page.route(`${auth}/**`, async (route) => {
     const headers = {
@@ -62,12 +63,14 @@ test('Arabic authentication keeps mobile input semantics and localized feedback'
         route.request().headers()['access-control-request-headers'] ?? 'content-type',
     }
     if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
-    if (route.request().url().includes('/sign-in/phone'))
+    if (route.request().url().includes('/sign-in/phone')) {
+      submitted = route.request().postDataJSON()
       return route.fulfill({
         status: 401,
         headers,
         json: { code: 'INVALID_EMAIL_OR_PASSWORD', message: 'Invalid email or password' },
       })
+    }
     return route.fulfill({ headers, json: null })
   })
   await page.goto(origin)
@@ -81,10 +84,22 @@ test('Arabic authentication keeps mobile input semantics and localized feedback'
   await expect(phone).toHaveAttribute('autocomplete', 'username')
   await expect(password).toHaveAttribute('autocomplete', 'current-password')
   await expect(page.locator('form input')).toHaveCount(2)
-  await phone.fill('0912345678')
-  await password.fill('synthetic-password')
-  await page.getByRole('button', { name: 'تسجيل الدخول', exact: true }).click()
+  await page.locator('form input').evaluateAll((fields) => {
+    // Some password managers fill the DOM without dispatching React change events.
+    for (const field of fields) {
+      if (field instanceof HTMLInputElement)
+        field.value = field.type === 'tel' ? '0912345678' : 'synthetic-password'
+    }
+  })
+  await password.press('Enter')
   await expect(page.getByRole('alert')).toBeVisible()
+  expect(submitted).toEqual({ phone: '0912345678', password: 'synthetic-password' })
+  const form = page.getByRole('form', { name: 'تسجيل الدخول' })
+  await expect(form).toHaveAttribute('method', 'post')
+  await expect(form.getByLabel('رقم الهاتف', { exact: true })).toHaveAttribute('name', 'username')
+  await expect(phone).toHaveAccessibleDescription('يمكن أن يبدأ الرقم السوري بـ 09 أو +9639.')
+  await expect(password).toHaveAttribute('id', 'current-password')
+  await expect(password).toHaveAttribute('name', 'password')
   await clickAccountAction(page, 'English')
   await expect(page.getByLabel('Phone number', { exact: true })).toHaveValue('0912345678')
   await expect(page.getByRole('alert')).toContainText('Invalid phone number or password')

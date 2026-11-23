@@ -18,6 +18,7 @@ async function checkInvitedProfile(page: Page, role: 'teacher' | 'student', isMo
   if (isMobile) await page.setViewportSize({ width: 320, height: 680 })
   let signedIn = false
   let setup = true
+  let submittedSetup: unknown
   let loginCount = 0
   const verifiedPhone = '+12025550110'
   let phone = ''
@@ -63,7 +64,7 @@ async function checkInvitedProfile(page: Page, role: 'teacher' | 'student', isMo
   await page.route('**/api/me/invitation-profile', async (route) => {
     const body = route.request().postDataJSON()
     if (setup) {
-      expect(body).toEqual({ newPassword: 'personal-password' })
+      submittedSetup = body
       setup = false
     } else {
       expect(body).toEqual({
@@ -119,8 +120,22 @@ async function checkInvitedProfile(page: Page, role: 'teacher' | 'student', isMo
   await expectActionSpacing(arabicSave, arabicSignOut)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   await page.getByRole('button', { name: 'English', exact: true }).click()
-  await page.getByLabel('New password').fill('personal-password')
+  const setupForm = page.getByRole('form', { name: 'Choose a new password' })
+  const newPassword = setupForm.getByLabel('New password')
+  await expect(setupForm).toHaveAttribute('method', 'post')
+  await expect(setupForm.getByLabel('Phone', { exact: true })).toHaveAttribute('name', 'username')
+  await expect(setupForm.getByLabel('Phone', { exact: true })).toHaveAttribute(
+    'autocomplete',
+    'username',
+  )
+  await expect(newPassword).toHaveAttribute('type', 'password')
+  await expect(newPassword).toHaveAttribute('name', 'new-password')
+  await expect(newPassword).toHaveAttribute('autocomplete', 'new-password')
+  await newPassword.evaluate((field) => {
+    if (field instanceof HTMLInputElement) field.value = 'personal-password'
+  })
   await save.click()
+  await expect.poll(() => submittedSetup).toEqual({ newPassword: 'personal-password' })
   await expect(page.getByRole('heading', { name: 'Personal details' })).toBeVisible()
   expect(loginCount).toBe(1)
   await expect(page.locator('input[type=date]')).toHaveCount(0)

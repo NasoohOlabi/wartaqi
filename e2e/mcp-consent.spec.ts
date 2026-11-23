@@ -8,6 +8,7 @@ for (const width of [320, 1440]) {
         const context = await browser.newContext({ viewport: { width, height: 800 } })
         let pending = true
         let consentQuery = ''
+        let signInBody: unknown
         await context.route('**/*', async (route) => {
           const request = route.request()
           const url = new URL(request.url())
@@ -20,6 +21,9 @@ for (const width of [320, 1440]) {
             })
           } else if (url.pathname === '/api/auth/get-session') {
             await route.fulfill({ json: { user: { id: 'synthetic-user', name: 'Synthetic' } } })
+          } else if (url.pathname === '/api/auth/sign-in/phone') {
+            signInBody = request.postDataJSON()
+            await route.fulfill({ status: 401, json: { error: 'Invalid credentials' } })
           } else if (url.pathname === '/api/device-accounts') {
             await route.fulfill({ json: { accounts: [] } })
           } else if (url.pathname === '/api/me') {
@@ -49,6 +53,36 @@ for (const width of [320, 1440]) {
         const query = 'client_id=synthetic&scope=mcp%3Aread&signed=synthetic-signature'
         await page.goto(`${baseURL}${path}?${query}`)
         if (language === 'ar') await page.locator('#language').click()
+        const signIn = page.locator('#login summary')
+        await signIn.click()
+        const form = page.getByRole('form', {
+          name: language === 'ar' ? 'تسجيل الدخول إلى حساب آخر' : 'Sign in to another account',
+        })
+        await expect(form).toHaveAttribute('method', 'post')
+        await expect(form.locator('input[name="username"]')).toHaveAttribute(
+          'autocomplete',
+          'username',
+        )
+        await expect(form.locator('input[name="password"]')).toHaveAttribute(
+          'autocomplete',
+          'current-password',
+        )
+        if (path === '/mcp/login') {
+          await form.locator('input[name="username"]').fill('0912345678')
+          await form.locator('input[name="password"]').fill('synthetic-password')
+          await form.getByRole('button').click()
+          await expect(page.getByRole('alert')).toHaveText(
+            language === 'ar'
+              ? 'تعذر إكمال الطلب. تحقق من البيانات وحاول مرة أخرى.'
+              : 'Could not complete the request. Check your details and try again.',
+          )
+          expect(signInBody).toEqual({
+            phone: '0912345678',
+            password: 'synthetic-password',
+            oauth_query: query,
+          })
+        }
+        await signIn.click()
         const link = page.locator('#setup a')
         await expect(link).toBeVisible()
         expect(await link.getAttribute('target')).toBe('_blank')
