@@ -10,7 +10,7 @@ for (const language of ['en', 'ar'] as const) {
     const ar = language === 'ar'
     await page.setViewportSize({ width: ar ? 320 : 1280, height: 800 })
     await page.addInitScript((locale) => {
-      localStorage.setItem('halaqa-language', locale)
+      localStorage.setItem('halaqa-language-preference', locale)
       const enable = () => {
         document.documentElement.dataset.sessionReplay = 'test'
       }

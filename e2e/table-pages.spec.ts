@@ -354,11 +354,20 @@ test('every staff table column sorts and filters without writes', async ({ page 
   expect(writes).toEqual([])
 })
 
-test('wide student details show attendance history alongside the overview', async ({
+test('wide student details align profile fields, attendance and notes', async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium')
-  const { writes } = await syntheticTables(page)
+  const { writes, snapshot } = await syntheticTables(page)
+  snapshot.events.push(
+    makeEvent('synthetic-table-check', {
+      kind: 'note',
+      studentId: studentIds[0],
+      date: '2026-11-14',
+      tags: [],
+      text: 'Review the next passage.',
+    }),
+  )
   await page.setViewportSize({ width: 1920, height: 560 })
   await page.goto(`/?page=app&tab=roster&course=${courseId}`)
   const student = page.locator('.roster-students-table tbody tr').filter({ hasText: 'Zulu' })
@@ -380,9 +389,12 @@ test('wide student details show attendance history alongside the overview', asyn
       name: ar ? 'سجل الحضور' : 'Attendance history',
     })
     const rows = history.locator('tbody tr')
-    const firstName = details.getByText('Zulu', { exact: true })
+    const firstName = details.locator('dd').filter({ hasText: /^Zulu$/ })
+    const notes = details.getByRole('region', { name: ar ? 'ملاحظات الطالب' : 'Student notes' })
+    await expect(notes.getByText('Review the next passage.')).toBeVisible()
+    await expect(notes.locator('time')).toHaveAttribute('datetime', '2026-11-14')
     await expect(rows).toHaveCount(3)
-    for (const width of [1920, 2560]) {
+    for (const width of [1624, 1920, 2560]) {
       await page.setViewportSize({ width, height: 560 })
       await expect(rows.first()).toBeInViewport({ ratio: 1 })
       const misalignment = await firstName.evaluate((value, rtl) => {
@@ -397,14 +409,16 @@ test('wide student details show attendance history alongside the overview', asyn
       }, ar)
       expect(Math.abs(misalignment)).toBeLessThan(2)
       const profileBounds = await details.locator('.student-details-overview').boundingBox()
-      const titleBounds = await overview.boundingBox()
       const historyBounds = await history.boundingBox()
-      if (!profileBounds || !titleBounds || !historyBounds)
-        throw new Error('Student details are hidden')
-      expect(historyBounds.width).toBeGreaterThan(profileBounds.width * 2)
-      expect(historyBounds.y - titleBounds.y).toBeLessThan(80)
-      if (ar) expect(historyBounds.x + historyBounds.width).toBeLessThan(profileBounds.x)
-      else expect(historyBounds.x).toBeGreaterThan(profileBounds.x + profileBounds.width)
+      const notesBounds = await notes.boundingBox()
+      const attendanceBounds = await details.locator('.student-details-attendance').boundingBox()
+      if (!profileBounds || !historyBounds || !notesBounds || !attendanceBounds)
+        throw new Error('Student detail sections are hidden')
+      expect(attendanceBounds.y).toBeGreaterThan(profileBounds.y + profileBounds.height)
+      expect(notesBounds.y).toBe(attendanceBounds.y)
+      expect(historyBounds.width).toBeGreaterThan(notesBounds.width)
+      if (ar) expect(notesBounds.x + notesBounds.width).toBeLessThan(attendanceBounds.x)
+      else expect(notesBounds.x).toBeGreaterThan(attendanceBounds.x + attendanceBounds.width)
     }
     const sort = history.getByRole('button', { name: ar ? 'ترتيب حسب التاريخ' : 'Sort by Date' })
     await sort.click()
@@ -412,6 +426,8 @@ test('wide student details show attendance history alongside the overview', asyn
     await sort.click()
     await expect(rows.first().locator('td').first()).toHaveText('2026-11-14')
     await sort.click()
+    await page.setViewportSize({ width: 1624, height: 900 })
+    await page.emulateMedia({ colorScheme: ar ? 'dark' : 'light' })
     await page.screenshot({
       path: `.artifacts/verification/student-detail-wide-${ar ? 'ar' : 'en'}.png`,
     })
@@ -427,13 +443,19 @@ test('wide student details show attendance history alongside the overview', asyn
     expect(editBounds.y + editBounds.height).toBeGreaterThan(titleBounds.y)
     if (ar) expect(editBounds.x + editBounds.width).toBeLessThan(titleBounds.x)
     else expect(editBounds.x).toBeGreaterThan(titleBounds.x + titleBounds.width)
-    await page.emulateMedia({ colorScheme: ar ? 'dark' : 'light' })
-    await page.screenshot({
-      path: `.artifacts/verification/student-profile-actions-${ar ? 'ar' : 'en'}.png`,
-    })
+    await note.click()
+    await expect(
+      notes.getByRole('textbox', { name: ar ? 'الملاحظة' : 'Note', exact: true }),
+    ).toBeVisible()
+    await notes.getByRole('button', { name: ar ? 'إلغاء' : 'Cancel', exact: true }).click()
   }
   await details.getByRole('button', { name: 'عودة', exact: true }).click()
   await expect(student).toBeVisible()
+  await page.setViewportSize({ width: 1624, height: 900 })
+  await page.goto('/?page=app&view=student&student=20000000-0000-4000-8000-000000000007')
+  await expect(details.getByText('لا توجد سجلات حضور')).toBeVisible()
+  await expect(details.getByText('لا توجد ملاحظات')).toBeVisible()
+  await page.screenshot({ path: '.artifacts/verification/student-detail-empty-ar.png' })
   expect(writes).toEqual([])
 })
 
@@ -495,6 +517,7 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
     const edit = details.getByRole('button', { name: ar ? 'تعديل الطالب' : 'Edit student' })
     const courses = details.getByRole('heading', { name: ar ? 'الدورات' : 'Courses' })
     const history = details.getByRole('region', { name: ar ? 'سجل الحضور' : 'Attendance history' })
+    const addNote = details.getByRole('button', { name: ar ? 'إضافة ملاحظة' : 'Add note' })
     await expect(history.locator('tbody tr')).toHaveCount(3)
     await expect(history.locator('thead')).toBeHidden()
     for (const width of [320, 390, 430]) {
@@ -505,15 +528,20 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
         width,
       )
       const coursesBounds = await courses.boundingBox()
+      const addNoteBounds = await addNote.boundingBox()
       const historyBounds = await history.boundingBox()
-      if (!coursesBounds || !historyBounds) throw new Error('Student details are hidden')
-      expect(historyBounds.y).toBeGreaterThan(coursesBounds.y + coursesBounds.height)
+      if (!coursesBounds || !addNoteBounds || !historyBounds)
+        throw new Error('Student details are hidden')
+      expect(addNoteBounds.height).toBeGreaterThanOrEqual(44)
+      expect(addNoteBounds.y).toBeGreaterThan(coursesBounds.y + coursesBounds.height)
+      expect(historyBounds.y).toBeGreaterThan(addNoteBounds.y + addNoteBounds.height)
       expect(await history.evaluate((element) => element.scrollWidth)).toBeLessThanOrEqual(
         historyBounds.width + 1,
       )
       if (width === 390)
         await page.screenshot({
           path: `.artifacts/verification/student-profile-actions-phone-${ar ? 'ar' : 'en'}.png`,
+          scale: 'css',
         })
     }
     await page.goBack()

@@ -398,6 +398,13 @@ test('course enrollment and same-day attendance stay separate', async ({ page },
   await row.getByRole('button', { name: 'Open student' }).click()
   await expect(page.getByRole('heading', { name: 'Student information' })).toBeVisible()
   await expect(
+    page
+      .locator('.student-details')
+      .getByText('Level', { exact: true })
+      .locator('..')
+      .locator('dd'),
+  ).toHaveText('Advanced')
+  await expect(
     page.locator('.student-details').getByText('Synthetic', { exact: true }),
   ).toBeVisible()
   await expect(page.locator('.student-details').getByText('Student', { exact: true })).toBeVisible()

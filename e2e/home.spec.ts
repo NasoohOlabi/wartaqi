@@ -2,6 +2,33 @@ import { clickAccountAction } from './profileActions'
 import { expect, test, type Page } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 
+test.describe('Arabic default', () => {
+  test.use({ storageState: { cookies: [], origins: [] } })
+
+  test('opens in Arabic and remembers an explicit English choice', async ({ page }) => {
+    await page.route('**/api/auth/**', (route) => route.fulfill({ json: null }))
+    await page.route('**/api/device-accounts', (route) => route.fulfill({ json: { accounts: [] } }))
+    await page.goto('/')
+    const html = page.locator('html')
+    const heading = page.getByRole('heading', { name: 'تلاوة بعناية، ونمو مع كل آية.' })
+    await expect(heading).toBeVisible()
+    await expect(html).toHaveAttribute('lang', 'ar')
+    await expect(html).toHaveAttribute('dir', 'rtl')
+
+    await page.evaluate(() => localStorage.setItem('halaqa-language', 'en'))
+    await page.reload()
+    await expect(heading).toBeVisible()
+    await page.getByRole('button', { name: 'تسجيل الدخول', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'تسجيل الدخول', exact: true })).toBeVisible()
+
+    await page.getByRole('button', { name: 'English', exact: true }).click()
+    await page.reload()
+    await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible()
+    await expect(html).toHaveAttribute('lang', 'en')
+    await expect(html).toHaveAttribute('dir', 'ltr')
+  })
+})
+
 async function mobileLayout(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,

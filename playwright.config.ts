@@ -18,6 +18,11 @@ export default defineConfig({
   reporter: [['list'], ['html', { outputFolder: '.artifacts/playwright-report', open: 'never' }]],
   use: {
     baseURL: origin,
+    // The existing English workflows start with an explicit language choice.
+    storageState: {
+      cookies: [],
+      origins: [{ origin, localStorage: [{ name: 'halaqa-language-preference', value: 'en' }] }],
+    },
     trace: 'on',
     screenshot: 'only-on-failure',
   },

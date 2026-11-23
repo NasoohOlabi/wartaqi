@@ -2283,3 +2283,11 @@ Railway logs correlate inference, validation, delivery and user reports by a ref
 Focused tests cover reply routing, credential flow isolation, report ownership, redaction and malformed or timed-out provider responses. The Telegram image completed a synthetic request with Railway variables injected locally. Real LM Studio also answered English and Arabic synthetic questions through the worker, using a simulated Telegram endpoint. Native Telegram chat delivery requires a client check. The PR records the CI and deployed startup probe results.
 
 CodeQL flagged substring matching in the test's Telegram request mock. The mock now checks the parsed Telegram origin and asserts the exact LM Studio endpoint. The production transport was unaffected.
+
+## 2026-11-23 19:47 Asia/Damascus — Default to Arabic and reorganize student details
+
+The owner requested Arabic as the default and a clearer student profile on desktop and phones. The homepage, sign-in, notebook and application connection pages open in Arabic and RTL. Explicit language choices persist. Existing devices start in Arabic once because the previous setting mixed automatic defaults with explicit choices.
+
+Student details align the profile fields and courses, group attendance totals with history, and give notes their own panel. Phones keep Add note above attendance history and use labelled records without sideways scrolling. The Level field uses the active course selection or the roster level in the all-students view.
+
+Focused synthetic browser checks covered fresh and returning Arabic startup, English persistence, storage denial, bilingual application connections, attendance history sorting, and course-specific levels. Desktop coverage spans 1624/1920/2560px with the first attendance record visible at 560px tall. Phone coverage spans 320/390/430px in both languages. The PR records release and deployment verification. The local browser checks use synthetic records and emulated phones.

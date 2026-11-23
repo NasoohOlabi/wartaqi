@@ -122,6 +122,8 @@ test('theme controls stay synchronized across tabs and tolerate unavailable stor
     })
   })
   await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('lang', 'ar')
+  await page.getByRole('button', { name: 'English', exact: true }).click()
   await page.getByRole('combobox', { name: 'Color theme' }).selectOption('light')
   await page.emulateMedia({ colorScheme: 'dark' })
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')

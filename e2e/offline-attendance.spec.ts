@@ -194,7 +194,7 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
 
     networkAvailable = false
     await page.evaluate(() => {
-      localStorage.setItem('halaqa-language', 'ar')
+      localStorage.setItem('halaqa-language-preference', 'ar')
       const key = 'halaqa-offline-access'
       const access = JSON.parse(localStorage.getItem(key) ?? 'null')
       delete access.teacher

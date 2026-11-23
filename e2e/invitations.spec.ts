@@ -188,7 +188,10 @@ for (const language of ['en', 'ar']) {
     baseURL,
   }, testInfo) => {
     if (testInfo.project.name === 'mobile') await page.setViewportSize({ width: 320, height: 800 })
-    await page.addInitScript((value) => localStorage.setItem('halaqa-language', value), language)
+    await page.addInitScript(
+      (value) => localStorage.setItem('halaqa-language-preference', value),
+      language,
+    )
     await mockAuth(page, adminId)
     const requestId = crypto.randomUUID()
     const temporaryPassword = crypto.randomUUID()
