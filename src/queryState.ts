@@ -28,6 +28,7 @@ export function useQueryState() {
         'profile',
         'history',
         'diagnostics',
+        'telegram',
         'changes',
       ])
       .safeParse(query.get('view')).data ?? 'notebook'

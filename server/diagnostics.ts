@@ -8,6 +8,11 @@ import {
 import { readBoundedBody } from './profile'
 import { sessionReplay } from './sessionReplay'
 import { replayPath } from '../shared/sessionReplay'
+import {
+  telegramConversationsPath,
+  telegramConversationTurnsPath,
+} from '../shared/telegram-conversations'
+import { telegramConversations } from './telegramConversations'
 
 const reply = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } })
@@ -81,6 +86,8 @@ export async function diagnostics(
   const before = url.searchParams.get('before')
   if (before !== null && (!/^[1-9]\d{0,18}$/.test(before) || BigInt(before) > 9223372036854775807n))
     return reply({ error: 'Invalid cursor' }, 400)
+  if (url.pathname === telegramConversationsPath || url.pathname === telegramConversationTurnsPath)
+    return telegramConversations(request, pool, before)
   if (url.pathname === '/api/diagnostics/journeys' && request.method === 'GET') {
     const actor = url.searchParams.get('actor')
     const filterRole = url.searchParams.get('role')

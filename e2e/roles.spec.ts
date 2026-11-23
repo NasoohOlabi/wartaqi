@@ -20,22 +20,25 @@ test.beforeEach(({ baseURL }) => {
   api = `${origin}/api`
 })
 
-async function expectSettingsRow(navigation: Locator, rtl: boolean) {
+async function expectSettingsLayout(navigation: Locator, rtl: boolean) {
   const boxes = await navigation.getByRole('link').evaluateAll((links) =>
     links.map((link) => {
       const { top, width, height, right, left } = link.getBoundingClientRect()
       return { top, width, height, right, left, viewport: innerWidth }
     }),
   )
-  expect(boxes).toHaveLength(4)
-  for (const box of boxes) {
+  expect(boxes).toHaveLength(5)
+  for (const [index, box] of boxes.entries()) {
     expect(box.width).toBeGreaterThanOrEqual(44)
     expect(box.height).toBeGreaterThanOrEqual(44)
-    expect(box.top).toBe(boxes[0].top)
+    if (box.viewport >= 720) expect(box.top).toBe(boxes[0].top)
     expect(box.left).toBeGreaterThanOrEqual(0)
     expect(box.right).toBeLessThanOrEqual(box.viewport)
+    const previous = boxes[index - 1]
+    if (previous) expect(box.top).toBeGreaterThanOrEqual(previous.top)
+    if (previous && previous.top === box.top)
+      expect(rtl ? previous.left >= box.right : previous.right <= box.left).toBe(true)
   }
-  expect(rtl ? boxes[0].left >= boxes[3].right : boxes[0].right <= boxes[3].left).toBe(true)
 }
 
 async function mockAuth(page: Page, id: string, image: string | null = null) {
@@ -489,6 +492,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     'Students',
     'History & corrections',
     'Diagnostics',
+    'Telegram',
   ])
   const accountsSection = settingsSections.getByRole('link', { name: 'Accounts' })
   const studentsSection = settingsSections.getByRole('link', { name: 'Students' })
@@ -504,7 +508,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
   await page.goBack()
   await expect(accountsSection).toHaveAttribute('aria-current', 'page')
   await expect(accountsSection).toHaveCSS('border-block-end-color', 'rgb(0, 125, 141)')
-  await expectSettingsRow(settingsSections, false)
+  await expectSettingsLayout(settingsSections, false)
   await expect(page.getByText('admin@example.test')).toHaveCount(0)
   await expect(page.getByLabel('Role').filter({ visible: true })).toHaveCount(0)
   await mkdir('.artifacts/verification', { recursive: true })
@@ -533,7 +537,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     fullPage: true,
   })
   await page.setViewportSize({ width: 320, height: 844 })
-  await expectSettingsRow(settingsSections, false)
+  await expectSettingsLayout(settingsSections, false)
   const lastControl = page.locator('.role-page button:visible').last()
   await lastControl.scrollIntoViewIfNeeded()
   const controlBox = await lastControl.boundingBox()
@@ -579,7 +583,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     )
-    await expectSettingsRow(arabicSettings, true)
+    await expectSettingsLayout(arabicSettings, true)
     if (width === 320) {
       await page.screenshot({
         path: `.artifacts/verification/settings-navigation-ar-320-${testInfo.project.name}.png`,

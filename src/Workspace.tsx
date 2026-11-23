@@ -52,6 +52,7 @@ import { ProfileSettings } from './ProfileSettings'
 import { teacherStudentUpdateSchema, type NeonTeacher } from '../shared/neon'
 import { OfflineAttendance } from './OfflineAttendance'
 import { DiagnosticsPage } from './DiagnosticsPage'
+import { TelegramConversationsPage } from './TelegramConversationsPage'
 import { useDiagnostics } from './diagnostics'
 import { diagnosticsScreenSchema, type DiagnosticsScreen } from '../shared/diagnostics'
 
@@ -71,7 +72,7 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
             userId={userId}
             cached={Boolean(cached)}
             screen={
-              query.view === 'diagnostics'
+              query.view === 'diagnostics' || query.view === 'telegram'
                 ? null
                 : query.view === 'profile' && !cached
                   ? 'profile'
@@ -91,7 +92,14 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
                             : query.view
             }
           />
-          {!cached && query.view === 'diagnostics' && account.role === 'administrator' ? (
+          {!cached && query.view === 'telegram' && account.role === 'administrator' ? (
+            <TelegramConversationsPage
+              key={userId}
+              userId={userId}
+              profile={profile}
+              signOut={signOut}
+            />
+          ) : !cached && query.view === 'diagnostics' && account.role === 'administrator' ? (
             <DiagnosticsPage userId={userId} profile={profile} signOut={signOut} />
           ) : !cached && query.view === 'invitation-message' && account.role === 'administrator' ? (
             <InvitationMessageViewer

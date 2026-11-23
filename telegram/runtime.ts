@@ -34,7 +34,12 @@ export function createWorker(env: Record<string, string | undefined>) {
   )
   const api = telegramApi(config.TELEGRAM_BOT_TOKEN)
   const navigation = createNavigation(store, auth, api, config.WARTAQI_ORIGIN)
-  const assistant = createAssistant(assistantConfig(env), store)
+  const assistant = createAssistant(
+    assistantConfig(env),
+    config.TELEGRAM_WORKER_SECRET
+      ? { origin: config.WARTAQI_ORIGIN, secret: config.TELEGRAM_WORKER_SECRET }
+      : undefined,
+  )
   const { process, notifyFailure } = createUpdates(store, auth, api, navigation, assistant)
   let ready = false
   return {

@@ -78,6 +78,7 @@
 }
 .settings-sections ul {
   display: flex;
+  flex-wrap: wrap;
   gap: clamp(0.25rem, 2vw, 1rem);
 }
 .settings-sections a {

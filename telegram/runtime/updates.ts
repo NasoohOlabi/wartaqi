@@ -196,20 +196,6 @@ export function createUpdates(
       store.set(`lang:${chat}`, 'ar')
     const commandToken = text.split(/\s/, 1)[0]
     const command = commandToken.split('@')[0]
-    if (command === '/report') {
-      const accepted = assistant.report(chat, text.slice(commandToken.length).trim())
-      await say(
-        chat,
-        language(chat) === 'ar'
-          ? accepted
-            ? 'شكراً، تم تسجيل البلاغ.'
-            : 'المرجع غير صالح أو انتهت صلاحيته.'
-          : accepted
-            ? 'Thank you, the report was recorded.'
-            : 'That reference is invalid or expired.',
-      )
-      return
-    }
     const dismissPhone = async () => {
       store.delete(`phone-input:${chat}`)
       if (!pendingPhone.success) return
@@ -304,7 +290,7 @@ export function createUpdates(
         chat,
         language(chat) === 'ar'
           ? '/menu القائمة، /linkaccount ربط الحساب عبر المتصفح، /sharephone مشاركة رقم الهاتف، /cancel إلغاء، /language اللغة، /unlink إلغاء الربط. اكتب سؤالك مباشرة للمساعدة'
-          : '/menu opens the menu, /linkaccount links through your browser, /sharephone shares your phone, /cancel cancels, /language changes language, /unlink disconnects. Type a question directly for help.',
+          : '/menu opens the menu, /linkaccount links through your browser, /sharephone shares your phone, /cancel cancels, /language changes language, /unlink disconnects. Type a question directly for help. Administrators may review assistant questions and replies for three days; leave out personal information.',
       )
       return
     }

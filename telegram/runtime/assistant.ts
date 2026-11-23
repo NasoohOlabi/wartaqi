@@ -1,6 +1,9 @@
-import { randomBytes } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 import { z } from 'zod'
-import type { Storage } from '../storage'
+import {
+  redactTelegramTranscript,
+  telegramConversationIngestPath,
+} from '../../shared/telegram-conversations'
 
 const version = 'wartaq-help-v2'
 const system = (
@@ -44,7 +47,7 @@ export function assistantConfig(env: Record<string, string | undefined>): Config
     return null
   }
 }
-export function createAssistant(config: Config, store?: Storage) {
+export function createAssistant(config: Config, transcript?: { origin: string; secret: string }) {
   const log = (message: string, fields: Record<string, unknown> & { outcome?: string }) => {
     const level = fields.outcome && !['ok', 'sent'].includes(fields.outcome) ? 'warn' : 'info'
     console.info(JSON.stringify({ message, level, promptVersion: version, ...fields }))
@@ -143,43 +146,52 @@ export function createAssistant(config: Config, store?: Storage) {
     say: (chat: string, text: string) => Promise<void>,
   ) => {
     const result = await request(question, lang)
-    let reportable = false
-    try {
-      if (store) {
-        store.set(`assistant-report:${result.trace}`, chat, Date.now() + 24 * 60 * 60_000)
-        reportable = true
-      }
-    } catch {
-      log('assistant_report_storage', { ...result.fields, outcome: 'failed' })
-    }
     const fallback =
       lang === 'ar'
         ? 'المساعد غير متاح حالياً. حاول لاحقاً أو اسأل معلّمك.'
         : 'The assistant is unavailable. Try later or ask your teacher.'
+    const reply = result.answer || fallback
+    let delivery: 'sent' | 'failed' = 'sent'
     try {
-      await say(
-        chat,
-        `${result.answer || fallback}\n\n${lang === 'ar' ? 'المرجع' : 'Reference'}: ${result.trace}${reportable ? `\n/report ${result.trace}` : ''}`,
-      )
-      log(result.answer ? 'assistant_delivery' : 'assistant_fallback', {
-        ...result.fields,
-        elapsedMs: Math.round(performance.now() - result.start),
-        outcome: 'sent',
-      })
+      await say(chat, reply)
     } catch {
-      log('assistant_delivery', {
-        ...result.fields,
-        elapsedMs: Math.round(performance.now() - result.start),
-        outcome: 'failed',
-      })
+      delivery = 'failed'
     }
-  }
-  const report = (chat: string, trace: string) => {
-    if (!/^[A-Za-z0-9_-]{12}$/.test(trace) || store?.get(`assistant-report:${trace}`) !== chat)
-      return false
-    store.delete(`assistant-report:${trace}`)
-    log('assistant_report', { trace })
-    return true
+    log(result.answer ? 'assistant_delivery' : 'assistant_fallback', {
+      ...result.fields,
+      elapsedMs: Math.round(performance.now() - result.start),
+      outcome: delivery,
+    })
+    if (transcript) {
+      try {
+        const response = await fetch(new URL(telegramConversationIngestPath, transcript.origin), {
+          method: 'POST',
+          redirect: 'error',
+          signal: AbortSignal.timeout(3000),
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${transcript.secret}`,
+          },
+          body: JSON.stringify({
+            trace: result.trace,
+            conversationId: createHmac('sha256', transcript.secret)
+              .update('wartaqi-telegram-conversation-v1\0')
+              .update(chat)
+              .digest('hex'),
+            question: redactTelegramTranscript(question, 1000),
+            reply: redactTelegramTranscript(reply, 3000),
+            delivery,
+            outcome: result.failure || 'ok',
+            promptVersion: version,
+            model: result.fields.model,
+            elapsedMs: Math.round(performance.now() - result.start),
+          }),
+        })
+        if (!response.ok) throw new Error('transcript rejected')
+      } catch {
+        log('assistant_transcript', { trace: result.trace, outcome: 'failed' })
+      }
+    }
   }
   const reject = (reason: string) => log('assistant_rejection', { reason })
   const smoke = async (source: 'smoke' | 'startup') => {
@@ -189,5 +201,5 @@ export function createAssistant(config: Config, store?: Storage) {
     log('assistant_smoke', { trace: result.trace, source, outcome })
     return outcome === 'ok'
   }
-  return { deliver, report, reject, smoke }
+  return { deliver, reject, smoke }
 }

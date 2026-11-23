@@ -2290,6 +2290,12 @@ The owner reported that typing a question in the private chat returned the `/men
 
 The old worker reproduced the reported behavior with zero inference calls. Focused tests check the same plain-text path, command and workflow routing, sensitive input rejection and report references. Live LM Studio answered the plain-text model and tools question with the configured model ID and explained the tool limits. An Arabic question returned the expected notebook command. Both used the worker's normal update handler with simulated Telegram delivery. The report command recorded the same trace as the first reply. The PR records Railway verification.
 
+## 2026-11-23 20:40 Asia/Damascus — Show Telegram conversations in Administrator Settings
+
+The owner asked to remove reports and trace IDs from chat replies and review the conversation in the Administrator dashboard. Plain replies remain in Telegram. Settings → Telegram shows recent assistant exchanges with delivery and inference metadata. The worker groups turns by a secret-derived chat identifier and masks recognizable contact and credential text before storage. Commands, sign-in and notebook interactions are outside capture. The website enforces Administrator access and a three-day retention window. Capture begins with this release.
+
+Focused worker tests verify plain replies, the authenticated transcript write and failures independent of Telegram delivery. A live LM Studio reply reached simulated Telegram without a reference and was stored in disposable Postgres. Real sessions against the Bun server verified Administrator access and denial for Teachers and forged accounts. Database tests also cover deduplication, pagination and retention. Synthetic browser tests exercise conversation navigation and text rendering in English and Arabic at phone and desktop widths. The PR records the guarded migration and live verification.
+
 ## 2026-11-23 19:47 Asia/Damascus — Default to Arabic and reorganize student details
 
 The owner requested Arabic as the default and a clearer student profile on desktop and phones. The homepage, sign-in, notebook and application connection pages open in Arabic and RTL. Explicit language choices persist. Existing devices start in Arabic once because the previous setting mixed automatic defaults with explicit choices.

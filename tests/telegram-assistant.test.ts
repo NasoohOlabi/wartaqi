@@ -82,7 +82,7 @@ test('provider body failures and unsafe finish metadata produce safe diagnostics
   }
 })
 
-test('private questions reach inference while protected flows and reports stay separate', async () => {
+test('private questions reach inference while protected flows stay separate', async () => {
   const requests: string[] = []
   const messages: string[] = []
   globalThis.fetch = Object.assign(
@@ -128,12 +128,7 @@ test('private questions reach inference while protected flows and reports stay s
     expect(requests[0]).toContain('Are you Bonsai and can you call tools?')
     expect(requests[0]).toContain('powered by model')
     expect(worker.store.get('phone-input:1')).toBe(1)
-    const reference = messages[0].match(/\/report ([\w-]+)/)?.[1]
-    expect(reference).toBeDefined()
-    await worker.process(update(2, `/report ${reference}`, 2))
-    expect(messages.at(-1)).toContain('invalid')
-    await worker.process(update(3, `/report ${reference}`))
-    expect(messages.at(-1)).toContain('recorded')
+    expect(messages[0]).toBe('Use /menu.')
     await worker.process(update(4, '12345678'))
     await worker.process(update(5, 'hidden', 1, { forward_date: 1 }))
     await worker.process(update(6, 'x'.repeat(1001)))
@@ -177,4 +172,52 @@ test('private questions reach inference while protected flows and reports stay s
   } finally {
     worker.store.close()
   }
+})
+
+test('transcripts follow delivery and exclude chat IDs and obvious secrets', async () => {
+  const bodies: Array<Record<string, unknown>> = []
+  const order: string[] = []
+  let failDelivery = false
+  globalThis.fetch = Object.assign(
+    async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : input)
+      if (url.origin === 'https://model.example') {
+        return Response.json({
+          choices: [{ finish_reason: 'stop', message: { content: 'Contact 1234567.' } }],
+        })
+      }
+      expect(url.origin).toBe('https://wartaq.example')
+      expect(url.pathname).toBe('/api/telegram/conversations')
+      expect(init?.redirect).toBe('error')
+      expect(init?.signal).toBeDefined()
+      expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${'s'.repeat(32)}`)
+      order.push('transcript')
+      bodies.push(JSON.parse(String(init?.body)))
+      return new Response(null, { status: failDelivery ? 503 : 204 })
+    },
+    { preconnect: originalFetch.preconnect },
+  )
+  const assistant = createAssistant(
+    assistantConfig({
+      LM_STUDIO_BASE_URL: 'https://model.example',
+      LM_STUDIO_MODEL: 'model',
+      LM_STUDIO_API_KEY: 'key',
+    }),
+    { origin: 'https://wartaq.example', secret: 's'.repeat(32) },
+  )
+  const say = async (_chat: string, reply: string) => {
+    order.push('delivery')
+    expect(reply).toBe('Contact 1234567.')
+    if (failDelivery) throw new Error('private delivery error')
+  }
+  await assistant.deliver('987654321', 'Call 7654321', 'en', say)
+  failDelivery = true
+  await assistant.deliver('987654321', 'Another question', 'en', say)
+  expect(order).toEqual(['delivery', 'transcript', 'delivery', 'transcript'])
+  expect(bodies.map((body) => body.delivery)).toEqual(['sent', 'failed'])
+  expect(bodies[0].question).toBe('Call [redacted]')
+  expect(bodies[0].reply).toBe('Contact [redacted].')
+  expect(bodies[0].conversationId).toMatch(/^[a-f0-9]{64}$/)
+  expect(bodies[0].conversationId).toBe(bodies[1].conversationId)
+  expect(JSON.stringify(bodies)).not.toContain('987654321')
 })
