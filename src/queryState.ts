@@ -86,6 +86,9 @@ export function sanitizedSearch(search: string) {
     query.set('tab', 'attendance')
     for (const key of ['from', 'to', 'student', 'q', 'group']) query.delete(key)
   }
+  const tables = query.get('tables')
+  if (tables && tables.length <= maxTableStateLength && isLegacyTableState(tables))
+    query.set('tables', encodeTableState(tables))
   return query
 }
 export function queryHref(values: Record<string, string>) {
@@ -187,11 +190,32 @@ const tableStateSchema = z.object({
 })
 type TableState = z.infer<typeof tableStateSchema>
 const emptyTableState: TableState = { sorting: [], filters: [] }
+const maxTableStateLength = 10000
+
+function isLegacyTableState(value: string) {
+  return value.trimStart().startsWith('{')
+}
+
+function encodeTableState(json: string) {
+  // Some share targets decode URL escapes before detecting links in pasted text.
+  const bytes = Array.from(new TextEncoder().encode(json), (byte) => String.fromCharCode(byte))
+  return btoa(bytes.join('')).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')
+}
+
 function readTableStates(search: string) {
   const raw = new URLSearchParams(search).get('tables')
-  if (!raw || raw.length > 10000) return {}
+  // UTF-8 can use three bytes per UTF-16 code unit, then Base64 uses four characters per three bytes.
+  if (!raw || raw.length > maxTableStateLength * 4) return {}
   try {
-    return z.record(z.string().max(100), tableStateSchema).safeParse(JSON.parse(raw)).data ?? {}
+    const json = isLegacyTableState(raw)
+      ? raw
+      : new TextDecoder('utf-8', { fatal: true }).decode(
+          Uint8Array.from(atob(raw.replaceAll('-', '+').replaceAll('_', '/')), (byte) =>
+            byte.charCodeAt(0),
+          ),
+        )
+    if (json.length > maxTableStateLength) return {}
+    return z.record(z.string().max(100), tableStateSchema).safeParse(JSON.parse(json)).data ?? {}
   } catch {
     return {}
   }
@@ -204,5 +228,5 @@ export function setTableQuery(id: string, state: TableState) {
   const states = readTableStates(window.location.search)
   if (!state.sorting.length && !state.filters.length) delete states[id]
   else states[id] = state
-  setQuery({ tables: Object.keys(states).length ? JSON.stringify(states) : '' })
+  setQuery({ tables: Object.keys(states).length ? encodeTableState(JSON.stringify(states)) : '' })
 }

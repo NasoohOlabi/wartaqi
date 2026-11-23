@@ -2313,3 +2313,9 @@ The owner supplied the photo and asked to crop out the left doorway. The public 
 `bun run verify` passed. Focused Chromium and emulated phone checks verified image loading, bilingual descriptions, fit at 320/390/844/1440px, and navigation to the separate sign-in screen. The PR records the release checks and Railway verification. No signed-in production records were used.
 
 The offline check reproduced a broken image because the service worker excluded JPEGs. The worker now precaches the photo. The built homepage successfully decoded it offline in desktop Chromium and on an emulated phone.
+
+## 2026-11-23 23:45 Asia/Damascus — Keep sorted table links shareable
+
+The owner showed WhatsApp stopping the link at the first quote in the Grades table state. Wartaqi now encodes table sorts and filters with URL-safe Base64 and rewrites legacy JSON links when opened. The existing validation still guards decoded table settings.
+
+The Chromium regression reproduced the punctuation in the decoded link before the fix. After the fix, copied Grades links restored Result order in English and Arabic on desktop and emulated phones. Legacy links and Arabic filter text also survived reopening. The PR records release and deployment verification. Native WhatsApp link detection was outside the browser checks.
