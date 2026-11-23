@@ -210,61 +210,6 @@ export function createUpdates(
       )
       return
     }
-    if (command === '/ask') {
-      const question = text.slice(commandToken.length).trim()
-      const reason =
-        message.forward_origin || message.forward_date
-          ? 'forwarded'
-          : pendingPhone.success || auth.hasPendingCode(chat)
-            ? 'pending_auth'
-            : !question
-              ? 'empty'
-              : question.length > 1000
-                ? 'input_limit'
-                : /(?:\p{Decimal_Number}[\s()+-]*){8,}|(?:password|passcode|token|secret|كلمة السر|رمز التحقق)\s*[:=]\s*\S+/iu.test(
-                      question,
-                    )
-                  ? 'sensitive_input'
-                  : assistantChats.has(chat) || assistantChats.size >= 3
-                    ? 'busy'
-                    : ''
-      if (reason) {
-        assistant.reject(reason)
-        const ar = language(chat) === 'ar'
-        if (reason === 'busy') {
-          await say(
-            chat,
-            ar ? 'المساعد مشغول الآن. حاول بعد قليل.' : 'The assistant is busy. Try again shortly.',
-          )
-        } else if (reason === 'pending_auth') {
-          await say(
-            chat,
-            ar
-              ? 'أكمل تسجيل الدخول أو استخدم /cancel، ثم أرسل سؤالك.'
-              : 'Finish signing in or use /cancel, then send your question.',
-          )
-        } else {
-          await say(
-            chat,
-            ar
-              ? 'أرسل سؤالاً قصيراً بعد /ask عن استخدام وارتق، دون معلومات شخصية.'
-              : 'Type /ask followed by a short Wartaq question. Leave out personal information.',
-          )
-        }
-        return
-      }
-      assistantChats.add(chat)
-      const task = assistant
-        .deliver(chat, question, language(chat), say)
-        .catch(() => {
-          assistant.reject('delivery_failure')
-        })
-        .finally(() => {
-          assistantChats.delete(chat)
-        })
-      if (!detach) await task
-      return
-    }
     const dismissPhone = async () => {
       store.delete(`phone-input:${chat}`)
       if (!pendingPhone.success) return
@@ -291,7 +236,7 @@ export function createUpdates(
       return
     }
     if (
-      !text.startsWith('/') &&
+      /^(?=.*\p{Decimal_Number})[\p{Decimal_Number} ()+-]+$/u.test(text) &&
       store.get(`phone-input:${chat}`) === message.from.id &&
       !hadPendingCode &&
       !auth.isLinked(chat)
@@ -358,8 +303,8 @@ export function createUpdates(
       await say(
         chat,
         language(chat) === 'ar'
-          ? '/menu القائمة، /linkaccount ربط الحساب عبر المتصفح، /sharephone مشاركة رقم الهاتف، /cancel إلغاء، /language اللغة، /unlink إلغاء الربط'
-          : '/menu opens the menu, /linkaccount links through your browser, /sharephone shares your phone, /cancel cancels, /language changes language, /unlink disconnects.',
+          ? '/menu القائمة، /linkaccount ربط الحساب عبر المتصفح، /sharephone مشاركة رقم الهاتف، /cancel إلغاء، /language اللغة، /unlink إلغاء الربط. اكتب سؤالك مباشرة للمساعدة'
+          : '/menu opens the menu, /linkaccount links through your browser, /sharephone shares your phone, /cancel cancels, /language changes language, /unlink disconnects. Type a question directly for help.',
       )
       return
     }
@@ -381,6 +326,61 @@ export function createUpdates(
       store.delete(`generation:${chat}`)
       store.delete(`prompt:${chat}`)
       await show(chat, message.from.id, prompt.action, text)
+      return
+    }
+    if (!text.startsWith('/')) {
+      const question = text
+      const reason =
+        message.forward_origin || message.forward_date
+          ? 'forwarded'
+          : pendingPhone.success || auth.hasPendingCode(chat) || auth.isExchanging(chat)
+            ? 'pending_auth'
+            : !question
+              ? 'empty'
+              : question.length > 1000
+                ? 'input_limit'
+                : /(?:\p{Decimal_Number}[\s()+-]*){8,}|(?:password|passcode|token|secret|كلمة السر|رمز التحقق)\s*(?:[:=]|\bis\b)\s*\S+/iu.test(
+                      question,
+                    )
+                  ? 'sensitive_input'
+                  : assistantChats.has(chat) || assistantChats.size >= 3
+                    ? 'busy'
+                    : ''
+      if (reason) {
+        assistant.reject(reason)
+        const ar = language(chat) === 'ar'
+        if (reason === 'busy') {
+          await say(
+            chat,
+            ar ? 'المساعد مشغول الآن. حاول بعد قليل.' : 'The assistant is busy. Try again shortly.',
+          )
+        } else if (reason === 'pending_auth') {
+          await say(
+            chat,
+            ar
+              ? 'أكمل تسجيل الدخول أو استخدم /cancel، ثم أرسل سؤالك.'
+              : 'Finish signing in or use /cancel, then send your question.',
+          )
+        } else {
+          await say(
+            chat,
+            ar
+              ? 'أرسل سؤالك مباشرة دون معلومات شخصية.'
+              : 'Send a short question. Leave out personal information.',
+          )
+        }
+        return
+      }
+      assistantChats.add(chat)
+      const task = assistant
+        .deliver(chat, question, language(chat), say)
+        .catch(() => {
+          assistant.reject('delivery_failure')
+        })
+        .finally(() => {
+          assistantChats.delete(chat)
+        })
+      if (!detach) await task
       return
     }
     await say(
