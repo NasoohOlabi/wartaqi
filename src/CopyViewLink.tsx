@@ -4,7 +4,7 @@ import { currentViewLink } from './queryState'
 import { useLanguage } from './useLanguage'
 import './copyViewLink.css'
 
-type CopyState = 'idle' | 'copied' | 'manual'
+type CopyState = { kind: 'idle' } | { kind: 'copied' } | { kind: 'manual'; href: string }
 
 function writeClipboard(value: string) {
   const write = navigator.clipboard?.writeText(value)
@@ -26,39 +26,41 @@ function writeClipboard(value: string) {
 
 export function CopyViewLink() {
   const { t } = useLanguage()
-  const [state, setState] = useState<CopyState>('idle')
-  const [link, setLink] = useState('')
-  const [copiedTick, setCopiedTick] = useState(0)
+  const [state, setState] = useState<CopyState>({ kind: 'idle' })
+  const writing = useRef(false)
   const statusId = useId()
   const field = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (state !== 'copied') return
-    const timer = window.setTimeout(() => setState('idle'), 2000)
+    if (state.kind !== 'copied') return
+    const timer = window.setTimeout(() => setState({ kind: 'idle' }), 2000)
     return () => window.clearTimeout(timer)
-  }, [state, copiedTick])
+  }, [state])
 
   useEffect(() => {
-    if (state !== 'manual') return
+    if (state.kind !== 'manual') return
     field.current?.focus()
     field.current?.select()
   }, [state])
 
   async function copy() {
+    if (writing.current) return
     const href = currentViewLink()
-    setLink(href)
+    writing.current = true
     try {
       await writeClipboard(href)
-      setCopiedTick((tick) => tick + 1)
-      setState('copied')
+      setState({ kind: 'copied' })
     } catch {
-      setState('manual')
+      setState({ kind: 'manual', href })
+    } finally {
+      writing.current = false
     }
   }
 
+  const copied = state.kind === 'copied'
   return (
     <div className="copy-view-link">
-      {state === 'manual' && (
+      {state.kind === 'manual' && (
         <div className="copy-view-fallback">
           <div className="copy-view-fallback-heading">
             <p id={statusId}>{t('Select the link and copy it.')}</p>
@@ -66,28 +68,28 @@ export function CopyViewLink() {
               type="button"
               className="icon-button"
               aria-label={t('Close')}
-              onClick={() => setState('idle')}
+              onClick={() => setState({ kind: 'idle' })}
             >
               <X size={18} strokeWidth={1.8} aria-hidden="true" />
             </button>
           </div>
-          <input ref={field} readOnly value={link} aria-labelledby={statusId} />
+          <input ref={field} readOnly value={state.href} aria-labelledby={statusId} />
         </div>
       )}
       <button
         type="button"
-        className={state === 'copied' ? 'is-copied' : undefined}
-        aria-label={state === 'copied' ? t('Link copied') : t('Copy link')}
+        className={copied ? 'is-copied' : undefined}
+        aria-label={copied ? t('Link copied') : t('Copy link')}
         onClick={() => void copy()}
       >
-        {state === 'copied' ? (
+        {copied ? (
           <Check size={16} strokeWidth={2} aria-hidden="true" />
         ) : (
           <Link2 size={16} strokeWidth={1.8} aria-hidden="true" />
         )}
       </button>
       <p className="copy-view-status" aria-live="polite" aria-atomic="true">
-        {state === 'copied' ? t('Link copied') : ''}
+        {copied ? t('Link copied') : ''}
       </p>
     </div>
   )

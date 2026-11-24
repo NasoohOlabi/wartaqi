@@ -1,5 +1,11 @@
 # Work log
 
+## 2026-11-24 13:04 Asia/Damascus (UTC+03:00) - Fix the copy-link release gate
+
+GitHub Verify for PR #186 failed when the mobile roster test reloaded the previous URL before the Arabic filter was written. The test now waits for the browser URL to change, reloads it, and checks that the exact filter survived. The copy button keeps its confirmation and manual address in one state and ignores repeated clicks while a clipboard attempt is pending.
+
+The signed-in browser check now verifies the complete course link through both a real Chromium clipboard write and a simulated permission denial. The desktop and phone fixtures use synthetic data. The PR tracks the release gate and Railway deployment. Physical-device clipboard behavior remains unverified.
+
 ## 2026-11-24 12:30 Asia/Damascus (UTC+03:00) - Copy the open app view
 
 **Request/reason:** The installed app has no address bar, so a signed-in person cannot copy the current view to share. The public page and the sign-in screen stay without that control. The owner approved a small corner icon on the main view, then asked for a robustness pass and deployment.

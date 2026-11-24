@@ -5,7 +5,7 @@ import { today } from '../src/queryState'
 import { clickAccountAction } from './profileActions'
 
 const userId = '10000000-0000-4000-8000-000000000001'
-const courseId = '40000000-0000-4000-8000-000000000001'
+export const courseId = '40000000-0000-4000-8000-000000000001'
 const course = { id: courseId, name: 'Synthetic course', open: true }
 
 export async function mockSyntheticNotebook(

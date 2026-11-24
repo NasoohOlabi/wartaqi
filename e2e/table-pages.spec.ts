@@ -567,8 +567,10 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
       await filter.click()
       const search = page.getByRole('dialog').getByRole('searchbox')
       const value = '"طالب"'
+      const previousUrl = page.url()
       await search.fill(value)
-      await page.goto(page.url())
+      await expect(page).not.toHaveURL(previousUrl)
+      await page.reload()
       await filter.click()
       await expect(search).toHaveValue(value)
       await page.keyboard.press('Escape')
