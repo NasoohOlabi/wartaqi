@@ -208,3 +208,34 @@ test('student search finds a normalized Arabic family name', async ({ page }) =>
   await search.clear()
   await expect(rows).toHaveCount(3)
 })
+
+test('a signed-in view copies its own address without stray parameters', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.goto('/?page=app&token=secret')
+  await expect(page.getByRole('button', { name: 'Copy link', exact: true })).toHaveCount(0)
+  await mockSyntheticNotebook(page)
+  await page.goto('/?page=app&view=notebook&tab=attendance&token=secret')
+  const copy = page.locator('.copy-view-link > button')
+  const manual = page.locator('.copy-view-fallback input')
+  await expect(copy).toHaveAccessibleName('Copy link')
+  await copy.click()
+  await expect
+    .poll(async () => {
+      if (await manual.isVisible()) return manual.inputValue()
+      if ((await copy.getAttribute('aria-label')) === 'Link copied')
+        return page.evaluate(() => navigator.clipboard.readText())
+      return ''
+    })
+    .toContain('tab=attendance')
+  const shared =
+    (await copy.getAttribute('aria-label')) === 'Link copied'
+      ? await page.evaluate(() => navigator.clipboard.readText())
+      : await manual.inputValue()
+  expect(shared).toContain('page=app')
+  expect(shared).not.toContain('token')
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Copy link', exact: true })).toHaveCount(0)
+})

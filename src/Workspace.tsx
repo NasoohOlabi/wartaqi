@@ -38,6 +38,7 @@ import { SummaryInsights } from './SummaryInsights'
 import { CourseReadiness } from './CourseReadiness'
 import { NotebookDashboard } from './NotebookDashboard'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
+import { CopyViewLink } from './CopyViewLink'
 import { SettingsNavigation } from './SettingsNavigation'
 import { useLedger } from './useLedger'
 import { NeonAuth } from './NeonAuth'
@@ -67,6 +68,7 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
     <NeonAuth onSignOut={goHome}>
       {(userId, account, signOut, profile, cached) => (
         <>
+          <CopyViewLink />
           <DiagnosticsCapture
             key={userId}
             userId={userId}
