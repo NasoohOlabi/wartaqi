@@ -3,9 +3,9 @@ const preference = matchMedia('(prefers-color-scheme: dark)')
 function readChoice() {
   try {
     const saved = localStorage.getItem('halaqa-theme')
-    return saved === 'light' || saved === 'dark' ? saved : 'system'
+    return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'light'
   } catch {
-    return 'system'
+    return 'light'
   }
 }
 function applyTheme() {

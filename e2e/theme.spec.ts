@@ -10,7 +10,18 @@ test('theme follows the device, persists a choice, and works in the notebook on 
   await page.setViewportSize({ width: 320, height: 700 })
   await page.goto('/')
   const theme = page.getByRole('combobox', { name: 'Color theme' })
+  await expect(page.locator('.home-header .language-switch')).toHaveCount(0)
+  await expect(page.locator('.home-footer .language-switch')).toHaveCount(1)
+  await expect(theme).toHaveValue('light')
+  await expect(page.locator('.wartaq-home')).toHaveCSS('background-color', 'rgb(245, 250, 252)')
+  await theme.selectOption('system')
+  expect(await page.evaluate(() => localStorage.getItem('halaqa-theme'))).toBe('system')
+  await expect(page.locator('.wartaq-home')).toHaveCSS('background-color', 'rgb(24, 26, 27)')
+  await page.reload()
   await expect(theme).toHaveValue('system')
+  await page.emulateMedia({ colorScheme: 'light' })
+  await expect(page.locator('.wartaq-home')).toHaveCSS('background-color', 'rgb(245, 250, 252)')
+  await page.emulateMedia({ colorScheme: 'dark' })
   await expect(page.locator('.wartaq-home')).toHaveCSS('background-color', 'rgb(24, 26, 27)')
   await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#181a1b')
   await page.setViewportSize({ width: 1280, height: 900 })
@@ -28,6 +39,17 @@ test('theme follows the device, persists a choice, and works in the notebook on 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
     true,
   )
+  for (const width of [320, 400]) {
+    await page.setViewportSize({ width, height: 700 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    )
+    for (const control of await page
+      .locator('.home-footer .language-switch :is(button, select)')
+      .all()) {
+      expect((await control.boundingBox())?.height).toBeGreaterThanOrEqual(44)
+    }
+  }
   await page.screenshot({ path: `.artifacts/theme-home-arabic-phone-${testInfo.project.name}.png` })
   await mockSyntheticNotebook(page, { role: 'teacher' })
   await page.goto('/?page=app')
@@ -50,6 +72,7 @@ test('dark attendance uses charcoal surfaces, a blue primary action and red abse
   page,
 }, testInfo) => {
   await page.emulateMedia({ colorScheme: 'dark' })
+  await page.addInitScript(() => localStorage.setItem('halaqa-theme', 'dark'))
   await mockSyntheticNotebook(page, { role: 'teacher' })
   await page.goto('/?page=app')
   await page.getByRole('button', { name: /Continue attendance/ }).click()
@@ -123,6 +146,7 @@ test('theme controls stay synchronized across tabs and tolerate unavailable stor
   })
   await page.reload()
   await expect(page.locator('html')).toHaveAttribute('lang', 'ar')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
   await page.getByRole('button', { name: 'English', exact: true }).click()
   await page.getByRole('combobox', { name: 'Color theme' }).selectOption('light')
   await page.emulateMedia({ colorScheme: 'dark' })

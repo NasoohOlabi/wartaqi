@@ -214,7 +214,10 @@ test('phone sign-in fits both languages and themes', async ({ page }, testInfo) 
     for (const width of [320, 1440]) {
       await page.setViewportSize({ width, height: 880 })
       for (const colorScheme of ['light', 'dark'] as const) {
-        await page.emulateMedia({ colorScheme })
+        await page
+          .getByRole('combobox', { name: language === 'ar' ? 'المظهر' : 'Color theme' })
+          .selectOption(colorScheme)
+        await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme)
         const primary = await signIn.boundingBox()
         const field = await phone.boundingBox()
         if (!primary || !field) throw new Error('Missing sign-in controls')

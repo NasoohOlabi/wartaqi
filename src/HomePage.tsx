@@ -123,7 +123,6 @@ export function HomePage({ onOpenApp, error }: { onOpenApp: () => void; error?: 
             <a href="#enrollment">{c.details}</a>
           </nav>
           <div className="home-header-actions">
-            <LanguageSwitch />
             <button className="home-sign-in" onClick={onOpenApp}>
               {c.signIn}
             </button>
@@ -245,6 +244,7 @@ export function HomePage({ onOpenApp, error }: { onOpenApp: () => void; error?: 
         <div className="home-wrap">
           <WartaqLogo />
           <p>{c.footer}</p>
+          <LanguageSwitch />
         </div>
       </footer>
     </div>

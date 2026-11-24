@@ -45,18 +45,18 @@
 .home-actions a:hover {
   text-decoration: underline;
 }
-.home-header .language-switch {
+.home-footer .language-switch {
   padding: 0;
   margin: 0;
   gap: 4px;
 }
-.home-header .language-switch button {
+.home-footer .language-switch button {
   color: #e3f3f4;
 }
-.home-header .language-switch button:hover {
+.home-footer .language-switch button:hover {
   background: #17636c;
 }
-.home-header .language-switch button:focus-visible {
+.home-footer .language-switch button:focus-visible {
   outline-color: #e3f3f4;
 }
 .home-sign-in {
@@ -231,6 +231,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
   gap: 20px;
 }
 .home-footer p {
@@ -270,10 +271,6 @@
     grid-template-columns: 1fr;
     gap: 24px;
     margin-top: 30px;
-  }
-  .home-footer .home-wrap {
-    align-items: start;
-    flex-direction: column;
   }
 }
 @media (max-width: 400px) {

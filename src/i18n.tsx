@@ -38,7 +38,7 @@ function subscribeTheme(listener: () => void) {
 }
 function themePreference() {
   const value = document.documentElement.dataset.themePreference
-  return value === 'light' || value === 'dark' ? value : 'system'
+  return value === 'system' || value === 'dark' ? value : 'light'
 }
 function setTheme(value: 'system' | 'light' | 'dark') {
   document.documentElement.dataset.themePreference = value
@@ -49,8 +49,7 @@ function setTheme(value: 'system' | 'light' | 'dark') {
         : 'light'
       : value
   try {
-    if (value === 'system') localStorage.removeItem('halaqa-theme')
-    else localStorage.setItem('halaqa-theme', value)
+    localStorage.setItem('halaqa-theme', value)
   } catch {
     /* Preference is optional. */
   }

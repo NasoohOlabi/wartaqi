@@ -113,7 +113,7 @@
 :root[data-theme='dark'] .workspace-metrics strong,
 :root[data-theme='dark'] .loading-mobile-brand,
 :root[data-theme='dark'] .home-header nav a,
-:root[data-theme='dark'] .home-header .language-switch button,
+:root[data-theme='dark'] .home-footer .language-switch button,
 :root[data-theme='dark'] .dashboard-actions h2,
 :root[data-theme='dark'] .attendance-group summary,
 :root[data-theme='dark'] .sort-toolbar-label {
@@ -166,7 +166,7 @@
 :root[data-theme='dark'] .profile-panel button:focus-visible,
 :root[data-theme='dark'] .table-control-popup button:hover,
 :root[data-theme='dark'] .sort-add:hover,
-:root[data-theme='dark'] .home-header .language-switch button:hover,
+:root[data-theme='dark'] .home-footer .language-switch button:hover,
 :root[data-theme='dark'] .sort-toolbar button:hover {
   background: var(--dark-active);
 }
@@ -244,7 +244,7 @@
 :root[data-theme='dark'] :focus-visible,
 :root[data-theme='dark'] .sort-add:focus-within,
 :root[data-theme='dark'] .profile-upload:focus-within,
-:root[data-theme='dark'] .home-header .language-switch button:focus-visible {
+:root[data-theme='dark'] .home-footer .language-switch button:focus-visible {
   outline-color: var(--dark-accent);
 }
 
@@ -273,7 +273,7 @@
 .profile-panel .theme-select select {
   width: 100%;
 }
-.home-header .theme-select select {
+.home-footer .theme-select select {
   background: #004d57;
   border-color: #b9dcdf;
   color: white;
