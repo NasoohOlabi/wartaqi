@@ -566,7 +566,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
   await expect(
     account.getByRole('button', { name: 'إعادة تعيين كلمة المرور', exact: true }),
   ).toBeVisible()
-  await page.emulateMedia({ colorScheme: 'dark' })
+  await clickAccountAction(page, 'داكن')
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await expect(arabicAccounts).toHaveCSS('border-block-end-color', 'rgb(131, 185, 225)')
   for (const width of [320, 390, 1440]) {
@@ -606,7 +606,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     path: `.artifacts/verification/settings-editor-ar-${testInfo.project.name}.png`,
     fullPage: true,
   })
-  await page.emulateMedia({ colorScheme: 'light' })
+  await clickAccountAction(page, 'فاتح')
   await clickAccountAction(page, 'English')
   await account.getByLabel('Role').selectOption('student')
   await expect(account.locator('select').nth(1).locator(`option[value="${studentId}"]`)).toHaveText(
@@ -660,7 +660,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
   for (const locale of ['English', 'العربية']) {
     await clickAccountAction(page, locale)
     const arabic = locale === 'العربية'
-    await page.emulateMedia({ colorScheme: arabic ? 'dark' : 'light' })
+    await clickAccountAction(page, arabic ? 'داكن' : 'Light')
     const saveTeacher = teacher.getByRole('button', {
       name: arabic ? 'حفظ بيانات المعلم' : 'Save teacher',
     })
@@ -736,7 +736,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
   }
   expect(resetRequests).toEqual([{ authUserId: teacherId }, { authUserId: teacherId }])
   await clickAccountAction(page, 'English')
-  await page.emulateMedia({ colorScheme: 'light' })
+  await clickAccountAction(page, 'Light')
   await expect(teacher.getByLabel('Access')).toHaveCount(0)
   const expires = '2099-05-18T16:00'
   await teacher.getByLabel('Name', { exact: true }).fill('Updated Synthetic Teacher')

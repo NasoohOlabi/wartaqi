@@ -427,7 +427,7 @@ test('wide student details align profile fields, attendance and notes', async ({
     await expect(rows.first().locator('td').first()).toHaveText('2026-11-14')
     await sort.click()
     await page.setViewportSize({ width: 1624, height: 900 })
-    await page.emulateMedia({ colorScheme: ar ? 'dark' : 'light' })
+    await clickAccountAction(page, ar ? 'داكن' : 'Light')
     await page.screenshot({
       path: `.artifacts/verification/student-detail-wide-${ar ? 'ar' : 'en'}.png`,
     })
@@ -503,7 +503,7 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
     }
     if (ar) {
       await page.setViewportSize({ width: 390, height: 844 })
-      await page.emulateMedia({ colorScheme: 'dark' })
+      await clickAccountAction(page, 'داكن')
       await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
       await title.evaluate((heading) => heading.closest('section')?.scrollIntoView())
       await mkdir('.artifacts/verification', { recursive: true })

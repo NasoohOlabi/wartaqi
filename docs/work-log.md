@@ -1,5 +1,13 @@
 # Work log
 
+## 2026-11-24 10:41 Asia/Damascus (UTC+03:00) - Default to light Arabic
+
+**Request/reason:** Most people open Wartaq in Arabic with a light theme. Keep language and theme changeable: home page controls belong in the footer, the sign-in header keeps its own control, and the signed-in notebook keeps them in the profile menu.
+
+**Changes:** A missing or invalid `halaqa-theme` value now paints light before the app loads. Choosing Device stores `system` and still follows the operating system, including later changes and other tabs. The home header keeps the logo, navigation, and sign-in. Language and theme sit in the footer and wrap on a narrow screen. Updated the appearance note and the theme verification map. Browser checks that used to assume a device default now choose Light, Dark, or Device explicitly.
+
+**Verification:** `bun run verify` passed 74 unit tests, with 11 optional database and provider integrations skipped, plus lint, the production build, and the artifact check. `bun run verify:ui` then passed 219 desktop and mobile browser cases, with 3 skipped. Formatting, staged-file and history secret scans, and the dependency audit passed. The Arabic phone screenshot shows the globe and theme menu in the footer, with sign-in remaining in the header. A browser that previously left the theme on Device stored no value, so its next visit opens in light until Device is chosen again. Physical devices and the live Railway deployment are not verified yet.
+
 ## 2026-11-17 11:49 Asia/Damascus (UTC+03:00) - Consolidate account navigation
 
 **Request/changes:** Replace the duplicate account-controls row with a profile avatar in the existing branded header. Terra implemented the shared menu for notebook, Courses, Settings and Student attendance, using the session photo with a fallback avatar. Language, Administrator-only Settings and sign-out now live in this menu; samples retain Close session. Page navigation, permissions, pending saves and server behavior are unchanged. Escape, outside click and focus leaving dismiss the menu; language changes retain drafts and filters. Updated the affected verification map, behavior docs and browser action helpers.

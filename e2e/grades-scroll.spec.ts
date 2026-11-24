@@ -203,7 +203,10 @@ test('long grades remain navigable in both languages', async ({ page }, testInfo
       await page.setViewportSize({ width: 390, height: 844 })
       const firstRow = region.locator('tbody tr').first()
       for (const colorScheme of ['light', 'dark'] as const) {
-        await page.emulateMedia({ colorScheme })
+        await clickAccountAction(
+          page,
+          colorScheme === 'dark' ? (ar ? 'داكن' : 'Dark') : ar ? 'فاتح' : 'Light',
+        )
         await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme)
         await firstRow.evaluate((element) => {
           element.scrollIntoView({ block: 'start', behavior: 'instant' })
@@ -212,7 +215,7 @@ test('long grades remain navigable in both languages', async ({ page }, testInfo
           path: `.artifacts/verification/grade-record-${ar ? 'ar' : 'en'}-${colorScheme}.png`,
         })
       }
-      await page.emulateMedia({ colorScheme: 'light' })
+      await clickAccountAction(page, ar ? 'فاتح' : 'Light')
     }
     await mkdir('.artifacts/verification', { recursive: true })
     await page.screenshot({
