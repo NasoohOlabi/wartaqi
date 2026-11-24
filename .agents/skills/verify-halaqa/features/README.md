@@ -28,6 +28,8 @@ Table controls: Use the shared `TableToolbar` beside the title for each sortable
 
 Open a copied Grades link after sorting by Result. The `tables` value uses only letters, digits, hyphens and underscores. The result order survives reopening. Old JSON links restore the same order and are rewritten when opened. Check that Arabic filter text also survives reopening.
 
+In a signed-in view, use the corner **Copy link** control and reopen the copied address. Check that it keeps the selected course, screen and filters. Deny clipboard access and check that the full address appears in a focused field for manual copying. `e2e/notebook.spec.ts` exercises both clipboard paths with a synthetic attendance view on desktop and an emulated phone.
+
 At 320/390/430px in English and Arabic, verify roster, the attendance roster, summary, administrator register, course list, membership and grades, profile history, and student attendance history fit without horizontal table scrolling. Check labelled values and direct controls; retain desktop columns and confirm course levels and student privacy.
 
 Courses uses inline action icons on wide lists and a three-dot menu on narrow lists. Grades and History & corrections use three-dot menus. Dashboard, Attendance, membership and form submissions keep their primary controls visible. Attendance rows show Add note next to the attendance control. On compact screens, tapping a name in Students opens Student information. The wide Students table has a dedicated Open student button, and the Administrator register has a direct Edit action. Account management opens a copyable message after resetting a password. Profile actions, overview filters, student portal refresh and public navigation use their existing controls.

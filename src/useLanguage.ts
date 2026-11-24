@@ -136,6 +136,10 @@ const arabic = {
     'يضيف التراجع تصحيحاً ويبقى الأصل في الجدول. يعيد التراجع عن أحدث حضور الحالة السابقة.',
   'Duplicate student ID in roster': 'معرّف طالب مكرر في القائمة',
   'Conflicting teacher names in roster': 'أسماء معلمين متعارضة في القائمة',
+  'Copy link': 'نسخ الرابط',
+  'Link copied': 'تم نسخ الرابط',
+  'Select the link and copy it.': 'حدّد الرابط وانسخه.',
+  Close: 'إغلاق',
 }
 export type TranslationKey = keyof typeof arabic
 export type Language = 'en' | 'ar'

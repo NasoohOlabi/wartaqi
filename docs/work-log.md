@@ -1,5 +1,19 @@
 # Work log
 
+## 2026-11-24 13:04 Asia/Damascus (UTC+03:00) - Fix the copy-link release gate
+
+GitHub Verify for PR #186 failed when the mobile roster test reloaded the previous URL before the Arabic filter was written. The test now waits for the browser URL to change, reloads it, and checks that the exact filter survived. The copy button keeps its confirmation and manual address in one state and ignores repeated clicks while a clipboard attempt is pending.
+
+The signed-in browser check now verifies the complete course link through both a real Chromium clipboard write and a simulated permission denial. The desktop and phone fixtures use synthetic data. The PR tracks the release gate and Railway deployment. Physical-device clipboard behavior remains unverified.
+
+## 2026-11-24 12:30 Asia/Damascus (UTC+03:00) - Copy the open app view
+
+**Request/reason:** The installed app has no address bar, so a signed-in person cannot copy the current view to share. The public page and the sign-in screen stay without that control. The owner approved a small corner icon on the main view, then asked for a robustness pass and deployment.
+
+**Changes:** One control is mounted only after a signed-in session. It copies the current address after the existing view-query sanitizer, so bearer parameters and access fragments are dropped and the open course, tab and filters remain. A failed clipboard write shows the address for manual copy. Repeating the action restarts the confirmation. The visible mark is a 32px disc with a 44px hit target, fixed at the main-view corner and lifted above the phone tab bar. It is hidden while a dialog is open and when printing. It is absent from the public page, sign-in, and the sidebar and header.
+
+**Verification:** `bun run verify:release` passed 75 unit tests with 11 optional database and provider integrations skipped, all 221 desktop and mobile browser cases with 3 skipped, lint, the production build, the artifact check, formatting, file and history secret scans, and a clean dependency audit. Browser coverage checks that the control is absent on the public page and sign-in, and that a signed-in attendance view copies its address without a stray token. Physical-device clipboard behavior remains unverified. No provider or schema change. PR checks and the exact main Railway deployment follow.
+
 ## 2026-11-24 10:41 Asia/Damascus (UTC+03:00) - Default to light Arabic
 
 **Request/reason:** Most people open Wartaq in Arabic with a light theme. Keep language and theme changeable: home page controls belong in the footer, the sign-in header keeps its own control, and the signed-in notebook keeps them in the profile menu.

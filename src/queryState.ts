@@ -91,6 +91,21 @@ export function sanitizedSearch(search: string) {
     query.set('tables', encodeTableState(tables))
   return query
 }
+function publicHash(hash: string) {
+  const value = hash.startsWith('#') ? hash.slice(1) : hash
+  if (!value || new URLSearchParams(value).has('access')) return ''
+  return `#${value}`
+}
+
+export function viewLinkFrom(url: URL) {
+  const search = sanitizedSearch(url.search).toString()
+  return `${url.origin}${url.pathname}${search ? `?${search}` : ''}${publicHash(url.hash)}`
+}
+
+export function currentViewLink() {
+  return viewLinkFrom(new URL(window.location.href))
+}
+
 export function queryHref(values: Record<string, string>) {
   const query = sanitizedSearch(window.location.search)
   for (const [key, value] of Object.entries(values)) {

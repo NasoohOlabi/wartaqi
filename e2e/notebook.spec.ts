@@ -1,4 +1,4 @@
-import { mockSyntheticNotebook, openNotebookHistory } from './syntheticNotebook'
+import { courseId, mockSyntheticNotebook, openNotebookHistory } from './syntheticNotebook'
 import { clickRecordAction } from './recordActions'
 import { clickAccountAction } from './profileActions'
 import { expect, test } from '@playwright/test'
@@ -207,4 +207,34 @@ test('student search finds a normalized Arabic family name', async ({ page }) =>
   await expect(rows).toHaveCount(0)
   await search.clear()
   await expect(rows).toHaveCount(3)
+})
+
+test('a signed-in view copies its own address without stray parameters', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.goto('/?page=app&token=secret')
+  await expect(page.getByRole('button', { name: 'Copy link', exact: true })).toHaveCount(0)
+  await mockSyntheticNotebook(page)
+  const view = `/?page=app&view=notebook&tab=attendance&course=${courseId}`
+  await page.goto(`${view}&token=secret`)
+  const expected = new URL(view, page.url()).href
+  const copy = page.locator('.copy-view-link > button')
+  const manual = page.locator('.copy-view-fallback input')
+  await expect(copy).toHaveAccessibleName('Copy link')
+  await copy.click()
+  await expect(copy).toHaveAccessibleName('Link copied')
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(expected)
+
+  await page.evaluate(() => {
+    Object.defineProperty(navigator.clipboard, 'writeText', {
+      value: () => Promise.reject(new DOMException('Clipboard denied', 'NotAllowedError')),
+    })
+  })
+  await copy.click()
+  await expect(manual).toHaveValue(expected)
+  await expect(manual).toBeFocused()
+  await page.goto('/')
+  await expect(page.getByRole('button', { name: 'Copy link', exact: true })).toHaveCount(0)
 })
