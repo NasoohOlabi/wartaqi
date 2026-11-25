@@ -1,3 +1,16 @@
+import { phoneSchema } from '../shared/invitations'
+
+export function internationalPhone(value: string) {
+  const ascii = value.replace(/[\u0660-\u0669\u06f0-\u06f9]/g, (digit) => {
+    const code = digit.charCodeAt(0)
+    return String(code < 0x06f0 ? code - 0x0660 : code - 0x06f0)
+  })
+  const compact = ascii.trim().replace(/[ ()-]/g, '')
+  const candidate = /^[1-9][0-9]{10,14}$/.test(compact) ? `+${compact}` : ascii
+  const result = phoneSchema.safeParse(candidate)
+  return result.success ? result.data : null
+}
+
 export function phoneNumber(value: string) {
   const text = value.trim()
   if (!/^\+?[0-9 ()-]+$/.test(text)) return { display: text, href: null }

@@ -81,7 +81,7 @@ test('staff phone links remain usable in both languages', async ({ page }) => {
   })
   await page.goto('/?page=app&tab=roster')
   const check = async () => {
-    const link = page.getByRole('link', { name: '+963 912 345 678' })
+    const link = page.getByRole('link', { name: '+963 912 345 678', exact: true })
     await link.scrollIntoViewIfNeeded()
     await expect(link).toHaveAttribute('href', 'tel:+963912345678')
     await expect(link).toHaveAttribute('dir', 'ltr')
@@ -99,7 +99,7 @@ test('staff phone links remain usable in both languages', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 })
   await check()
   const list = page.getByRole('region', { name: 'Student list' })
-  await expect(list.getByRole('link', { name: '0912 345 678' })).toHaveAttribute(
+  await expect(list.getByRole('link', { name: '0912 345 678', exact: true })).toHaveAttribute(
     'href',
     'tel:0912345678',
   )
