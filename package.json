@@ -24,7 +24,8 @@
     "db:migrate": "bun run scripts/neon-admin.ts migrate",
     "neon:admin": "bun run scripts/neon-admin.ts",
     "verify:neon:live": "bun run scripts/verify-neon-live.ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "agent:lab": "bun scripts/agent-lab.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",
@@ -34,6 +35,8 @@
     "@dnd-kit/dom": "^0.5.3",
     "@dnd-kit/helpers": "^0.5.3",
     "@dnd-kit/react": "^0.5.3",
+    "@langchain/core": "^1.5.1",
+    "@langchain/langgraph": "^1.7.5",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@neon/config": "^1.14.0",
     "@neon/env": "^2.1.3",

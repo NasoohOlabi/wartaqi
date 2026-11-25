@@ -25,6 +25,31 @@ Type a question directly in the private bot chat, such as **How do I take attend
 
 The bot sends ordinary chat text to the Wartaq operator's LM Studio host for inference. Wartaq Administrators can review assistant exchanges for three days. Keep passwords, link codes, phone numbers and student details out of questions. Commands, button actions and replies requested by an active sign-in or notebook workflow follow their usual paths. Use `/cancel` to exit an active workflow and ask a question.
 
+## Headless assistant lab
+
+The lab runs the LangGraph assistant against made-up Wartaq records. It needs no Telegram account, bot token or database. Run the bilingual examples, ask a new question, or test tool selection against LM Studio on this computer.
+
+```powershell
+bun run agent:lab
+bun run agent:lab --role student 'Show my attendance'
+bun run agent:lab --role staff --ar 'اعرض الدورات'
+bun run agent:lab --live
+```
+
+The suite checks the answer, the tools called and the intended fallback. `--json` shows the synthetic question, reply and calls for each example. `--live` uses the model at `127.0.0.1:8081` for the marked cases and reports those results separately. It defaults to `prism-ml/bonsai-27b`. Pass `--model MODEL_ID` to try another model loaded in the local server. Use synthetic names and records when testing.
+
+| Ask                                                 | What happens                                                     |
+| --------------------------------------------------- | ---------------------------------------------------------------- |
+| “How do I sign in?” / «كيف بسجل دخول؟»              | The bot sends the written steps even when inference is offline.  |
+| “Show my attendance”                                | A signed-in student sees totals and their latest recorded marks. |
+| “Find student Demo Lina”                            | Staff see name matches from the register they can access.        |
+| “Show attendance for Demo Recitation on 2026-11-23” | Staff see the session for the exact course and date.             |
+| “Mark Demo Lina absent”                             | The bot explains how to save the mark from the attendance menu.  |
+
+For a separate test worker, set `TELEGRAM_LANGGRAPH_ENABLED=1`. The worker chooses a written answer, a known workflow or one model-proposed read. The server checks access on each tool call. A reply that needs records is built directly from the tool result. Ambiguous requests and service errors give the user a next step. Browser-linked users with an expired access token can open `/menu` to refresh it. Use `/menu` for writes, filtered student attendance and longer lists.
+
+With the flag enabled, the chat text may go to the configured LM Studio host so it can choose a tool. Tool results and credentials stay out of inference, and the worker logs route and timing metadata without capturing the questions or replies. Each question starts fresh. Leave the flag unset or set it to `0` to use the existing help assistant.
+
 ## Editing a conversation
 
 Each workflow returns a `Screen` with text, button rows and an optional next action for a typed reply. A button identifies the next route and its arguments. A workflow may return a new screen after a successful write. Telegram receives opaque button handles. The worker stores the route and arguments in its encrypted volume.
