@@ -2349,3 +2349,9 @@ The Chromium regression reproduced the punctuation in the decoded link before th
 The owner reported that an Arabic Courses replay showed an almost empty phone-shaped canvas. The player now shows selectable, localized screen and click events with timestamps and grouped playback controls. Attendance frames still show recorded rows, marks, and click highlights. Other screens show the recorded activity. The three-day retention policy stays in place.
 
 Synthetic replay checks exercise a real Courses control click in dark mode on desktop and 320px Arabic mobile. The Attendance checks exercise the recorded table, click highlighting and scrubbing without live notebook requests. The PR records the release and Railway verification.
+
+## 2026-11-25 12:38 Asia/Damascus — Exercise the Telegram assistant headlessly
+
+The owner requested a LangGraph agent suited to small local models, with canned Arabic and English answers and about fifty synthetic workflows. The lab covers sign-in help, student self attendance, staff course and roster reads, and fallbacks for ambiguity, invalid tools and permission changes. The model can suggest one read. Written answers and common requests work without inference, and write requests lead to the existing menus.
+
+All 53 scripted cases passed. The same suite passed with Bonsai in LM Studio for all five model cases. The worker test drove private updates with synthetic grants and checked that unlinking during a request suppresses its result. Verification used synthetic records and made no Telegram requests. The new route is opt-in for a test worker and the production flag remains unset.

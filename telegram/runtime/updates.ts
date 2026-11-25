@@ -48,7 +48,8 @@ export function createUpdates(
   auth: Auth,
   api: ReturnType<typeof telegramApi>,
   navigation: ReturnType<typeof createNavigation>,
-  assistant: ReturnType<typeof createAssistant>,
+  assistant: Pick<ReturnType<typeof createAssistant>, 'deliver' | 'reject'>,
+  agentEnabled = false,
 ) {
   const { language, say, show, requestPhone } = navigation
   const assistantChats = new Set<string>()
@@ -286,12 +287,18 @@ export function createUpdates(
       return
     }
     if (command === '/help') {
-      await say(
-        chat,
-        language(chat) === 'ar'
-          ? '/menu القائمة، /linkaccount ربط الحساب عبر المتصفح، /sharephone مشاركة رقم الهاتف، /cancel إلغاء، /language اللغة، /unlink إلغاء الربط. اكتب سؤالك مباشرة للمساعدة. يمكن لمسؤولي وارتق مراجعة أسئلتك للمساعد وردوده لمدة ثلاثة أيام. تجنّب إرسال المعلومات الشخصية في أسئلتك.'
-          : '/menu opens the menu, /linkaccount links through your browser, /sharephone shares your phone, /cancel cancels, /language changes language, /unlink disconnects. Type a question directly for help. Administrators may review assistant questions and replies for three days; leave out personal information.',
-      )
+      const ar = language(chat) === 'ar'
+      const commands = ar
+        ? '/menu القائمة، /linkaccount ربط الحساب عبر المتصفح، /sharephone مشاركة رقم الهاتف، /cancel إلغاء، /language اللغة، /unlink إلغاء الربط.'
+        : '/menu opens the menu, /linkaccount links through your browser, /sharephone shares your phone, /cancel cancels, /language changes language, /unlink disconnects.'
+      const help = agentEnabled
+        ? ar
+          ? 'جرّب «أرني سجل حضوري». اكتب سؤالك مباشرة وتجنّب المعلومات الشخصية.'
+          : 'Try asking “Show my attendance”. Type your question directly and leave out personal information.'
+        : ar
+          ? 'اكتب سؤالك مباشرة للمساعدة. يمكن لمسؤولي وارتق مراجعة أسئلتك للمساعد وردوده لمدة ثلاثة أيام. تجنّب إرسال المعلومات الشخصية في أسئلتك.'
+          : 'Type a question directly for help. Administrators may review assistant questions and replies for three days; leave out personal information.'
+      await say(chat, `${commands} ${help}`)
       return
     }
     if (command === '/start' || command === '/menu') {

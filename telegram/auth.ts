@@ -259,6 +259,10 @@ export class Auth {
     const token = this.teacher(chat)
     return token && this.workerSecret ? { token, secret: this.workerSecret } : null
   }
+  currentAccessToken(chat: string) {
+    const credentials = credentialsSchema.nullable().parse(this.store.get(`credentials:${chat}`))
+    return credentials && credentials.expires > Date.now() ? credentials.access_token : null
+  }
   async unlink(chat: string) {
     const student = this.student(chat)
     const teacher = this.teacher(chat)

@@ -6,6 +6,7 @@ import { createNavigation } from './runtime/navigation'
 import { telegramApi } from './runtime/telegram'
 import { createUpdates } from './runtime/updates'
 import { assistantConfig, createAssistant } from './runtime/assistant'
+import { createAgentDelivery } from './runtime/agent-delivery'
 
 const configSchema = z.object({
   TELEGRAM_BOT_TOKEN: z.string().min(1),
@@ -14,6 +15,7 @@ const configSchema = z.object({
   TELEGRAM_DB_PATH: z.string().min(1),
   TELEGRAM_STORAGE_KEY: z.string().min(1),
   TELEGRAM_WORKER_SECRET: z.string().min(32).optional(),
+  TELEGRAM_LANGGRAPH_ENABLED: z.enum(['0', '1']).optional(),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
 })
 export function createWorker(env: Record<string, string | undefined>) {
@@ -34,13 +36,24 @@ export function createWorker(env: Record<string, string | undefined>) {
   )
   const api = telegramApi(config.TELEGRAM_BOT_TOKEN)
   const navigation = createNavigation(store, auth, api, config.WARTAQI_ORIGIN)
-  const assistant = createAssistant(
-    assistantConfig(env),
-    config.TELEGRAM_WORKER_SECRET
-      ? { origin: config.WARTAQI_ORIGIN, secret: config.TELEGRAM_WORKER_SECRET }
-      : undefined,
+  const model = assistantConfig(env)
+  const agentEnabled = config.TELEGRAM_LANGGRAPH_ENABLED === '1'
+  const assistant = agentEnabled
+    ? createAgentDelivery(config.WARTAQI_ORIGIN, auth, model)
+    : createAssistant(
+        model,
+        config.TELEGRAM_WORKER_SECRET
+          ? { origin: config.WARTAQI_ORIGIN, secret: config.TELEGRAM_WORKER_SECRET }
+          : undefined,
+      )
+  const { process, notifyFailure } = createUpdates(
+    store,
+    auth,
+    api,
+    navigation,
+    assistant,
+    agentEnabled,
   )
-  const { process, notifyFailure } = createUpdates(store, auth, api, navigation, assistant)
   let ready = false
   return {
     store,
