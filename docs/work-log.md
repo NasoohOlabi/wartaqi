@@ -1,5 +1,11 @@
 # Work log
 
+## 2026-11-25 13:54 Asia/Damascus (UTC+03:00) - Use an icon for WhatsApp chats
+
+The owner asked to replace the WhatsApp text beside student phone numbers. The shared staff phone field now shows the WhatsApp icon with a 44px tap target and a localized accessible name. The phone number still opens the dialer.
+
+The course-contacts browser scenario checks the icon, dial link and intercepted chat destination in English and Arabic across desktop and phone layouts. It uses synthetic records. The PR tracks Railway verification. Native WhatsApp handoff remains outside the browser checks.
+
 ## 2026-11-25 13:21 Asia/Damascus (UTC+03:00) - Export course contacts and open WhatsApp chats
 
 The owner asked to reach students in وارتق6 and other courses without saving each phone number by hand. The staff Students page downloads a `.vcf` of the selected course's accessible active enrollments with usable numbers. The download follows the course scope through search and table filters, and the page reports omitted numbers. Staff phone fields offer a separate WhatsApp chat link. Syrian mobile numbers are converted to international format for contact export and WhatsApp.
