@@ -54,12 +54,31 @@ const explicitWrite =
 const sensitive =
   /(?:\p{Decimal_Number}[\s()+-]*){8,}|(?:password|passcode|token|secret|كلمة السر|رمز التحقق)\s*(?:[:=]|\bis\b)\s*\S+/iu
 
-function collectLabels(value: unknown, labels: Record<string, string>, depth = 0) {
+export function productionCannedReply(question: string, lang: Language) {
+  const text = question.trim()
+  if (!text || text.length > 1000 || sensitive.test(text)) return undefined
+  if (explicitWrite.test(text) && !/\b(how|steps|guide)\b|كيف|شلون/i.test(text)) return undefined
+  return cannedReply(text, lang)
+}
+
+function collectLabels(
+  value: unknown,
+  labels: Record<string, string>,
+  depth = 0,
+  parentCourse = '',
+) {
   if (depth > 8 || Object.keys(labels).length >= 100) return
   if (Array.isArray(value)) {
-    for (const item of value) collectLabels(item, labels, depth + 1)
+    for (const item of value) collectLabels(item, labels, depth + 1, parentCourse)
   } else if (value && typeof value === 'object') {
     const row = object.parse(value)
+    const nestedCourse = z.object({ name: z.string() }).safeParse(row.course)
+    const courseName =
+      typeof row.courseName === 'string'
+        ? row.courseName
+        : nestedCourse.success
+          ? nestedCourse.data.name
+          : parentCourse
     const name = [
       row.name,
       row.studentName,
@@ -69,18 +88,24 @@ function collectLabels(value: unknown, labels: Record<string, string>, depth = 0
     if (typeof name === 'string' && !/[\r\n]/.test(name)) {
       for (const key of [
         'id',
-        ...(row.studentName || row.enrollmentId ? ['studentId', 'enrollmentId'] : []),
+        ...(row.studentId && (row.studentName || row.name || row.firstName)
+          ? ['studentId', 'enrollmentId']
+          : []),
         ...(row.courseName ? ['courseId'] : []),
         ...(row.eventId && row.kind ? ['eventId'] : []),
       ]) {
         const id = row[key]
         if (typeof id === 'string' && id.length <= 100 && !labels[id])
           labels[id] = (
-            key === 'courseId' && typeof row.courseName === 'string' ? row.courseName : name
+            key === 'courseId' && courseName
+              ? courseName
+              : key === 'enrollmentId' && courseName
+                ? `${name} · ${courseName}`
+                : name
           ).slice(0, 200)
       }
     }
-    for (const item of Object.values(row)) collectLabels(item, labels, depth + 1)
+    for (const item of Object.values(row)) collectLabels(item, labels, depth + 1, courseName)
   }
 }
 
@@ -254,10 +279,7 @@ export function createProductionAgent(model?: ProductionModel) {
           }
           return { step: 'answer' as Step }
         }
-        const reply =
-          explicitWrite.test(question) && !/\b(how|steps|guide)\b|كيف|شلون/i.test(question)
-            ? undefined
-            : cannedReply(question, input.lang)
+        const reply = productionCannedReply(question, input.lang)
         if (reply) {
           result = { kind: 'answer', text: reply, context, source: 'canned' }
           return { step: 'answer' as Step }

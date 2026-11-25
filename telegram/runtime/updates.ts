@@ -6,6 +6,7 @@ import { Storage } from '../storage'
 import type { createNavigation } from './navigation'
 import type { telegramApi } from './telegram'
 import type { createAssistant } from './assistant'
+import type { createAgentDelivery } from './agent-delivery'
 
 const updateSchema = z.object({
   update_id: z.number().int(),
@@ -50,6 +51,7 @@ export function createUpdates(
   navigation: ReturnType<typeof createNavigation>,
   assistant: Pick<ReturnType<typeof createAssistant>, 'deliver' | 'reject'>,
   agentEnabled = false,
+  agent?: ReturnType<typeof createAgentDelivery>,
 ) {
   const { language, say, show, requestPhone } = navigation
   const assistantChats = new Set<string>()
@@ -71,6 +73,24 @@ export function createUpdates(
       )
         return
       const chat = String(message.chat.id)
+      if (agent && callback.data.startsWith('agent:')) {
+        if (assistantChats.has(chat)) {
+          await say(
+            chat,
+            language(chat) === 'ar'
+              ? '\u0627\u0644\u0645\u0633\u0627\u0639\u062f \u0645\u0634\u063a\u0648\u0644 \u0627\u0644\u0622\u0646. \u062d\u0627\u0648\u0644 \u0628\u0639\u062f \u0642\u0644\u064a\u0644.'
+              : 'The assistant is busy. Try again shortly.',
+          )
+          return
+        }
+        assistantChats.add(chat)
+        const task = agent
+          .callback(chat, callback.from.id, message.message_id, callback.data, language(chat), say)
+          .catch(() => assistant.reject('delivery_failure'))
+          .finally(() => assistantChats.delete(chat))
+        if (!detach) await task
+        return
+      }
       const key = `button:${callback.data}`
       const parsedChoice = choiceSchema.safeParse(store.get(key))
       const choice = parsedChoice.success ? parsedChoice.data : null
@@ -89,6 +109,7 @@ export function createUpdates(
         )
         return
       }
+      agent?.invalidate(chat)
       store.delete(key)
       store.delete(`generation:${chat}`)
       store.delete(`prompt:${chat}`)
@@ -112,6 +133,7 @@ export function createUpdates(
       .object({ user: z.number(), message: z.number(), expected: z.string().optional() })
       .safeParse(store.get(`phone:${chat}`))
     if (message.contact) {
+      agent?.invalidate(chat)
       if (!pendingPhone.success) {
         if (!auth.isLinked(chat))
           await say(
@@ -197,6 +219,8 @@ export function createUpdates(
       store.set(`lang:${chat}`, 'ar')
     const commandToken = text.split(/\s/, 1)[0]
     const command = commandToken.split('@')[0]
+    if (['/cancel', '/menu', '/start', '/unlink', '/linkaccount', '/sharephone'].includes(command))
+      agent?.invalidate(chat)
     const dismissPhone = async () => {
       store.delete(`phone-input:${chat}`)
       if (!pendingPhone.success) return
@@ -210,6 +234,7 @@ export function createUpdates(
     const isBrowserCode = /^\d{8}$/.test(text)
     const hadPendingCode = auth.hasPendingCode(chat)
     if (isBrowserCode && hadPendingCode && auth.redeem(chat, text)) {
+      agent?.invalidate(chat)
       await dismissPhone()
       await show(chat, message.from.id, { route: 'home' })
       return
