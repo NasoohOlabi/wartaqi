@@ -81,6 +81,8 @@ test('exports active course contacts and offers direct WhatsApp links', async ({
   ).toBeVisible()
   const chat = page.getByRole('link', { name: 'WhatsApp chat: ٠٩١٢٣٤٥٦٧٨' })
   await expect(chat).toHaveAttribute('href', 'https://wa.me/963912345678')
+  await expect(chat).toHaveText('')
+  await expect(chat.locator('svg[aria-hidden="true"]')).toBeVisible()
   await expect(page.getByRole('link', { name: '+442012345678', exact: true })).toHaveAttribute(
     'href',
     'tel:+442012345678',
@@ -126,12 +128,14 @@ test('exports active course contacts and offers direct WhatsApp links', async ({
   }
   await clickAccountAction(page, 'العربية')
   await expect(page.getByRole('button', { name: 'تصدير جهات الاتصال' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'محادثة واتساب: ٠٩١٢٣٤٥٦٧٨' })).toHaveAttribute(
-    'href',
-    'https://wa.me/963912345678',
-  )
+  const arabicChat = page.getByRole('link', { name: 'محادثة واتساب: ٠٩١٢٣٤٥٦٧٨' })
+  await expect(arabicChat).toHaveAttribute('href', 'https://wa.me/963912345678')
+  await expect(arabicChat).toHaveText('')
   for (const width of [1624, 320, 390, 430]) {
     await page.setViewportSize({ width, height: 844 })
+    const target = await arabicChat.boundingBox()
+    expect(target?.width).toBeGreaterThanOrEqual(44)
+    expect(target?.height).toBeGreaterThanOrEqual(44)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     )
