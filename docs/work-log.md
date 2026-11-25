@@ -2379,3 +2379,5 @@ The headless integration used the actual worker, real Bonsai inference, the auth
 The one-command PowerShell runner passed with 20 assertions and an extra plain-language question that read the newly saved mark. It created and removed its own loopback PostgreSQL container and needed no Telegram credentials.
 
 At 14:18 Asia/Damascus, an Arabic read-back exposed a stale date proposed by Bonsai. The worker now bases a dated attendance lookup on the explicit date in the current question, and the real headless run checks the correct Arabic status after a confirmed write. The runner invokes the migration script directly to avoid a stalled Windows package-script wrapper. The rerun passed 21 assertions and cleaned up its disposable database.
+
+At 14:30 Asia/Damascus, PR validation failed when the mobile course-creation test pressed Back before the app returned to Courses. Delaying the synthetic save response reproduced the missing form field. Waiting for the saved course row fixed the reproduced failure and passed three repeats each on desktop and mobile after removing the delay. The application and Telegram worker are unchanged by this test correction.

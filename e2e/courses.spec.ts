@@ -307,6 +307,7 @@ test('course creation keeps retry and navigation identities separate', async ({ 
   expect(courses.find((course) => course.id === courseA)?.name).toBe('Course A')
   expect(attemptedCourseIds.at(-1)).not.toBe(courseA)
   const directCourseId = attemptedCourseIds.at(-1)
+  await expect(page.getByRole('row').filter({ hasText: 'Direct link course' })).toBeVisible()
   await page.goBack()
   await expect(page.getByLabel('Course name')).toHaveValue('')
   await page.getByLabel('Course name').fill('Back navigation course')
