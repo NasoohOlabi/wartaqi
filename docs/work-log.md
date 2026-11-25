@@ -6,6 +6,8 @@ The owner asked to reach students in وارتق6 and other courses without savin
 
 Desktop and mobile browser verification exercises the real download and an intercepted WhatsApp destination, including Arabic text, existing call links, course scope and narrow layouts. The browser uses synthetic student records. Native contact import, the installed WhatsApp app and delivery of WhatsApp messages require a separate device check.
 
+The first full run found that the existing call-link test matched both links by phone number. It now checks the exact dial-link label. The revised call-link and contact-export scenarios passed on desktop and mobile.
+
 ## 2026-11-24 13:04 Asia/Damascus (UTC+03:00) - Fix the copy-link release gate
 
 GitHub Verify for PR #186 failed when the mobile roster test reloaded the previous URL before the Arabic filter was written. The test now waits for the browser URL to change, reloads it, and checks that the exact filter survived. The copy button keeps its confirmation and manual address in one state and ignores repeated clicks while a clipboard attempt is pending.
