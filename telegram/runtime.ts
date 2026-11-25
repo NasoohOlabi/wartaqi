@@ -38,14 +38,17 @@ export function createWorker(env: Record<string, string | undefined>) {
   const navigation = createNavigation(store, auth, api, config.WARTAQI_ORIGIN)
   const model = assistantConfig(env)
   const agentEnabled = config.TELEGRAM_LANGGRAPH_ENABLED === '1'
-  const assistant = agentEnabled
-    ? createAgentDelivery(config.WARTAQI_ORIGIN, auth, model)
-    : createAssistant(
-        model,
-        config.TELEGRAM_WORKER_SECRET
-          ? { origin: config.WARTAQI_ORIGIN, secret: config.TELEGRAM_WORKER_SECRET }
-          : undefined,
-      )
+  const agent = agentEnabled
+    ? createAgentDelivery(config.WARTAQI_ORIGIN, auth, model, store, api)
+    : undefined
+  const assistant =
+    agent ??
+    createAssistant(
+      model,
+      config.TELEGRAM_WORKER_SECRET
+        ? { origin: config.WARTAQI_ORIGIN, secret: config.TELEGRAM_WORKER_SECRET }
+        : undefined,
+    )
   const { process, notifyFailure } = createUpdates(
     store,
     auth,
@@ -53,6 +56,7 @@ export function createWorker(env: Record<string, string | undefined>) {
     navigation,
     assistant,
     agentEnabled,
+    agent,
   )
   let ready = false
   return {
