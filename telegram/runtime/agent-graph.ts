@@ -2,7 +2,7 @@ import { Annotation, END, START, StateGraph } from '@langchain/langgraph'
 import { z } from 'zod'
 import { createAgent } from './agent'
 import { cannedReply, fallbackReply } from './agent-copy'
-import { hasPrivateAgentInput } from './agent-input'
+import { explicitAgentDates, hasPrivateAgentInput } from './agent-input'
 import { matchesAttendanceSession, planAttendance, renderAttendance } from './agent-attendance'
 import {
   previewAgentWrite,
@@ -192,6 +192,7 @@ export function createProductionAgent(model?: ProductionModel) {
       ? parsedContext.data
       : { turns: [], labels: {} }
     const question = input.question.trim()
+    const requestedDates = explicitAgentDates(question)
     let result: Result = {
       kind: 'answer',
       text: fallbackReply(input.lang, 'unavailable'),
@@ -378,9 +379,17 @@ export function createProductionAgent(model?: ProductionModel) {
           const tool = available.find((item) => item.name === proposed.function.name)
           if (!tool) throw new Error('Unknown tool')
           const rawArgs: unknown = JSON.parse(proposed.function.arguments)
+          const groundedArgs =
+            tool.name === 'get_course_attendance_view' &&
+            requestedDates.length === 1 &&
+            Object.hasOwn(object.parse(tool.inputSchema.properties ?? {}), 'date')
+              ? { ...object.parse(rawArgs), date: requestedDates[0] }
+              : rawArgs
           const args = validateAgentCall(
             tool,
-            tool.kind === 'write' ? draftWrite(tool.name, object.parse(rawArgs)) : rawArgs,
+            tool.kind === 'write'
+              ? draftWrite(tool.name, object.parse(groundedArgs))
+              : groundedArgs,
           )
           if (tool.kind === 'write') {
             if (!writeIntent) throw new Error('Write intent required')
@@ -395,6 +404,11 @@ export function createProductionAgent(model?: ProductionModel) {
             return { step: 'answer' as Step }
           }
           const rawOutput = await withinDeadline(input.call(tool.name, args))
+          if (tool.name === 'get_course_attendance_view' && typeof args.date === 'string') {
+            const attendance = object.parse(rawOutput)
+            if (attendance.session !== undefined && attendance.date !== args.date)
+              throw new Error('Attendance tool returned a different date')
+          }
           const output = toolResultForModel(tool.name, rawOutput)
           if (output === null) throw new Error('Invalid tool result')
           lastRead = { name: tool.name, output: rawOutput }

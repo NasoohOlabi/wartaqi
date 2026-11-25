@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { z } from 'zod'
 import { createProductionAgent, agentContextSchema } from '../telegram/runtime/agent-graph'
+import { hasPrivateAgentInput } from '../telegram/runtime/agent-input'
 import type { AgentTool } from '../telegram/runtime/agent-tools'
 import type { ProductionMessage, ProductionModel } from '../telegram/runtime/agent-inference'
 
@@ -308,6 +309,37 @@ function attendanceCall(
 }
 
 describe('attendance planning', () => {
+  test('allows dates without exempting date-like passwords or phone numbers', () => {
+    expect(hasPrivateAgentInput('Attendance on 2026-11-21')).toBe(false)
+    expect(hasPrivateAgentInput('My password is 2026-11-21')).toBe(true)
+    expect(hasPrivateAgentInput('كلمة المرور هي ٢٠٢٦-١١-٢١')).toBe(true)
+    expect(hasPrivateAgentInput('The contact is +2026-11-21')).toBe(true)
+  })
+
+  test('uses the date typed in the current question rather than the old model date', async () => {
+    let step = 0
+    const result = await createProductionAgent(async () =>
+      ++step === 1
+        ? callMessage('get_course_attendance_view', {
+            courseId,
+            date: '2026-11-20',
+            view: 'session',
+            language: 'ar',
+          })
+        : { role: 'assistant', content: 'Show the attendance.' },
+    )({
+      question: 'مين كان غايب بدورة Demo Recitation يوم ٢٠٢٦-١١-٢١؟',
+      lang: 'ar',
+      tools: attendanceTools,
+      call: async (_name, args) => {
+        expect(args.date).toBe('2026-11-21')
+        return { course, date: args.date, session: [{ ...row, status: 'absent', eventId }] }
+      },
+    })
+    expect(result.text).toContain('Demo Recitation — 2026-11-21')
+    expect(result.text).toContain('Demo Lina: غائب')
+  })
+
   test('prepares an exact attendance change in English and Arabic without writing', async () => {
     for (const question of [
       'Mark Demo Lina absent in Demo Recitation on 2026-11-20',

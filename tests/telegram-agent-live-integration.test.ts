@@ -205,10 +205,15 @@ live(
       expect(second.answer).toContain('2026-11-21')
       expect(second.answer).toContain('Demo Lina: Unmarked')
       expect(second.answer.toLowerCase()).not.toContain('was present')
+      await send(6, 'مين كان غايب بدورة Demo Recitation يوم 2026-11-21؟')
+      const arabic = messages.at(-1)?.text ?? ''
+      expect(arabic).toContain('Demo Recitation — 2026-11-21')
+      expect(arabic).toContain('Demo Lina: غائب')
+      console.info(JSON.stringify({ evidence: 'arabic_read_back', answer: arabic }))
       const question = process.env.TEST_TELEGRAM_AGENT_QUESTION?.trim()
       if (question) {
         const previousReplies = messages.length
-        await send(6, question)
+        await send(7, question)
         expect(messages.length).toBeGreaterThan(previousReplies)
         console.info(
           JSON.stringify({ evidence: 'extra_synthetic_turn', answer: messages.at(-1)?.text }),

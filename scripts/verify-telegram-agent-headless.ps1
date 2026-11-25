@@ -53,7 +53,7 @@ try {
   $env:TEST_RAILWAY_DATABASE_URL = $env:DATABASE_URL_UNPOOLED
   $env:TEST_LM_STUDIO_ORIGIN = $modelOriginValue
   [Environment]::SetEnvironmentVariable('TEST_TELEGRAM_AGENT_QUESTION', $Question, 'Process')
-  & bun run db:migrate
+  & bun ./scripts/neon-admin.ts migrate
   if ($LASTEXITCODE -ne 0) { throw 'Application migrations failed.' }
 
   # Bun reports its test summary on stderr. Capture it to verify the gated test ran.
