@@ -3,6 +3,7 @@ import { RowActions } from './RowActions'
 import { LevelInput } from './level'
 import { formatLevel } from './levelFormat'
 import { PhoneNumber } from './PhoneNumber'
+import { courseContacts, downloadContacts } from './courseContacts'
 import { TableHeader, TableToolbar } from './DataTable'
 import { useDataTable } from './useDataTable'
 import { matchesText } from './studentSearch'
@@ -704,6 +705,8 @@ function Notebook({
             {tab === 'roster' && (
               <RosterView
                 students={students}
+                exportStudents={courseStudents}
+                selectedCourse={selectedCourse}
                 courseSelected={!!query.course}
                 enrollments={selectedEnrollments}
                 courses={ledger.courses}
@@ -1552,6 +1555,8 @@ function AttendanceView({
 
 function RosterView({
   students,
+  exportStudents,
+  selectedCourse,
   courseSelected,
   enrollments,
   courses,
@@ -1561,6 +1566,8 @@ function RosterView({
 }: {
   onOpenStudent: (studentId: string, element: HTMLElement) => void
   students: import('../shared/neon').NeonRosterStudent[]
+  exportStudents: import('../shared/neon').NeonRosterStudent[]
+  selectedCourse: import('../shared/neon').Course | undefined
   courseSelected: boolean
   enrollments: import('../shared/neon').Enrollment[]
   courses: import('../shared/neon').Course[]
@@ -1569,6 +1576,8 @@ function RosterView({
 }) {
   const { t, language } = useLanguage()
   const ar = language === 'ar'
+  const contacts = selectedCourse ? courseContacts(exportStudents) : []
+  const omitted = exportStudents.length - contacts.length
   const rosterTable = useDataTable('roster', students, [
     {
       id: 'first',
@@ -1628,9 +1637,31 @@ function RosterView({
   ])
   return (
     <section className="panel">
-      <TableToolbar model={rosterTable} className="mb-3">
+      <TableToolbar
+        model={rosterTable}
+        className="mb-3"
+        actions={
+          selectedCourse && (
+            <button
+              type="button"
+              className="secondary"
+              disabled={!contacts.length}
+              onClick={() => downloadContacts(selectedCourse.name, contacts)}
+            >
+              {ar ? 'تصدير جهات الاتصال' : 'Export contacts'}
+            </button>
+          )
+        }
+      >
         <h2 className="title">{t('Your students')}</h2>
       </TableToolbar>
+      {selectedCourse && (
+        <p role="status" className="mb-3">
+          {ar
+            ? `${contacts.length} جهة اتصال للتصدير، ${omitted} بدون رقم صالح`
+            : `${contacts.length} ready to export, ${omitted} without a usable number`}
+        </p>
+      )}
       <div
         className="role-table-scroll"
         role="region"

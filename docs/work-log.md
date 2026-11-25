@@ -1,5 +1,11 @@
 # Work log
 
+## 2026-11-25 13:21 Asia/Damascus (UTC+03:00) - Export course contacts and open WhatsApp chats
+
+The owner asked to reach students in وارتق6 and other courses without saving each phone number by hand. The staff Students page downloads a `.vcf` of the selected course's accessible active enrollments with usable numbers. The download follows the course scope through search and table filters, and the page reports omitted numbers. Staff phone fields offer a separate WhatsApp chat link. Syrian mobile numbers are converted to international format for contact export and WhatsApp.
+
+Desktop and mobile browser verification exercises the real download and an intercepted WhatsApp destination, including Arabic text, existing call links, course scope and narrow layouts. The browser uses synthetic student records. Native contact import, the installed WhatsApp app and delivery of WhatsApp messages require a separate device check.
+
 ## 2026-11-24 13:04 Asia/Damascus (UTC+03:00) - Fix the copy-link release gate
 
 GitHub Verify for PR #186 failed when the mobile roster test reloaded the previous URL before the Arabic filter was written. The test now waits for the browser URL to change, reloads it, and checks that the exact filter survived. The copy button keeps its confirmation and manual address in one state and ignores repeated clicks while a clipboard attempt is pending.
