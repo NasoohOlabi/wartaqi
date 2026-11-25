@@ -40,7 +40,8 @@ export function agentCatalog(discovered: readonly McpTool[]): AgentTool[] {
   })
 }
 
-const validator = new AjvJsonSchemaValidator()
+let validator = new AjvJsonSchemaValidator()
+const compiled = new Map<string, ReturnType<AjvJsonSchemaValidator['getValidator']>>()
 const object = z.record(z.string(), z.unknown())
 const secretKey = /password|secret|token|credential|authorization|phoneconfirmed/i
 
@@ -63,7 +64,18 @@ export function validateAgentCall(tool: AgentTool, args: unknown): Record<string
   if (!(tool.kind === 'read' ? reads : writes).has(tool.name)) throw new Error('Tool denied')
   const input = object.parse(args)
   if (JSON.stringify(input).length > 16000) throw new Error('Arguments too large')
-  const result = validator.getValidator(tool.inputSchema)(input)
+  const schemaKey = JSON.stringify(tool.inputSchema)
+  let validate = compiled.get(schemaKey)
+  if (!validate) {
+    // AJV also keeps strong references to compiled schemas. Rotate both caches together.
+    if (compiled.size >= 64) {
+      compiled.clear()
+      validator = new AjvJsonSchemaValidator()
+    }
+    validate = validator.getValidator(tool.inputSchema)
+    compiled.set(schemaKey, validate)
+  }
+  const result = validate(input)
   if (!result.valid) throw new Error('Invalid tool arguments')
   if (tool.kind === 'write') checkWrite(input)
   if (tool.name === 'append_events') {
