@@ -2,6 +2,8 @@ import { Annotation, END, START, StateGraph } from '@langchain/langgraph'
 import { z } from 'zod'
 import { createAgent } from './agent'
 import { cannedReply, fallbackReply } from './agent-copy'
+import { hasPrivateAgentInput } from './agent-input'
+import { matchesAttendanceSession, planAttendance, renderAttendance } from './agent-attendance'
 import {
   previewAgentWrite,
   toolResultForChat,
@@ -51,12 +53,12 @@ const state = Annotation.Root({ step: Annotation<Step> })
 const object = z.record(z.string(), z.unknown())
 const explicitWrite =
   /\b(mark|record|add|create|save|change|edit|update|remove|delete|enroll|correct|set)\b|سجّل|سجل|حط|أضف|اضف|عدل|عدّل|صحح|غيّر|غير|احذف/i
-const sensitive =
-  /(?:\p{Decimal_Number}[\s()+-]*){8,}|(?:password|passcode|token|secret|كلمة السر|رمز التحقق)\s*(?:[:=]|\bis\b)\s*\S+/iu
 
 export function productionCannedReply(question: string, lang: Language) {
   const text = question.trim()
-  if (!text || text.length > 1000 || sensitive.test(text)) return undefined
+  if (!text || text.length > 1000 || hasPrivateAgentInput(text)) return undefined
+  if (/\bhow (?:many|much|often)\b|\bcan (?:i|you) see\b|قديش|كم (?:مرة|عدد)/i.test(text))
+    return undefined
   if (explicitWrite.test(text) && !/\b(how|steps|guide)\b|كيف|شلون/i.test(text)) return undefined
   return cannedReply(text, lang)
 }
@@ -266,11 +268,7 @@ export function createProductionAgent(model?: ProductionModel) {
     }
     const graph = new StateGraph(state)
       .addNode('canned', async () => {
-        if (
-          !question ||
-          question.length > 1000 ||
-          sensitive.test(question.replace(/\b\d{4}-\d{2}-\d{2}\b/g, ''))
-        ) {
+        if (!question || question.length > 1000 || hasPrivateAgentInput(question)) {
           result = {
             kind: 'answer',
             text: fallbackReply(input.lang, 'invalid'),
@@ -291,6 +289,18 @@ export function createProductionAgent(model?: ProductionModel) {
             context,
             source: 'fallback',
           }
+          return { step: 'answer' as Step }
+        }
+        const attendance = await withinDeadline(
+          planAttendance(question, input.lang, input.tools, (name, args) =>
+            withinDeadline(input.call(name, args)),
+          ),
+        )
+        if (attendance) {
+          result =
+            attendance.kind === 'approval'
+              ? { ...attendance, context }
+              : { ...attendance, context, source: 'fallback' }
           return { step: 'answer' as Step }
         }
         if (!model) {
@@ -344,7 +354,16 @@ export function createProductionAgent(model?: ProductionModel) {
             await fallback()
             return { step: 'answer' as Step }
           }
-          result = { kind: 'answer', text, context, source: 'model' }
+          const attendanceText =
+            lastRead?.name === 'get_course_attendance_view'
+              ? renderAttendance(lastRead.output, input.lang)
+              : null
+          result = {
+            kind: 'answer',
+            text: attendanceText ?? text,
+            context,
+            source: attendanceText ? 'tool' : 'model',
+          }
         } catch {
           await fallback()
         } finally {
@@ -365,16 +384,20 @@ export function createProductionAgent(model?: ProductionModel) {
           )
           if (tool.kind === 'write') {
             if (!writeIntent) throw new Error('Write intent required')
+            if (
+              tool.name === 'sync_attendance' &&
+              (lastRead?.name !== 'get_course_attendance_view' ||
+                !matchesAttendanceSession(args, lastRead.output))
+            )
+              throw new Error('Attendance version does not match current session')
             const text = previewAgentWrite(tool, args, input.lang, currentLabels)
             result = { kind: 'approval', text, context, tool: tool.name, args }
             return { step: 'answer' as Step }
           }
-          const output = toolResultForModel(
-            tool.name,
-            await withinDeadline(input.call(tool.name, args)),
-          )
+          const rawOutput = await withinDeadline(input.call(tool.name, args))
+          const output = toolResultForModel(tool.name, rawOutput)
           if (output === null) throw new Error('Invalid tool result')
-          lastRead = { name: tool.name, output }
+          lastRead = { name: tool.name, output: rawOutput }
           collectLabels(output, currentLabels)
           collectLabels(output, context.labels)
           const serialized = JSON.stringify(output)
@@ -423,11 +446,7 @@ export function createProductionAgent(model?: ProductionModel) {
     } catch {
       /* Retain the deterministic unavailable result. */
     }
-    if (
-      question &&
-      question.length <= 1000 &&
-      !sensitive.test(question.replace(/\b\d{4}-\d{2}-\d{2}\b/g, ''))
-    )
+    if (question && question.length <= 1000 && !hasPrivateAgentInput(question))
       context.turns = [...context.turns, { question }].slice(-4)
     return result
   }

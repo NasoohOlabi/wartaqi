@@ -123,7 +123,11 @@ describe('production agent', () => {
       tools,
       call: async (name) => {
         calls.push(name)
-        return { session: [{ studentId, enrollmentId, name: 'Maya', status: 'unmarked' }] }
+        return {
+          course: { id: courseId, name: 'Demo Recitation', open: true },
+          date: '2026-11-23',
+          session: [{ studentId, enrollmentId, name: 'Maya', status: 'unmarked', eventId: null }],
+        }
       },
     })
     expect(calls).toEqual(['get_course_attendance_view'])
@@ -260,6 +264,159 @@ describe('production agent', () => {
       expect(result.text).toBe('Current result')
       expect(JSON.stringify(result.context)).not.toContain('Current result')
       expect(JSON.stringify(result.context)).not.toContain('present')
+    }
+  })
+})
+
+const attendanceTools: AgentTool[] = tools.map((tool) =>
+  tool.name === 'get_course_attendance_view'
+    ? {
+        ...tool,
+        inputSchema: {
+          type: 'object',
+          properties: {
+            courseId: { type: 'string' },
+            date: { type: 'string' },
+            view: { type: 'string' },
+            language: { type: 'string' },
+          },
+          required: ['courseId', 'date', 'view', 'language'],
+          additionalProperties: false,
+        },
+      }
+    : tool,
+)
+const eventId = '7ca0c708-cdcb-4b31-8931-70078a3de5b2'
+const course = { id: courseId, name: 'Demo Recitation', open: true }
+const row = { studentId, enrollmentId, name: 'Demo Lina', status: 'unmarked', eventId: null }
+
+function attendanceCall(
+  options: { courses?: object[]; session?: object[]; open?: boolean; date?: string } = {},
+) {
+  const calls: string[] = []
+  return {
+    calls,
+    call: async (name: string) => {
+      calls.push(name)
+      if (name === 'list_courses')
+        return options.courses ?? [{ ...course, open: options.open ?? true }]
+      if (name === 'get_course_attendance_view')
+        return { course, date: options.date ?? '2026-11-20', session: options.session ?? [row] }
+      throw new Error('write must not be called')
+    },
+  }
+}
+
+describe('attendance planning', () => {
+  test('prepares an exact attendance change in English and Arabic without writing', async () => {
+    for (const question of [
+      'Mark Demo Lina absent in Demo Recitation on 2026-11-20',
+      '\u0633\u062c\u0644 Demo Lina \u063a\u0627\u0626\u0628 \u0641\u064a Demo Recitation \u0628\u062a\u0627\u0631\u064a\u062e 2026-11-20',
+    ]) {
+      const io = attendanceCall()
+      const result = await createProductionAgent()({
+        question,
+        lang: question.startsWith('Mark') ? 'en' : 'ar',
+        tools: attendanceTools,
+        call: io.call,
+      })
+      expect(result.kind).toBe('approval')
+      if (result.kind !== 'approval') throw new Error(result.text)
+      expect(io.calls).toEqual(['list_courses', 'get_course_attendance_view'])
+      expect(result.text).toContain('Demo Lina')
+      expect(result.text).toContain('Demo Recitation')
+      const record = z
+        .object({
+          records: z
+            .array(
+              z.object({
+                event: z.object({
+                  id: z.uuid(),
+                  clientTime: z.iso.datetime(),
+                  payload: z.object({
+                    studentId: z.uuid(),
+                    enrollmentId: z.uuid(),
+                    date: z.iso.date(),
+                    status: z.literal('absent'),
+                  }),
+                }),
+                expectedEventId: z.null(),
+              }),
+            )
+            .length(1),
+        })
+        .parse(result.args).records[0]
+      expect(record.event.payload.studentId).toBe(studentId)
+      expect(record.event.payload.enrollmentId).toBe(enrollmentId)
+    }
+  })
+  test('retains the current event id and rejects ambiguous, closed, missing and out-of-scope records', async () => {
+    const marked = attendanceCall({ session: [{ ...row, status: 'present', eventId }] })
+    const ok = await createProductionAgent()({
+      question: 'Mark Demo Lina absent in Demo Recitation on 2026-11-20',
+      lang: 'en',
+      tools: attendanceTools,
+      call: marked.call,
+    })
+    expect(ok.kind).toBe('approval')
+    if (ok.kind === 'approval') expect(JSON.stringify(ok.args)).toContain(eventId)
+    for (const options of [
+      { courses: [course, course] },
+      { open: false },
+      { session: [row, row] },
+      { session: [] },
+      { session: [{ ...row, status: 'present', eventId: null }] },
+      { date: '2026-11-19' },
+    ]) {
+      const io = attendanceCall(options)
+      const result = await createProductionAgent()({
+        question: 'Mark Demo Lina absent in Demo Recitation on 2026-11-20',
+        lang: 'en',
+        tools: attendanceTools,
+        call: io.call,
+      })
+      expect(result.kind).toBe('answer')
+      expect(result.text).toContain('No change saved')
+      expect(io.calls).not.toContain('sync_attendance')
+    }
+    const missing = attendanceCall()
+    const result = await createProductionAgent()({
+      question: 'Mark Demo Lina absent in Demo Recitation',
+      lang: 'en',
+      tools: attendanceTools,
+      call: missing.call,
+    })
+    expect(result.text).toContain('YYYY-MM-DD')
+    expect(missing.calls).toEqual([])
+    const denied = attendanceCall()
+    const noWrite = await createProductionAgent()({
+      question: 'Mark Demo Lina absent in Demo Recitation on 2026-11-20',
+      lang: 'en',
+      tools: attendanceTools.filter((tool) => tool.kind === 'read'),
+      call: denied.call,
+    })
+    expect(noWrite.kind).toBe('answer')
+    expect(denied.calls).toEqual([])
+  })
+  test('renders current unmarked status instead of invented model prose', async () => {
+    for (const lang of ['en', 'ar'] as const) {
+      let count = 0
+      const result = await createProductionAgent(async () =>
+        ++count === 1
+          ? callMessage('get_course_attendance_view', { courseId })
+          : { role: 'assistant', content: 'Demo Lina is present and unmarked.' },
+      )({
+        question: 'Show attendance',
+        lang,
+        tools,
+        call: async () => ({ course, date: '2026-11-20', session: [row] }),
+      })
+      expect(result.text).toContain(
+        lang === 'en'
+          ? 'Demo Lina: Unmarked'
+          : 'Demo Lina: \u0644\u0645 \u064a\u064f\u0633\u062c\u0644',
+      )
+      expect(result.text).not.toContain('present and unmarked')
     }
   })
 })

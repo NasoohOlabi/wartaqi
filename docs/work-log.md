@@ -2355,3 +2355,11 @@ Synthetic replay checks exercise a real Courses control click in dark mode on de
 The owner requested a LangGraph agent suited to small local models, with canned Arabic and English answers and about fifty synthetic workflows. The lab covers sign-in help, student self attendance, staff course and roster reads, and fallbacks for ambiguity, invalid tools and permission changes. The model can suggest one read. Written answers and common requests work without inference, and write requests lead to the existing menus.
 
 All 53 scripted cases passed. The same suite passed with Bonsai in LM Studio for all five model cases. The worker test drove private updates with synthetic grants and checked that unlinking during a request suppresses its result. Verification used synthetic records and made no Telegram requests. The new route is opt-in for a test worker and the production flag remains unset.
+
+## 2026-11-25 13:50 Asia/Damascus — Build the production Telegram agent and headless proof
+
+The owner requested a production agent with real MCP tool discovery and multiple calls, conversational follow-ups, explicit approval before changes and a headless way to verify the complete workflow. A separate clone left concurrent course-contact work untouched. The design covers signed-in access, short encrypted context, deterministic help and attendance, provider failures, role restrictions and write recovery.
+
+The headless integration used the actual worker, real Bonsai inference, the authorized teacher MCP endpoint and a disposable migrated PostgreSQL database. It read one synthetic session, fetched a fresh session on follow-up and saved one mark after confirmation. Repeating the callback kept the event count at one. The test exposed an ISO date filter and contradictory model attendance prose; the worker now accepts valid dates and renders marks straight from the verified result. The Railway-configured LM Studio tunnel also returned a native tool call with synthetic input. Telegram updates and responses were simulated at the transport boundary. The PR records the release and rollout proof.
+
+The one-command PowerShell runner passed with 20 assertions and an extra plain-language question that read the newly saved mark. It created and removed its own loopback PostgreSQL container and needed no Telegram credentials.

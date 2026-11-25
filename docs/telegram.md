@@ -21,13 +21,15 @@ Teacher phone sign-in uses the same classroom tools and assignment permissions a
 
 ## Ask about Wartaq
 
-Type a question directly in the private bot chat, such as **How do I take attendance?** or **كيف أسجّل الحضور؟**. You can ask how to link an account, use the menus or find a feature before signing in. The assistant gives instructions. Open `/menu` to view or change records through the usual account checks.
+Type a question directly in the private bot chat, such as **How do I take attendance?** or **كيف أسجّل الحضور؟**. You can get sign-in and menu help before linking your account. Once signed in, ask for a record you can access, then ask a follow-up. For example, ask who was absent from a course on one date and then ask **What about the next day?**
 
-The bot sends ordinary chat text to the Wartaq operator's LM Studio host for inference. Wartaq Administrators can review assistant exchanges for three days. Keep passwords, link codes, phone numbers and student details out of questions. Commands, button actions and replies requested by an active sign-in or notebook workflow follow their usual paths. Use `/cancel` to exit an active workflow and ask a question.
+When the bot can make a change, it shows what it will save with **Confirm** and **Cancel**. Review the target, date and values before tapping. If the outcome is uncertain, check the record in `/menu` before trying again. Account security changes and private invitation messages use the existing menus and browser steps. Use `/cancel` to clear the current request or `/menu` to open the notebook.
+
+The agent sends questions and selected record details to the Wartaq operator's local LM Studio host. It keeps short-lived context encrypted, and uses the current account's permissions each time it reads or writes a record. Leave passwords, link codes and phone numbers out of questions. Existing sign-in, menus and written help remain available during an inference outage. See the [production agent specification](telegram-agent.md) for tool access and testing details.
 
 ## Headless assistant lab
 
-The lab runs the LangGraph assistant against made-up Wartaq records. It needs no Telegram account, bot token or database. Run the bilingual examples, ask a new question, or test tool selection against LM Studio on this computer.
+The offline lab exercises the original deterministic routes and fallbacks against made-up Wartaq records. It needs no Telegram account, bot token or database. Run the bilingual examples, ask a new question, or test tool selection against LM Studio on this computer.
 
 ```powershell
 bun run agent:lab
@@ -46,9 +48,22 @@ The suite checks the answer, the tools called and the intended fallback. `--json
 | “Show attendance for Demo Recitation on 2026-11-23” | Staff see the session for the exact course and date.             |
 | “Mark Demo Lina absent”                             | The bot explains how to save the mark from the attendance menu.  |
 
-For a separate test worker, set `TELEGRAM_LANGGRAPH_ENABLED=1`. The worker chooses a written answer, a known workflow or one model-proposed read. The server checks access on each tool call. A reply that needs records is built directly from the tool result. Ambiguous requests and service errors give the user a next step. Browser-linked users with an expired access token can open `/menu` to refresh it. Use `/menu` for writes, filtered student attendance and longer lists.
+The production graph and Telegram update handler have separate tests. Run these for multi-step reads, fresh follow-ups, exact confirmation, conflicts and replay protection.
 
-With the flag enabled, the chat text may go to the configured LM Studio host so it can choose a tool. Tool results and credentials stay out of inference, and the worker logs route and timing metadata without capturing the questions or replies. Each question starts fresh. Leave the flag unset or set it to `0` to use the existing help assistant.
+```powershell
+bun test tests/telegram-agent-tools.test.ts tests/telegram-agent-graph.test.ts tests/telegram-agent-delivery.test.ts
+```
+
+For a headless run with actual inference, MCP and database writes, start Docker and LM Studio on this computer, then run:
+
+```powershell
+powershell -NoProfile -File scripts/verify-telegram-agent-headless.ps1
+powershell -NoProfile -File scripts/verify-telegram-agent-headless.ps1 -Question 'Who was absent from Demo Recitation on 2026-11-21?'
+```
+
+It uses disposable synthetic data and the actual worker. The local test supplies Telegram-shaped updates and captures the replies. It needs no Telegram account, bot token, or production database access.
+
+Set `TELEGRAM_LANGGRAPH_ENABLED=1` to turn on the production graph. Browser-linked users with an expired token can open `/menu` to refresh it. Set the flag to `0` to return to the original help-only assistant. In that mode, Wartaq Administrators can review retained help exchanges for three days.
 
 ## Editing a conversation
 

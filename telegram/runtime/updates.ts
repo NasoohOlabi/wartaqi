@@ -7,6 +7,7 @@ import type { createNavigation } from './navigation'
 import type { telegramApi } from './telegram'
 import type { createAssistant } from './assistant'
 import type { createAgentDelivery } from './agent-delivery'
+import { hasPrivateAgentInput } from './agent-input'
 
 const updateSchema = z.object({
   update_id: z.number().int(),
@@ -357,9 +358,7 @@ export function createUpdates(
               ? 'empty'
               : question.length > 1000
                 ? 'input_limit'
-                : /(?:\p{Decimal_Number}[\s()+-]*){8,}|(?:password|passcode|token|secret|كلمة السر|رمز التحقق)\s*(?:[:=]|\bis\b)\s*\S+/iu.test(
-                      question,
-                    )
+                : hasPrivateAgentInput(question)
                   ? 'sensitive_input'
                   : assistantChats.has(chat) || assistantChats.size >= 3
                     ? 'busy'
