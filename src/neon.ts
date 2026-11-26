@@ -65,6 +65,7 @@ const diagnosticWrites: Readonly<Partial<Record<string, DiagnosticsAction>>> = {
   '/api/admin/courses': 'course',
   '/api/admin/courses/settings': 'course',
   '/api/admin/courses/status': 'course',
+  '/api/admin/enrollments/assignment': 'enrollment',
   '/api/admin/enrollments/decision': 'grade',
   '/api/admin/enrollments/grades': 'grade',
   '/api/admin/enrollments/handbook': 'enrollment',

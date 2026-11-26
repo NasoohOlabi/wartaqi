@@ -2382,8 +2382,18 @@ At 14:18 Asia/Damascus, an Arabic read-back exposed a stale date proposed by Bon
 
 At 14:30 Asia/Damascus, PR validation failed when the mobile course-creation test pressed Back before the app returned to Courses. Delaying the synthetic save response reproduced the missing form field. Waiting for the saved course row fixed the reproduced failure and passed three repeats each on desktop and mobile after removing the delay. The application and Telegram worker are unchanged by this test correction.
 
+## 2026-11-26 10:30 Asia/Damascus — Simplify course roster work
+
+The owner asked for faster group setup, focused column views and automatic saving. Manage students now offers All columns, Groups and Books. Group selection carries across searches for the same course. An administrator can apply a shared teacher or course level to enrolled students, leaving either field unchanged. Teacher edits save on selection and course levels save on blur or Enter. Failed student saves can be retried from the page.
+
+The disposable PostgreSQL check exercised atomic rejection of stale selections, simultaneous changes, role restrictions and preservation of grades and handbook receipt. Synthetic browser verification covers both focused views, cross-search selection, save failures, rapid edits, reload and desktop and emulated phone layouts in English and Arabic. Deployment and live verification are recorded in the PR.
+
+At 10:51 Asia/Damascus, the owner asked for the course roster's Add student action to use the existing icon pattern. A 44px plus icon now sits beside search, on the left in Arabic and the right in English. Its accessible name and tooltip describe the course-specific action. Repository verification and four focused browser cases passed, including creation and cancellation and the icon's position at desktop and 320/390/430px phone widths.
+
 ## 2026-11-26 10:59 Asia/Damascus — Keep student level across courses
 
 The owner requested a student-owned current level and one level in course membership. The server records the student's current level on first enrollment and preserves the recorded value through withdrawal and rejoining. The creation form and Telegram flow ask for one initial level. Existing profile edits preserve the current level. Passing course closure advances an eligible student while preserving the level on the completed course.
 
 Disposable PostgreSQL verified a passing student moved from 1 to 2, the old course retained level 1, and a new enrollment recorded level 2. Checks exercised failed results, close retries, legacy level values and atomic creation. Browser verification uses synthetic records. The PR records Railway deployment and provider verification.
+
+At 11:05 Asia/Damascus, this change was integrated with the new Groups and Books views. Individual and bulk teacher assignment keep their existing controls. The bulk assignment route preserves the course level when older clients include it.

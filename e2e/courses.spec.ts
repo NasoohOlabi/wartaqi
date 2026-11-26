@@ -2,7 +2,12 @@ import { clickRecordAction, recordActions } from './recordActions'
 import { clickAccountAction } from './profileActions'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
-import { enrollmentSchema, courseSchema } from '../shared/neon'
+import {
+  enrollmentSchema,
+  enrollmentAssignmentSchema,
+  courseSchema,
+  type EnrollmentAssignment,
+} from '../shared/neon'
 
 test.use({ trace: 'off' })
 const teacherId = '10000000-0000-4000-8000-000000000001'
@@ -144,6 +149,9 @@ async function setupCourses(page: Page) {
   }
   const events: unknown[] = []
   const attemptedCourseIds: string[] = []
+  const assignments: EnrollmentAssignment[] = []
+  let assignmentGate: Promise<void> | undefined
+  let failAssignment = false
   let dropCourseResponse = true
   await page.route('**/api/auth/**', async (route) => {
     const now = new Date().toISOString()
@@ -197,6 +205,35 @@ async function setupCourses(page: Page) {
       return route.fulfill({ json: { saved: true } })
     }
     if (path === '/api/admin') return route.fulfill({ json: board })
+    if (path === '/api/admin/enrollments/assignment') {
+      const body = enrollmentAssignmentSchema.parse(route.request().postDataJSON())
+      expect(body).not.toHaveProperty('level')
+      assignments.push(body)
+      const gate = assignmentGate
+      assignmentGate = undefined
+      if (gate) await gate
+      if (failAssignment) {
+        failAssignment = false
+        return route.fulfill({ status: 503, json: { error: 'Unavailable' } })
+      }
+      const ids = body.kind === 'group' ? body.ids : [body.id]
+      const entries = enrollments.filter(
+        (entry) =>
+          entry.courseId === body.courseId &&
+          ids.includes(entry.id) &&
+          (body.kind === 'edit' || entry.active),
+      )
+      if (entries.length !== ids.length)
+        return route.fulfill({ status: 409, json: { error: 'Conflict' } })
+      for (const entry of entries) {
+        if (body.teacherId !== undefined) {
+          entry.teacherId = body.teacherId
+          entry.teacherName = body.teacherId ? 'Admin' : null
+        }
+        if (body.kind === 'edit' && body.active !== undefined) entry.active = body.active
+      }
+      return route.fulfill({ json: { saved: true } })
+    }
     if (path === '/api/admin/enrollments/membership') {
       const body = route.request().postDataJSON()
       expect(body).not.toHaveProperty('level')
@@ -280,7 +317,25 @@ async function setupCourses(page: Page) {
     return route.fulfill({ json: { teacher, students, courses, enrollments, events } })
   })
   const savedToast = page.getByRole('status').filter({ hasText: /^(Saved|تم الحفظ)$/ })
-  return { board, courses, enrollments, events, attemptedCourseIds, savedToast }
+  return {
+    board,
+    courses,
+    enrollments,
+    events,
+    attemptedCourseIds,
+    savedToast,
+    assignments,
+    failNextAssignment: () => {
+      failAssignment = true
+    },
+    holdNextAssignment: () => {
+      let release = () => {}
+      assignmentGate = new Promise((resolve) => {
+        release = resolve
+      })
+      return release
+    },
+  }
 }
 
 test('course creation keeps retry and navigation identities separate', async ({ page }) => {
@@ -814,24 +869,161 @@ test('course enrollment and same-day attendance stay separate', async ({ page },
   })
   const syntheticRow = page.getByRole('row').filter({ hasText: 'Synthetic' })
   await expect(syntheticRow.locator('td').nth(2)).toHaveText('\u2014')
-  await expect(page.getByRole('columnheader', { name: 'Course level' })).toHaveCount(
-    testInfo.project.name === 'mobile' ? 0 : 1,
-  )
   await page.getByLabel('Teacher: Synthetic Student').selectOption(teacherId)
-  await syntheticRow.getByRole('switch').click()
-  await expect.poll(() => enrollments[0].active).toBe(false)
-  expect(enrollments[0].teacherId).toBe(teacherId)
-  await expect(page.getByLabel('Teacher: Synthetic Student')).toHaveValue(teacherId)
+  await expect.poll(() => enrollments[0].teacherId).toBe(teacherId)
   await coursesNavigation.click()
   await clickRecordAction(page.getByRole('row').filter({ hasText: 'Course B' }), 'Manage students')
   await expect(page.getByLabel('Handbook received: Synthetic Student')).not.toBeChecked()
   await expect(syntheticRow.locator('td').nth(2)).toHaveText('Advanced')
   await coursesNavigation.click()
   await clickRecordAction(page.getByRole('row').filter({ hasText: 'Course A' }), 'Manage students')
+  await expect(syntheticRow.locator('td').nth(2)).toHaveText('\u2014')
   await expect(page.getByLabel('Teacher: Synthetic Student')).toHaveValue(teacherId)
-  await syntheticRow.getByRole('button', { name: 'Save teacher' }).click()
-  await expect.poll(() => enrollments[0].teacherId).toBe(teacherId)
-  expect(enrollments[0].level).toBe('')
+})
+
+test('course roster modes focus the table and save a group across searches', async ({
+  page,
+}, testInfo) => {
+  const { enrollments, assignments, failNextAssignment, holdNextAssignment, savedToast } =
+    await setupCourses(page)
+  const secondId = '40000000-0000-4000-8000-000000000003'
+  enrollments.push({
+    ...enrollments[0],
+    id: secondId,
+    studentId: secondStudentId,
+    level: 'Individual B',
+  })
+  Object.assign(enrollments[0], { practical: 0, theory: 92, notes: 'Private feedback' })
+  await page.goto(`/?page=app&view=courses&courseView=students&course=${courseA}`)
+  const view = page.getByRole('combobox', { name: 'Student view' })
+  const level = page.getByRole('row').filter({ hasText: 'Synthetic' }).locator('td').nth(2)
+  const receipt = page.getByLabel('Handbook received: Synthetic Student')
+  const teachers = page.getByRole('combobox', { name: 'Teacher for selected' })
+  const apply = page.getByRole('button', { name: 'Apply to selected' })
+  const search = page.getByRole('searchbox', { name: 'Find a student' })
+
+  await expect(view).toHaveValue('all')
+  await expect(level).toHaveText('\u2014')
+  await expect(page.locator('th').filter({ hasText: /^Course level$/ })).toHaveCount(1)
+  await expect(page.locator('th').filter({ hasText: /^Roster level$/ })).toHaveCount(0)
+  await expect(page.getByLabel('Course level: Synthetic Student')).toHaveCount(0)
+  await expect(page.getByRole('columnheader', { name: 'Actions' })).toHaveCount(0)
+  await view.selectOption('books')
+  await expect(page.locator('th').filter({ hasText: /^Course level$/ })).toHaveCount(0)
+  await receipt.click()
+  await expect(savedToast).toHaveText('Saved')
+  await page.reload()
+  await expect(view).toHaveValue('books')
+  await expect(receipt).toBeChecked()
+
+  await view.selectOption('groups')
+  await expect(receipt).toHaveCount(0)
+  const selectStudent = page.getByRole('checkbox', { name: 'Select: Synthetic Student' })
+  await expect(selectStudent.locator('..')).toHaveCSS('flex-direction', 'row')
+  expect((await selectStudent.locator('..').boundingBox())?.height).toBeGreaterThanOrEqual(44)
+  await selectStudent.check()
+  await search.fill('New')
+  await expect(page.getByRole('checkbox', { name: 'Select: Synthetic Student' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Select visible' }).click()
+  await expect(page.getByText('Selected: 2', { exact: true })).toBeVisible()
+  await expect(apply).toBeDisabled()
+  await teachers.selectOption({ label: 'Admin' })
+  failNextAssignment()
+  await apply.click()
+  await expect(page.getByRole('alert')).toBeVisible()
+  expect(enrollments.map((entry) => entry.teacherId)).toEqual([null, null, null])
+  await apply.click()
+  await expect(savedToast).toHaveText('Saved')
+  expect(assignments.at(-1)).toMatchObject({
+    kind: 'group',
+    courseId: courseA,
+    ids: expect.arrayContaining([enrollA, secondId]),
+    teacherId,
+  })
+  expect(enrollments.map((entry) => entry.level)).toEqual(['', 'Advanced', 'Individual B'])
+
+  await search.fill('')
+  await page.reload()
+  await expect(view).toHaveValue('groups')
+  await expect(level).toHaveText('\u2014')
+  expect(enrollments[0]).toMatchObject({
+    teacherId,
+    practical: 0,
+    theory: 92,
+    notes: 'Private feedback',
+    handbookReceived: true,
+    level: '',
+  })
+  expect(enrollments[1]).toMatchObject({ level: 'Advanced', teacherId: null })
+
+  const teacher = page.getByLabel('Teacher: Synthetic Student')
+  failNextAssignment()
+  await teacher.selectOption('')
+  await expect(page.getByRole('alert')).toBeVisible()
+  expect(enrollments[0].teacherId).toBe(teacherId)
+  await page.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect.poll(() => enrollments[0].teacherId).toBeNull()
+
+  const release = holdNextAssignment()
+  try {
+    await teacher.selectOption(teacherId)
+    await expect.poll(() => assignments.at(-1)?.teacherId).toBe(teacherId)
+    await teacher.selectOption('')
+  } finally {
+    release()
+  }
+  await expect.poll(() => assignments.at(-1)?.teacherId).toBeNull()
+  await expect(savedToast).toHaveText('Saved')
+  await page.reload()
+  await expect(teacher).toHaveValue('')
+  await expect(level).toHaveText('\u2014')
+
+  for (const language of ['en', 'ar']) {
+    const ar = language === 'ar'
+    if (ar) await clickAccountAction(page, 'العربية')
+    const addStudent = page.getByRole('button', {
+      name: ar ? 'إضافة طالب جديد إلى هذه الدورة' : 'Add new student to this course',
+      exact: true,
+    })
+    const studentSearch = page.getByRole('searchbox', {
+      name: ar ? 'البحث عن طالب' : 'Find a student',
+    })
+    await expect(addStudent).toHaveText('')
+    await expect(addStudent.locator('svg')).toBeVisible()
+    for (const width of testInfo.project.name === 'mobile' ? [320, 390, 430] : [1440]) {
+      await page.setViewportSize({ width, height: 844 })
+      const addBox = await addStudent.boundingBox()
+      const searchBox = await studentSearch.boundingBox()
+      if (!addBox || !searchBox) throw new Error('Missing roster search or add-student icon')
+      expect(addBox.width).toBe(44)
+      expect(addBox.height).toBe(44)
+      expect(addBox.y + addBox.height).toBeCloseTo(searchBox.y + searchBox.height)
+      const gap = ar
+        ? searchBox.x - addBox.x - addBox.width
+        : addBox.x - searchBox.x - searchBox.width
+      expect(gap).toBeCloseTo(8)
+      for (const mode of ['groups', 'books']) {
+        await page
+          .locator('select')
+          .filter({ has: page.locator('option[value="groups"]') })
+          .selectOption(mode)
+        const table = page.locator('.course-students-table')
+        await expect(table).toBeVisible()
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        )
+        expect(
+          await table
+            .locator('..')
+            .evaluate((element) => element.scrollWidth <= element.clientWidth),
+        ).toBe(true)
+        if (width === 320 || width === 1440)
+          await page.screenshot({
+            path: `.artifacts/verification/course-student-${mode}-${width}-${language}.png`,
+          })
+      }
+    }
+  }
 })
 
 test('missing scores uses the left side of the Grades controls', async ({ page }, testInfo) => {
