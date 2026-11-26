@@ -2405,3 +2405,9 @@ The owner asked to recover levels for every student in All students. The earlier
 Matched students against the five private Wartaq course workbooks using normalized names and corroborating contact details where available. Used the latest reliably matched level for 38 students and assigned level 1 to the remaining 23. Preserved the 69 existing roster levels. The source workbooks were read only. Jira was unavailable in this session.
 
 A rolled-back transaction rehearsed the update before it was committed on Railway. A fresh database read and the deployed notebook handler both verified all 130 expected values and zero blanks, including inactive students. Student profiles outside the roster level field, courses, enrollments and attendance events matched their pre-update fingerprints. Production health returned HTTP 200. The private recovery plan stays out of Git. This entry records a data repair with no application or schema changes.
+
+## 2026-11-26 14:52 Asia/Damascus — Standardize signed-in navigation
+
+The owner asked for one navigation system and reported that opening course History shifted into a narrower Settings page. The signed-in workspace now uses a persistent role-specific menu, a shared page header and local section links. Course History keeps Courses selected. Administrator Settings is a main destination, and students can open Profile settings directly. Course records link to students, and student edit and create journeys have named returns to the calling view. Existing bookmarked routes still resolve.
+
+The navigation scenario exercises the course tabs, student return with a saved search, History reload and browser Back, and the separate Settings history in desktop and emulated phone browsers. The role scenarios check student profile access, role isolation and both directions of the narrow navigation layout. Browser fixtures are synthetic. The PR records release checks and Railway deployment verification.

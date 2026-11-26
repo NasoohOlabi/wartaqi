@@ -11,6 +11,7 @@ import type { Profile } from './ProfileMenu'
 import { SettingsNavigation } from './SettingsNavigation'
 import { useLanguage } from './useLanguage'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
+import { WorkspacePageHeader } from './WorkspacePageHeader'
 
 type Conversations = z.infer<typeof telegramConversationsSchema>
 type Turns = z.infer<typeof telegramConversationTurnsSchema>
@@ -115,11 +116,10 @@ export function TelegramConversationsPage({
   return (
     <div className="workspace">
       <WorkspaceNavigation administrator profile={profile} leave={signOut} />
-      <main id="main-content" className="workspace-main role-page" tabIndex={-1}>
-        <header className="role-heading">
-          <h1>{ar ? 'محادثات تيليغرام' : 'Telegram conversations'}</h1>
-        </header>
-        <SettingsNavigation current="telegram" />
+      <main id="main-content" className="workspace-main" tabIndex={-1}>
+        <WorkspacePageHeader title={ar ? 'محادثات تيليغرام' : 'Telegram conversations'}>
+          <SettingsNavigation current="telegram" />
+        </WorkspacePageHeader>
         <section className="panel space-y-4" aria-busy={loading}>
           {selected ? (
             <>

@@ -123,7 +123,7 @@ test('long grades remain navigable in both languages', async ({ page }, testInfo
         has: page.getByRole('button', { name: ar ? 'حفظ الحدود' : 'Save thresholds' }),
       })
       const before = await header.boundingBox()
-      const titleBefore = await page.locator('.grade-title-bar').boundingBox()
+      const titleBefore = await page.locator('.workspace-page-title').boundingBox()
       const thresholdsBefore = await thresholds.boundingBox()
       const windowBefore = await page.evaluate(() => window.scrollY)
       expect(before?.height).toBeGreaterThan(0)
@@ -135,7 +135,7 @@ test('long grades remain navigable in both languages', async ({ page }, testInfo
         throw new Error('Missing grade layout bounds')
       expect(Math.abs(before.y - after.y)).toBeLessThan(1)
       expect(await page.evaluate(() => window.scrollY)).toBe(windowBefore)
-      expect(await page.locator('.grade-title-bar').boundingBox()).toEqual(titleBefore)
+      expect(await page.locator('.workspace-page-title').boundingBox()).toEqual(titleBefore)
       expect(await thresholds.boundingBox()).toEqual(thresholdsBefore)
       expect(
         await header.evaluate((element) => getComputedStyle(element).backgroundColor),

@@ -165,7 +165,7 @@ async function syntheticTables(
 async function everyColumn(table: Locator, count: number, actions = false, filters = true) {
   await expect(table).toBeVisible()
   const page = table.page()
-  const toolbar = page.locator('.table-toolbar')
+  const toolbar = page.locator('.table-toolbar, .workspace-page-actions')
   const sort = toolbar.getByRole('button', { name: 'Sort options' })
   const filter = toolbar.getByRole('button', { name: 'Filter options' })
   const headers = table.locator('thead th[aria-sort]')
@@ -374,7 +374,12 @@ test('wide student details align profile fields, attendance and notes', async ({
       name: ar ? 'معلومات الطالب' : 'Student information',
     })
     const edit = details.getByRole('button', { name: ar ? 'تعديل الطالب' : 'Edit student' })
-    const back = details.getByRole('button', { name: ar ? 'عودة' : 'Back', exact: true })
+    const back = details.getByRole('button', {
+      name: ar
+        ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0644\u0627\u0628'
+        : 'Back to students',
+      exact: true,
+    })
     const attendance = details.getByRole('button', {
       name: ar ? 'تسجيل الحضور' : 'Take attendance',
     })
@@ -443,7 +448,12 @@ test('wide student details align profile fields, attendance and notes', async ({
     ).toBeVisible()
     await notes.getByRole('button', { name: ar ? 'إلغاء' : 'Cancel', exact: true }).click()
   }
-  await details.getByRole('button', { name: 'عودة', exact: true }).click()
+  await details
+    .getByRole('button', {
+      name: '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0644\u0627\u0628',
+      exact: true,
+    })
+    .click()
   await expect(student).toBeVisible()
   await page.setViewportSize({ width: 1624, height: 900 })
   await page.goto('/?page=app&view=student&student=20000000-0000-4000-8000-000000000007')
@@ -710,7 +720,7 @@ test('grade sorting is numeric, keeps drafts, and ignores stale filters', async 
   await expect(table.locator('caption')).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Back to courses' })).toHaveCount(0)
   await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
-  const header = page.locator('.grade-title-bar')
+  const header = page.locator('.workspace-page-title')
   const headingBox = await header.getByRole('heading').boundingBox()
   const triggerBox = await header.getByRole('button', { name: 'Sort options' }).boundingBox()
   if (!headingBox || !triggerBox) throw new Error('Missing grade heading or sort control')
@@ -835,7 +845,7 @@ test('grade title and sort fit long course names and navigation returns to cours
     if (language === 'ar') await clickAccountAction(page, 'العربية')
     for (const width of [320, 390]) {
       await page.setViewportSize({ width, height: 844 })
-      const bar = page.locator('.grade-title-bar')
+      const bar = page.locator('.workspace-page-title')
       const bounds = await bar.evaluate((element) => ({
         scroll: element.scrollWidth,
         width: element.clientWidth,
@@ -852,7 +862,7 @@ test('grade title and sort fit long course names and navigation returns to cours
   await clickAccountAction(page, 'English')
   await page.getByRole('button', { name: 'Courses', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Courses', exact: true })).toBeVisible()
-  await expect(page.locator('.grade-title-bar')).toHaveCount(0)
+  await expect(page.getByRole('navigation', { name: 'Course sections' })).toHaveCount(0)
 })
 
 test('student portal dates sort chronologically and combine course/status filters', async ({

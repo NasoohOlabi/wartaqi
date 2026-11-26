@@ -4,7 +4,7 @@ import type { z } from 'zod'
 import type { invitationProfileInputSchema } from '../shared/invitations'
 import { ThemeChoices } from './i18n'
 import { useLanguage } from './useLanguage'
-import { setQuery } from './queryState'
+import { openChildView, setQuery } from './queryState'
 import type { InvitationProfile } from './neon'
 import { AccountChoices } from './AccountChoices'
 
@@ -94,7 +94,7 @@ export function ProfileMenu({
               disabled={offline}
               onClick={() => {
                 setOpen(false)
-                setQuery({ view: 'profile' }, true)
+                openChildView({ view: 'profile' })
               }}
             >
               <UserRound size={18} aria-hidden="true" />{' '}
@@ -147,7 +147,16 @@ export function ProfileMenu({
               disabled={offline}
               onClick={() => {
                 setOpen(false)
-                setQuery({ view: 'settings', student: '', settingsSection: '' }, true)
+                setQuery(
+                  {
+                    view: 'settings',
+                    student: '',
+                    settingsSection: '',
+                    courseView: '',
+                    account: '',
+                  },
+                  true,
+                )
               }}
             >
               <Settings size={18} aria-hidden="true" />{' '}

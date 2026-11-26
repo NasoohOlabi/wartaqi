@@ -5,7 +5,7 @@ import { SortPills } from './SortPills'
 import { TableFilters } from './TableFilters'
 import type { useDataTable } from './useDataTable'
 
-function TableControls<T>({ model }: { model: ReturnType<typeof useDataTable<T>> }) {
+export function TableControls<T>({ model }: { model: ReturnType<typeof useDataTable<T>> }) {
   const { language } = useLanguage()
   const ar = language === 'ar'
   const sorting = model.table.getState().sorting

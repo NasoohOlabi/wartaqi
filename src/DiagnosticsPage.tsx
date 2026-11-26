@@ -14,6 +14,7 @@ import { SessionReplayPlayer } from './SessionReplayPlayer'
 import { SettingsNavigation } from './SettingsNavigation'
 import { useLanguage } from './useLanguage'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
+import { WorkspacePageHeader } from './WorkspacePageHeader'
 
 type Journeys = z.infer<typeof diagnosticsJourneysSchema>
 type Timeline = z.infer<typeof diagnosticsTimelineSchema>
@@ -160,11 +161,10 @@ export function DiagnosticsPage({
   return (
     <div className="workspace">
       <WorkspaceNavigation administrator profile={profile} leave={signOut} />
-      <main id="main-content" className="workspace-main role-page" tabIndex={-1}>
-        <header className="role-heading">
-          <h1>{ar ? 'التشخيص' : 'Diagnostics'}</h1>
-        </header>
-        <SettingsNavigation current="diagnostics" />
+      <main id="main-content" className="workspace-main" tabIndex={-1}>
+        <WorkspacePageHeader title={ar ? 'التشخيص' : 'Diagnostics'}>
+          <SettingsNavigation current="diagnostics" />
+        </WorkspacePageHeader>
         {selected ? (
           <section className="panel space-y-4" aria-busy={loading}>
             <button

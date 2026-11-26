@@ -33,7 +33,14 @@ import {
   type Payload,
   type Student,
 } from '../shared/ledger'
-import { navigateNotebook, setQuery, useCoursePreference, useQueryState } from './queryState'
+import {
+  navigateNotebook,
+  openChildView,
+  returnToParent,
+  setQuery,
+  useCoursePreference,
+  useQueryState,
+} from './queryState'
 import { AttendanceChartExport } from './AttendanceChartExport'
 import { SummaryInsights } from './SummaryInsights'
 import { CourseReadiness } from './CourseReadiness'
@@ -48,7 +55,8 @@ import { WorkspaceLoading } from './WorkspaceLoading'
 import { AdminConsole } from './AdminConsole'
 import { InvitationMessageViewer } from './InvitationMessageViewer'
 import { StudentAttendance } from './StudentAttendance'
-import { CourseSections, Courses } from './Courses'
+import { CoursePageHeader, Courses } from './Courses'
+import { WorkspacePageHeader } from './WorkspacePageHeader'
 import type { Profile } from './ProfileMenu'
 import { ProfileSettings } from './ProfileSettings'
 import { teacherStudentUpdateSchema, type NeonTeacher } from '../shared/neon'
@@ -90,9 +98,11 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
                         : query.view === 'courses'
                           ? (diagnosticsScreenSchema.safeParse(`course-${query.courseView}`).data ??
                             'courses')
-                          : query.view === 'invitation-message'
-                            ? 'invitation'
-                            : query.view
+                          : query.view === 'edit-student'
+                            ? 'settings-students'
+                            : query.view === 'invitation-message'
+                              ? 'invitation'
+                              : query.view
             }
           />
           {!cached && query.view === 'telegram' && account.role === 'administrator' ? (
@@ -109,6 +119,8 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
               key={`${userId}:${query.inviteMessage}`}
               userId={userId}
               requestId={query.inviteMessage}
+              profile={profile}
+              signOut={signOut}
             />
           ) : !cached && query.view === 'profile' ? (
             <ProfileSettings key={userId} profile={profile} signOut={signOut} role={account.role} />
@@ -118,7 +130,8 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
             account.role === 'administrator' &&
             (query.view === 'settings' ||
               query.view === 'administration' ||
-              query.view === 'add-student') ? (
+              query.view === 'add-student' ||
+              query.view === 'edit-student') ? (
             <AdminConsole
               key={`${userId}:${query.view === 'add-student'}`}
               userId={userId}
@@ -172,7 +185,9 @@ function Notebook({
   const query = useQueryState()
   const changesOrigin = useRef<typeof query.view>('notebook')
   const administrator = neon.teacher.role === 'administrator'
-  const history = query.view === 'history' && administrator
+  const settingsHistory = query.view === 'history' && administrator
+  const courseHistory = query.view === 'courses' && query.courseView === 'history' && administrator
+  const history = settingsHistory || courseHistory
   const tab = history ? 'history' : query.tab
   useEffect(() => {
     if (query.view === 'history') {
@@ -199,17 +214,43 @@ function Notebook({
   }, [query.view])
   const openStudent = (studentId: string, trigger: HTMLElement) => {
     listOrigin.current = { trigger, top: window.scrollY, search: window.location.search }
-    setQuery({ view: 'student', student: studentId }, true)
-    window.scrollTo(0, 0)
+    openChildView({ view: 'student', student: studentId, courseView: '', tab: query.tab })
   }
+  const fromCourse = query.courseView === 'students' || query.courseView === 'grades'
+  const studentParentTab = query.explicitTab ?? 'roster'
+  const studentBackLabel = fromCourse
+    ? query.courseView === 'grades'
+      ? language === 'ar'
+        ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u062f\u0631\u062c\u0627\u062a'
+        : 'Back to grades'
+      : language === 'ar'
+        ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0644\u0627\u0628'
+        : 'Back to students'
+    : {
+        dashboard:
+          language === 'ar'
+            ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629'
+            : 'Back to dashboard',
+        roster:
+          language === 'ar'
+            ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0644\u0627\u0628'
+            : 'Back to students',
+        attendance:
+          language === 'ar'
+            ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u062d\u0636\u0648\u0631'
+            : 'Back to attendance',
+        summary:
+          language === 'ar'
+            ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0645\u0644\u062e\u0635'
+            : 'Back to summary',
+      }[studentParentTab]
+
   const returnToList = () => {
-    if (listOrigin.current) {
-      const search = listOrigin.current.search
-      window.history.replaceState(null, '', window.location.pathname + search)
-      window.dispatchEvent(new PopStateEvent('popstate'))
-    } else {
-      setQuery({ view: 'notebook', tab: 'roster', student: '' }, true)
-    }
+    returnToParent({
+      view: fromCourse ? 'courses' : 'notebook',
+      tab: fromCourse ? '' : studentParentTab,
+      student: '',
+    })
   }
   const ledger = useLedger(neon, !!cached)
   const userId = neon.userId
@@ -297,7 +338,8 @@ function Notebook({
     ) : (
       <WorkspaceLoading message={t('Loading records…')} />
     )
-  const showCourseSwitcher = query.view === 'notebook' || query.view === 'student' || history
+  const showCourseSwitcher =
+    query.view === 'notebook' || query.view === 'student' || settingsHistory
   const navigation = (
     <WorkspaceNavigation
       defaultCourse={preference.defaultCourse}
@@ -396,32 +438,34 @@ function Notebook({
   return (
     <div className="workspace">
       {navigation}
-      <main
-        id="main-content"
-        tabIndex={-1}
-        className={history && administrator ? 'workspace-main role-page' : 'workspace-main'}
-      >
+      <main id="main-content" tabIndex={-1} className="workspace-main">
         {offlineNotice}
-        {history && administrator && (
-          <>
-            <header className="role-heading">
-              <h1>{language === 'ar' ? 'الإعدادات' : 'Settings'}</h1>
-            </header>
+        {settingsHistory && (
+          <WorkspacePageHeader
+            title={
+              language === 'ar'
+                ? '\u0627\u0644\u0625\u0639\u062f\u0627\u062f\u0627\u062a'
+                : 'Settings'
+            }
+          >
             <SettingsNavigation current="history" />
-          </>
+          </WorkspacePageHeader>
+        )}
+        {courseHistory && selectedCourse && (
+          <CoursePageHeader course={selectedCourse} ar={language === 'ar'} current="history" />
         )}
         {!history && query.view !== 'courses' && query.view !== 'student' && (
-          <header className="workspace-welcome">
-            <div>
-              <h1>{t('Attendance & notes')}</h1>
-            </div>
-            <div className="workspace-count">
-              <strong>{projected.students.length}</strong>
-              <span>{t('Students')}</span>
-            </div>
-          </header>
+          <WorkspacePageHeader
+            title={t('Attendance & notes')}
+            actions={
+              <div className="workspace-count">
+                <strong>{projected.students.length}</strong>
+                <span>{t('Students')}</span>
+              </div>
+            }
+          />
         )}
-        {query.view !== 'courses' && query.course && closedCourse && (
+        {(query.view !== 'courses' || courseHistory) && query.course && closedCourse && (
           <p role="status">
             <strong dir="auto">{closedCourse.name}</strong>{' '}
             {language === 'ar'
@@ -435,7 +479,7 @@ function Notebook({
             tab === 'dashboard' ||
             tab === 'attendance' ||
             tab === 'summary' ||
-            query.view === 'courses' ||
+            (query.view === 'courses' && (!courseHistory || !selectedCourse)) ||
             query.view === 'student'
           }
         >
@@ -538,7 +582,7 @@ function Notebook({
             </div>
           </div>
         )}
-        {query.view === 'courses' && administrator && (
+        {query.view === 'courses' && administrator && (!courseHistory || !selectedCourse) && (
           <Courses
             userId={neon.userId}
             courses={ledger.courses}
@@ -571,10 +615,15 @@ function Notebook({
             administrator={administrator}
             userId={userId}
             onBack={returnToList}
+            backLabel={studentBackLabel}
           />
         )}
         <div
-          hidden={query.view === 'courses' || query.view === 'student'}
+          hidden={
+            (query.view === 'courses' && !courseHistory) ||
+            query.view === 'student' ||
+            (courseHistory && !selectedCourse)
+          }
           className={tab === 'attendance' ? 'workspace-content' : ''}
         >
           <fieldset
@@ -596,7 +645,7 @@ function Notebook({
                     unmarked: unmarked ? '1' : '',
                   })
                 }
-                onAdd={() => setQuery({ view: 'add-student', courseView: '', student: '' }, true)}
+                onAdd={() => openChildView({ view: 'add-student', courseView: '', student: '' })}
               >
                 {administrator && !ledger.offline && selectedCourse && (
                   <CourseReadiness
@@ -726,9 +775,6 @@ function Notebook({
                 }
               />
             )}
-            {tab === 'history' && administrator && query.course && (
-              <CourseSections courseId={query.course} ar={language === 'ar'} current="history" />
-            )}
             {tab === 'history' && (
               <History
                 key={query.course}
@@ -789,9 +835,11 @@ function StudentDetails({
   administrator,
   userId,
   onBack,
+  backLabel,
 }: {
   userId?: string
   onBack: () => void
+  backLabel: string
   student: import('../shared/neon').NeonRosterStudent | undefined
   projected: Projection
   courses: import('../shared/neon').Course[]
@@ -849,7 +897,7 @@ function StudentDetails({
       <section className="panel">
         <p>{ar ? 'الطالب غير متاح' : 'Student unavailable'}</p>
         <button className="secondary" onClick={onBack}>
-          {t('Students')}
+          {backLabel}
         </button>
       </section>
     )
@@ -870,41 +918,55 @@ function StudentDetails({
   return (
     <div className="student-details">
       <section className="panel student-details-overview" aria-labelledby="student-details-title">
-        <header className="student-details-heading">
-          <button className="secondary inline-flex min-h-11 items-center gap-2" onClick={onBack}>
-            <ArrowLeft className="icon-directional shrink-0" size={18} aria-hidden="true" />
-            {ar ? '\u0639\u0648\u062f\u0629' : 'Back'}
-          </button>
-          <h1 id="student-details-title" className="title">
-            {ar ? 'معلومات الطالب' : 'Student information'}
-          </h1>
-          {(editInSettings || (userId && canWrite && !editing)) && (
-            <button
-              className="secondary inline-flex min-h-11 items-center gap-2"
-              onClick={() => {
-                if (editInSettings)
-                  setQuery({ view: 'settings', student: student.studentId, account: '' }, true)
-                else setEditing(true)
-              }}
-            >
-              <Pencil className="shrink-0" size={18} aria-hidden="true" />
+        <WorkspacePageHeader
+          parent={
+            <button className="secondary inline-flex min-h-11 items-center gap-2" onClick={onBack}>
+              <ArrowLeft className="icon-directional shrink-0" size={18} aria-hidden="true" />
+              {backLabel}
+            </button>
+          }
+          title={
+            <span id="student-details-title">
               {ar
-                ? '\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u0637\u0627\u0644\u0628'
-                : 'Edit student'}
-            </button>
-          )}
-          {refresh && (
-            <button
-              className="icon-button"
-              aria-label={t('Refresh')}
-              title={t('Refresh')}
-              disabled={busy}
-              onClick={() => void refresh()}
-            >
-              <RefreshCw size={20} aria-hidden="true" />
-            </button>
-          )}
-        </header>
+                ? '\u0645\u0639\u0644\u0648\u0645\u0627\u062a \u0627\u0644\u0637\u0627\u0644\u0628'
+                : 'Student information'}
+            </span>
+          }
+          actions={
+            <>
+              {(editInSettings || (userId && canWrite && !editing)) && (
+                <button
+                  className="secondary inline-flex min-h-11 items-center gap-2"
+                  onClick={() => {
+                    if (editInSettings)
+                      openChildView({
+                        view: 'edit-student',
+                        student: student.studentId,
+                        account: '',
+                      })
+                    else setEditing(true)
+                  }}
+                >
+                  <Pencil className="shrink-0" size={18} aria-hidden="true" />
+                  {ar
+                    ? '\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u0637\u0627\u0644\u0628'
+                    : 'Edit student'}
+                </button>
+              )}
+              {refresh && (
+                <button
+                  className="icon-button"
+                  aria-label={t('Refresh')}
+                  title={t('Refresh')}
+                  disabled={busy}
+                  onClick={() => void refresh()}
+                >
+                  <RefreshCw size={20} aria-hidden="true" />
+                </button>
+              )}
+            </>
+          }
+        />
         {userId && editing && (
           <TeacherStudentForm
             key={student.studentId}
@@ -975,7 +1037,28 @@ function StudentDetails({
               <ul>
                 {activeCourses.map((course) => (
                   <li key={course.id}>
-                    <bdi>{course.name}</bdi>
+                    {administrator ? (
+                      <a
+                        className="course-name-link"
+                        href={`?${new URLSearchParams({ page: 'app', view: 'courses', course: course.id, courseView: 'students' })}`}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          setQuery(
+                            {
+                              view: 'courses',
+                              course: course.id,
+                              courseView: 'students',
+                              student: '',
+                            },
+                            true,
+                          )
+                        }}
+                      >
+                        <bdi>{course.name}</bdi>
+                      </a>
+                    ) : (
+                      <bdi>{course.name}</bdi>
+                    )}
                   </li>
                 ))}
               </ul>

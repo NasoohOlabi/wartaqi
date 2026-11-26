@@ -75,7 +75,6 @@ export function InviteAccounts({
   }
   return (
     <div className="role-editor">
-      <h3>{ar ? 'إنشاء حسابات' : 'Create accounts'}</h3>
       {state.kind === 'editing' && (
         <div className="role-fields">
           <label>

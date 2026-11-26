@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { UserRound } from 'lucide-react'
 import { useLanguage } from './useLanguage'
-import { setQuery } from './queryState'
-import { ProfileMenu, type Profile } from './ProfileMenu'
+import { returnToParent } from './queryState'
+import type { Profile } from './ProfileMenu'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
-import { WartaqLogo } from './brand/components'
+import { WorkspacePageHeader } from './WorkspacePageHeader'
 import { InvitationProfileForm } from './InvitationProfile'
 
 async function prepareImage(file: File) {
@@ -54,14 +54,6 @@ export function ProfileSettings({
   )
   const form = (
     <section className="profile-settings panel">
-      <button
-        type="button"
-        className="secondary"
-        onClick={() => setQuery({ view: 'notebook' }, true)}
-      >
-        {ar ? 'العودة' : 'Back'}
-      </button>
-      <h1>{ar ? 'إعدادات الملف الشخصي' : 'Profile settings'}</h1>
       <p className="muted">
         {ar
           ? 'يحتفظ وارتق بتشخيصات الاستخدام لمدة 30 يومًا، وبتسجيلات الجلسات لمدة 3 أيام. قد تتضمن تسجيلات الحضور أسماء الطلاب وعلامات الحضور.'
@@ -170,24 +162,33 @@ export function ProfileSettings({
       )}
     </section>
   )
-  if (role === 'student')
-    return (
-      <main id="main-content" className="role-page" tabIndex={-1}>
-        <header className="role-header">
-          <WartaqLogo />
-          <ProfileMenu profile={profile} leave={signOut} />
-        </header>
-        {form}
-      </main>
-    )
   return (
     <div className="workspace">
       <WorkspaceNavigation
         administrator={role === 'administrator'}
+        student={role === 'student'}
         profile={profile}
         leave={signOut}
       />
       <main id="main-content" tabIndex={-1} className="workspace-main">
+        <WorkspacePageHeader
+          title={ar ? 'إعدادات الملف الشخصي' : 'Profile settings'}
+          parent={
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => returnToParent({ view: 'notebook' })}
+            >
+              {role === 'student'
+                ? ar
+                  ? 'العودة إلى حضوري'
+                  : 'Back to my attendance'
+                : ar
+                  ? 'العودة إلى مساحة العمل'
+                  : 'Back to workspace'}
+            </button>
+          }
+        />
         {form}
       </main>
     </div>
