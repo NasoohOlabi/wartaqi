@@ -96,7 +96,8 @@ export const enrollmentMembershipSchema = z.strictObject({
   id: z.uuid(),
   courseId: z.uuid(),
   studentId: z.uuid(),
-  level: z.string().trim().max(200),
+  // Legacy clients may still send a level. The server records it from the student.
+  level: enrollmentSchema.shape.level.optional(),
   active: z.boolean(),
 })
 export const enrollmentGradesSchema = z.strictObject({
@@ -203,12 +204,7 @@ export const neonAdminStudentSchema = z.union([
 ])
 export const neonAdminStudentEnrollSchema = z.strictObject({
   student: neonAdminStudentSchema,
-  enrollment: z.strictObject({
-    teacherId: z.uuid().nullable().optional(),
-    id: z.uuid(),
-    courseId: z.uuid(),
-    level: z.string().trim().max(200),
-  }),
+  enrollment: enrollmentMembershipSchema.omit({ studentId: true, active: true }),
 })
 export const neonAdminBoardSchema = z.object({
   accounts: z.array(

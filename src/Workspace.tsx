@@ -1850,7 +1850,7 @@ function TeacherStudentForm({
   }))
   const [firstName, setFirstName] = useState(student.firstName ?? student.name)
   const [lastName, setLastName] = useState(student.lastName ?? '')
-  const [group, setGroup] = useState(student.group)
+  const group = student.group
   const [whatsapp, setWhatsapp] = useState(student.whatsapp ?? '')
   const [location, setLocation] = useState(student.location ?? '')
   const [birthYear, setBirthYear] = useState(student.birthYear?.toString() ?? '')
@@ -1953,13 +1953,7 @@ function TeacherStudentForm({
         </label>
         <label>
           {ar ? '\u0627\u0644\u0645\u0633\u062a\u0648\u0649' : 'Level'}
-          <LevelInput
-            maxLength={100}
-            dir="auto"
-            disabled={offline}
-            value={group}
-            onChange={(e) => setGroup(e.target.value)}
-          />
+          <LevelInput maxLength={100} dir="auto" readOnly value={group} />
         </label>
         <label>
           {ar ? '\u0631\u0642\u0645 \u0648\u0627\u062a\u0633\u0627\u0628' : 'WhatsApp number'}

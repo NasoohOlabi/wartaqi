@@ -343,7 +343,7 @@ integration(
         board.enrollments.find(
           (entry) => entry.courseId === courseIds[0] && entry.studentId === studentId,
         ),
-      ).toMatchObject({ id: enrollmentIds[0], level: 'Advanced', practical: 75.5, theory: 100 })
+      ).toMatchObject({ id: enrollmentIds[0], level: '', practical: 75.5, theory: 100 })
       expect(
         (
           await call('/api/admin/enrollments', subjects.admin, {
@@ -460,7 +460,7 @@ integration(
             [enrollmentIds[0]],
           )
         ).rows[0],
-      ).toEqual({ level: 'Changed', practical: 75.5, theory: 100, notes: 'First\nSecond' })
+      ).toEqual({ level: '', practical: 75.5, theory: 100, notes: 'First\nSecond' })
       const inactiveCorrection = makeEvent('Synthetic course teacher', {
         kind: 'reversal',
         targetId: first.id,
@@ -519,7 +519,7 @@ integration(
       ).rows[0]
       expect(row).toEqual({
         id: enrollmentIds[0],
-        level: 'Changed',
+        level: '',
         active: false,
         practical: 0,
         theory: null,
@@ -540,7 +540,7 @@ integration(
       ).rows[0]
       expect(row).toEqual({
         id: enrollmentIds[0],
-        level: 'Changed',
+        level: '',
         active: true,
         practical: 0,
         theory: null,
@@ -564,10 +564,10 @@ integration(
           whatsapp: '+963 (123) 456',
           location: 'Synthetic area',
           birthYear: 2000,
-          group: '',
+          group: '2',
           active: true,
         },
-        enrollment: { id: newEnrollment, courseId: crypto.randomUUID(), level: '' },
+        enrollment: { id: newEnrollment, courseId: crypto.randomUUID() },
       }
       expect((await call('/api/admin/students/enroll', subjects.admin, combined)).status).toBe(400)
       expect(
@@ -575,18 +575,34 @@ integration(
       ).toBe(0)
       combined.enrollment.courseId = courseIds[0]
       expect((await call('/api/admin/students/enroll', subjects.admin, combined)).status).toBe(200)
-      expect((await call('/api/admin/students/enroll', subjects.admin, combined)).status).toBe(200)
-      expect(
-        (await pool.query('SELECT id FROM course_enrollments WHERE student_id = $1', [newStudent]))
-          .rowCount,
-      ).toBe(1)
       expect(
         (
-          await pool.query('SELECT whatsapp, location, birth_year FROM students WHERE id = $1', [
+          await call('/api/admin/students/enroll', subjects.admin, {
+            student: { ...combined.student, group: '3' },
+            enrollment: { ...combined.enrollment, level: '1' },
+          })
+        ).status,
+      ).toBe(200)
+      expect(
+        (
+          await pool.query('SELECT id, level FROM course_enrollments WHERE student_id = $1', [
             newStudent,
           ])
+        ).rows,
+      ).toEqual([{ id: newEnrollment, level: '2' }])
+      expect(
+        (
+          await pool.query(
+            'SELECT group_name, whatsapp, location, birth_year FROM students WHERE id = $1',
+            [newStudent],
+          )
         ).rows[0],
-      ).toEqual({ whatsapp: '+963 (123) 456', location: 'Synthetic area', birth_year: 2000 })
+      ).toEqual({
+        group_name: '2',
+        whatsapp: '+963 (123) 456',
+        location: 'Synthetic area',
+        birth_year: 2000,
+      })
       expect(
         (
           await call('/api/admin/students', subjects.admin, {
@@ -999,6 +1015,30 @@ integration(
       expect((await status(false)).status).toBe(200)
       expect((await status(true)).status).toBe(200)
       expect((await status(false)).status).toBe(200)
+      const nextEnrollment = {
+        id: crypto.randomUUID(),
+        courseId: courseIds[0],
+        studentId: promotionStudents[0],
+        active: true,
+      }
+      expect(
+        (await call('/api/admin/enrollments/membership', subjects.admin, nextEnrollment)).status,
+      ).toBe(200)
+      expect(
+        (
+          await call('/api/admin/enrollments/membership', subjects.admin, {
+            ...nextEnrollment,
+            level: '3',
+          })
+        ).status,
+      ).toBe(200)
+      expect(
+        (
+          await pool.query('SELECT level FROM course_enrollments WHERE id = $1', [
+            nextEnrollment.id,
+          ])
+        ).rows[0].level,
+      ).toBe('2')
       const promoted = await pool.query(
         'SELECT id, group_name FROM students WHERE id = ANY($1::uuid[])',
         [promotionStudents],

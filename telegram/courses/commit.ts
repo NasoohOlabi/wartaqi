@@ -36,6 +36,7 @@ export async function commit(state: CourseContext): Promise<Screen> {
         rows: [back(destination, ctx.args)],
       }
     const input = z.record(z.string(), z.unknown()).parse(JSON.parse(payload))
+    if (tool === 'save_enrollment' && 'level' in input) return denied()
     await ctx.call(tool, { input })
     return {
       text: t('Saved successfully.', 'تم الحفظ بنجاح.'),

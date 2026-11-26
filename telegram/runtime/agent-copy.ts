@@ -148,8 +148,8 @@ export function cannedReply(question: string, lang: Language): string | undefine
     )
   )
     return reply(
-      'An administrator can open /menu → Courses, choose a course and manage its members and course levels there.',
-      'يمكن للمسؤول فتح /menu ثم الدورات واختيار الدورة وإدارة الطلاب المنتسبين ومستوياتهم فيها.',
+      'An administrator can open /menu → Courses, choose a course and manage its members there. Course levels are captured from the current student level when first enrolled.',
+      'يمكن للمسؤول فتح /menu ثم الدورات واختيار الدورة وإدارة الطلاب المنتسبين. يُحفظ مستوى الطالب الحالي في الدورة عند تسجيله أول مرة.',
     )
   if (has(/\b(grade|grades|score|scores|exam|marks)\b|علامه|علامات|درجه|درجات|امتحان/))
     return reply(

@@ -533,10 +533,11 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
           .parse(body)
       : enrollmentMembershipSchema.parse(body)
     await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [enrollment.courseId])
-    const student = await db.query('SELECT id FROM students WHERE id = $1 FOR UPDATE', [
+    const student = await db.query('SELECT group_name FROM students WHERE id = $1 FOR UPDATE', [
       enrollment.studentId,
     ])
     if (!student.rows.length) throw new HttpError(400)
+    const level = enrollmentSchema.shape.level.parse(student.rows[0].group_name)
     const course = await db.query('SELECT id FROM courses WHERE id = $1 FOR SHARE', [
       enrollment.courseId,
     ])
@@ -564,12 +565,12 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
       await db.query(
         `INSERT INTO course_enrollments (id, course_id, student_id, level, practical, theory, active, teacher_id)
         VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7, true), $8) ON CONFLICT (course_id, student_id)
-        DO UPDATE SET level = EXCLUDED.level, practical = EXCLUDED.practical, theory = EXCLUDED.theory, active = COALESCE($7, course_enrollments.active), teacher_id = CASE WHEN $9 THEN EXCLUDED.teacher_id ELSE course_enrollments.teacher_id END`,
+        DO UPDATE SET practical = EXCLUDED.practical, theory = EXCLUDED.theory, active = COALESCE($7, course_enrollments.active), teacher_id = CASE WHEN $9 THEN EXCLUDED.teacher_id ELSE course_enrollments.teacher_id END`,
         [
           enrollment.id,
           enrollment.courseId,
           enrollment.studentId,
-          enrollment.level,
+          level,
           enrollment.practical,
           enrollment.theory,
           enrollment.active ?? null,
@@ -581,12 +582,12 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
       await db.query(
         `INSERT INTO course_enrollments (id, course_id, student_id, level, active, teacher_id)
         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (course_id, student_id)
-        DO UPDATE SET level = EXCLUDED.level, active = EXCLUDED.active, teacher_id = CASE WHEN $7 THEN EXCLUDED.teacher_id ELSE course_enrollments.teacher_id END`,
+        DO UPDATE SET active = EXCLUDED.active, teacher_id = CASE WHEN $7 THEN EXCLUDED.teacher_id ELSE course_enrollments.teacher_id END`,
         [
           enrollment.id,
           enrollment.courseId,
           enrollment.studentId,
-          enrollment.level,
+          level,
           enrollment.active,
           enrollment.teacherId ?? null,
           enrollment.teacherId !== undefined,
@@ -664,7 +665,7 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
     }
     await db.query(
       `INSERT INTO students (id, teacher_id, name, group_name, active, first_name, last_name, whatsapp, location, birth_year) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      ON CONFLICT (id) DO UPDATE SET teacher_id = EXCLUDED.teacher_id, name = EXCLUDED.name, group_name = EXCLUDED.group_name, active = EXCLUDED.active,
+      ON CONFLICT (id) DO UPDATE SET teacher_id = EXCLUDED.teacher_id, name = EXCLUDED.name, active = EXCLUDED.active,
         first_name = CASE WHEN EXCLUDED.first_name IS NULL AND students.name = EXCLUDED.name THEN students.first_name ELSE EXCLUDED.first_name END,
         last_name = CASE WHEN EXCLUDED.first_name IS NULL AND students.name = EXCLUDED.name THEN students.last_name ELSE EXCLUDED.last_name END,
         whatsapp = CASE WHEN $11 THEN EXCLUDED.whatsapp ELSE students.whatsapp END,
@@ -1120,14 +1121,13 @@ export function createHandler(
           )
             throw new HttpError(409)
           const result = await db.query(
-            `UPDATE students SET first_name = $2, last_name = $3, name = $4, group_name = $5, whatsapp = $6, location = $7, birth_year = $8
-             WHERE id = $1 AND active AND ($9::boolean OR teacher_id = $10)`,
+            `UPDATE students SET first_name = $2, last_name = $3, name = $4, whatsapp = $5, location = $6, birth_year = $7
+             WHERE id = $1 AND active AND ($8::boolean OR teacher_id = $9)`,
             [
               student.studentId,
               student.firstName,
               student.lastName,
               [student.firstName, student.lastName].filter(Boolean).join(' '),
-              student.group,
               student.whatsapp,
               student.location,
               student.birthYear,

@@ -141,7 +141,9 @@ integration(
     const add = await render(action(admin, 'Add student'))
     if (!add.prompt) throw new Error('Missing add prompt')
     createdStudentId = add.prompt.args?.studentId ?? ''
-    expect((await render(add.prompt, 'Telegram synthetic created')).text).toContain('saved')
+    const initialLevel = await render(add.prompt, 'Telegram synthetic created')
+    if (!initialLevel.prompt) throw new Error('Missing initial level prompt')
+    expect((await render(initialLevel.prompt, '2')).text).toContain('saved')
     expect(
       (await render({ route: 'nb.students' })).rows.flat().map((item) => item.label),
     ).toContain('Telegram synthetic created')

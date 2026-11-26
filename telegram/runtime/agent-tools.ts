@@ -78,6 +78,21 @@ export function validateAgentCall(tool: AgentTool, args: unknown): Record<string
   const result = validate(input)
   if (!result.valid) throw new Error('Invalid tool arguments')
   if (tool.kind === 'write') checkWrite(input)
+  if (tool.name === 'save_enrollment') {
+    const enrollment = object.safeParse(input.input)
+    if (enrollment.success && 'level' in enrollment.data)
+      throw new Error('Course level cannot be edited')
+  }
+  if (tool.name === 'create_student_in_course') {
+    const data = z.object({ enrollment: object }).safeParse(input.input)
+    if (data.success && 'level' in data.data.enrollment)
+      throw new Error('Course level is automatic')
+  }
+  if (tool.name === 'update_student' && input.group !== undefined) {
+    const expected = object.safeParse(input.expected)
+    if (!expected.success || input.group !== expected.data.group)
+      throw new Error('Student level cannot be edited')
+  }
   if (tool.name === 'append_events') {
     const events = z
       .array(z.object({ payload: z.object({ kind: z.enum(['note', 'reversal']) }) }))

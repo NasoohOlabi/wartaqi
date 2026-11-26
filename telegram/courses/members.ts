@@ -18,7 +18,6 @@ export async function members(state: CourseContext): Promise<Screen> {
     student,
     base,
     paginate,
-    prompt,
     propose,
   } = state
   if (!course) return denied()
@@ -74,10 +73,7 @@ export async function members(state: CourseContext): Promise<Screen> {
       ])
     if (selected) {
       if (ctx.tools.has('save_enrollment'))
-        rows.push([
-          b(t('Level', 'المستوى'), 'co.level', args),
-          b(t('Teacher', 'المعلم'), 'co.teacher', args),
-        ])
+        rows.push([b(t('Teacher', 'المعلم'), 'co.teacher', args)])
       if (ctx.tools.has('set_handbook_received'))
         rows.push([
           b(
@@ -106,7 +102,6 @@ export async function members(state: CourseContext): Promise<Screen> {
         id: selected?.id ?? crypto.randomUUID(),
         courseId: id,
         studentId: student.studentId,
-        level: selected?.level ?? student.group,
         active: !selected?.active,
         teacherId: selected?.teacherId ?? null,
       },
@@ -118,37 +113,6 @@ export async function members(state: CourseContext): Promise<Screen> {
             'إلغاء التسجيل؟ سيبقى التاريخ والدرجات.',
           )
         : t('Enroll this student?', 'تسجيل هذا الطالب؟'),
-    )
-  }
-  if (ctx.route === 'co.level' && entry && ctx.tools.has('save_enrollment')) {
-    if (ctx.input === undefined)
-      return prompt(
-        t('Send the course level. Send - to clear it.', 'أرسل مستوى الدورة. أرسل - لمسحه.'),
-        'co.level',
-        ctx.args,
-        'co.student',
-      )
-    const level = ctx.input.trim() === '-' ? '' : ctx.input.trim()
-    if (level.length > 200)
-      return prompt(
-        t('Level is too long.', 'المستوى طويل جداً.'),
-        'co.level',
-        ctx.args,
-        'co.student',
-      )
-    return propose(
-      'save_enrollment',
-      {
-        id: entry.id,
-        courseId: id,
-        studentId: entry.studentId,
-        level,
-        active: entry.active,
-        teacherId: entry.teacherId,
-      },
-      'entry',
-      'co.student',
-      `${t('Level', 'المستوى')}: ${level || '—'}`,
     )
   }
   if (ctx.route === 'co.teacher' && entry && board && ctx.tools.has('save_enrollment')) {
@@ -174,7 +138,6 @@ export async function members(state: CourseContext): Promise<Screen> {
         id: entry.id,
         courseId: id,
         studentId: entry.studentId,
-        level: entry.level,
         active: entry.active,
         teacherId: teacher || null,
       },

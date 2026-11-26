@@ -1003,6 +1003,9 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
   await expect(page.locator('form.role-editor').getByLabel('First name')).toHaveValue(
     'Synthetic Student',
   )
+  await expect(
+    page.locator('form.role-editor').getByLabel('Level', { exact: true }),
+  ).toHaveAttribute('readonly', '')
   await page.locator('form.role-editor').getByLabel('Teacher').selectOption('')
   const savedStudent = page.waitForResponse(
     (response) =>

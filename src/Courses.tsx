@@ -1,6 +1,5 @@
 import './course-sections.css'
 import { RowActions } from './RowActions'
-import { LevelInput } from './level'
 import { formatLevel } from './levelFormat'
 import { TableHeader, TableToolbar } from './DataTable'
 import { useDataTable } from './useDataTable'
@@ -33,7 +32,7 @@ import { rankStudents } from './studentSearch'
 
 type Board = ReturnType<typeof neonAdminBoardSchema.parse>
 
-type Draft = { id: string; level: string; teacherId: string }
+type Draft = { id: string; teacherId: string }
 
 function CourseForm({
   course,
@@ -214,18 +213,11 @@ export function Courses({
     { id: 'first', label: ar ? 'الاسم الأول' : 'First name', value: (s) => s.firstName },
     { id: 'last', label: ar ? 'اسم العائلة' : 'Last name', value: (s) => s.lastName },
     {
-      id: 'roster-level',
-      label: ar ? 'مستوى القائمة' : 'Roster level',
-      value: (s) => formatLevel(s.group),
-    },
-    {
       id: 'course-level',
       label: ar ? 'مستوى الدورة' : 'Course level',
       value: (s) =>
         formatLevel(
-          drafts[`${course?.id}:${s.studentId}`]?.level ??
-            courseEntries.find((entry) => entry.studentId === s.studentId)?.level ??
-            s.group,
+          courseEntries.find((entry) => entry.studentId === s.studentId)?.level ?? s.group,
         ),
     },
     {
@@ -478,7 +470,6 @@ export function Courses({
                       const draftKey = `${course.id}:${student.studentId}`
                       const draft = drafts[draftKey] ?? {
                         id: entry?.id ?? '',
-                        level: entry ? entry.level : student.group,
                         teacherId: entry?.teacherId ?? '',
                       }
                       const saveMembership = (active: boolean) => {
@@ -491,7 +482,6 @@ export function Courses({
                           id,
                           courseId: course.id,
                           studentId: student.studentId,
-                          level: draft.level,
                           teacherId: draft.teacherId || null,
                           active,
                         })
@@ -504,22 +494,8 @@ export function Courses({
                           <td dir="auto" data-label={ar ? 'اسم العائلة' : 'Last name'}>
                             {student.lastName || '—'}
                           </td>
-                          <td data-label={ar ? 'مستوى القائمة' : 'Roster level'}>
-                            <bdi>{formatLevel(student.group) || '—'}</bdi>
-                          </td>
                           <td data-label={ar ? 'مستوى الدورة' : 'Course level'}>
-                            <LevelInput
-                              aria-label={`${ar ? 'مستوى الدورة' : 'Course level'}: ${student.firstName} ${student.lastName}`}
-                              maxLength={200}
-                              dir="auto"
-                              value={draft.level}
-                              onChange={(event) =>
-                                setDrafts((current) => ({
-                                  ...current,
-                                  [draftKey]: { ...draft, level: event.target.value },
-                                }))
-                              }
-                            />
+                            <bdi>{formatLevel(entry ? entry.level : student.group) || '—'}</bdi>
                           </td>
                           <td data-label={ar ? '\u0627\u0644\u0645\u0639\u0644\u0645' : 'Teacher'}>
                             <select
@@ -575,7 +551,7 @@ export function Courses({
                               disabled={busy || !entry}
                               onClick={() => saveMembership(entry?.active ?? false)}
                             >
-                              {ar ? 'حفظ المستوى والمعلم' : 'Save level and teacher'}
+                              {ar ? 'حفظ المعلم' : 'Save teacher'}
                             </button>
                           </td>
                         </tr>

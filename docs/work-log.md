@@ -2381,3 +2381,9 @@ The one-command PowerShell runner passed with 20 assertions and an extra plain-l
 At 14:18 Asia/Damascus, an Arabic read-back exposed a stale date proposed by Bonsai. The worker now bases a dated attendance lookup on the explicit date in the current question, and the real headless run checks the correct Arabic status after a confirmed write. The runner invokes the migration script directly to avoid a stalled Windows package-script wrapper. The rerun passed 21 assertions and cleaned up its disposable database.
 
 At 14:30 Asia/Damascus, PR validation failed when the mobile course-creation test pressed Back before the app returned to Courses. Delaying the synthetic save response reproduced the missing form field. Waiting for the saved course row fixed the reproduced failure and passed three repeats each on desktop and mobile after removing the delay. The application and Telegram worker are unchanged by this test correction.
+
+## 2026-11-26 10:59 Asia/Damascus — Keep student level across courses
+
+The owner requested a student-owned current level and one level in course membership. The server records the student's current level on first enrollment and preserves the recorded value through withdrawal and rejoining. The creation form and Telegram flow ask for one initial level. Existing profile edits preserve the current level. Passing course closure advances an eligible student while preserving the level on the completed course.
+
+Disposable PostgreSQL verified a passing student moved from 1 to 2, the old course retained level 1, and a new enrollment recorded level 2. Checks exercised failed results, close retries, legacy level values and atomic creation. Browser verification uses synthetic records. The PR records Railway deployment and provider verification.

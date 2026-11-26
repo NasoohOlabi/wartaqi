@@ -287,10 +287,10 @@ export function AdminConsole({
                     busy={busy || (!!courseId && !courseName)}
                     ar={ar}
                     courseName={courseId ? courseName : ''}
-                    save={async (value, level) => {
+                    save={async (value) => {
                       const path = courseId ? '/api/admin/students/enroll' : '/api/admin/students'
                       const body = courseId
-                        ? { student: value, enrollment: { id: enrollmentId, courseId, level } }
+                        ? { student: value, enrollment: { id: enrollmentId, courseId } }
                         : value
                       if (await save(path, body)) {
                         if (courseId) {
@@ -720,7 +720,7 @@ function StudentForm({
   teachers: Board['teachers']
   busy: boolean
   ar: boolean
-  save: (value: z.infer<typeof neonAdminStudentSchema>, level: string) => void
+  save: (value: z.infer<typeof neonAdminStudentSchema>) => void
   cancel: () => void
   courseName: string
 }) {
@@ -732,7 +732,6 @@ function StudentForm({
   const [whatsapp, setWhatsapp] = useState(student?.whatsapp ?? '')
   const [location, setLocation] = useState(student?.location ?? '')
   const [birthYear, setBirthYear] = useState(student?.birthYear?.toString() ?? '')
-  const [courseLevel, setCourseLevel] = useState<string | null>(null)
   const [teacherId, setTeacherId] = useState(student?.teacherId ?? '')
   const [active, setActive] = useState(student?.active ?? true)
   return (
@@ -760,7 +759,7 @@ function StudentForm({
           teacherId: teacherId || null,
           active,
         })
-        if (value.success) save(value.data, courseLevel ?? group)
+        if (value.success) save(value.data)
       }}
     >
       {courseName && (
@@ -769,17 +768,6 @@ function StudentForm({
         </p>
       )}
       <div className="role-fields">
-        {courseName && (
-          <label>
-            {ar ? 'مستوى الدورة' : 'Course level'}
-            <LevelInput
-              maxLength={200}
-              dir="auto"
-              value={courseLevel ?? group}
-              onChange={(event) => setCourseLevel(event.target.value)}
-            />
-          </label>
-        )}
         <label>
           {ar ? 'الاسم الأول' : 'First name'}
           <input
@@ -804,6 +792,7 @@ function StudentForm({
           <LevelInput
             maxLength={100}
             dir="auto"
+            readOnly={!!student}
             value={group}
             onChange={(e) => setGroup(e.target.value)}
           />
