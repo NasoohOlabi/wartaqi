@@ -154,7 +154,7 @@ integration(
     )
     expect(updated.rows[0]).toMatchObject({
       name: 'Updated Student',
-      group_name: '2',
+      group_name: '',
       whatsapp: '123',
       location: 'Here',
       birth_year: 2000,

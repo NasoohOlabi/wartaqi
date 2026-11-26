@@ -175,11 +175,15 @@ test('course-context student creation is atomic and returns to membership', asyn
     notebook({ ...ctx, ...action, args: action.args ?? {}, input })
   const name = await run({ route: 'nb.add', args: { courseId } })
   const level = await run(name.prompt!, 'New Student')
-  const done = await run(level.prompt!, 'Level 1')
+  const invalid = await run(level.prompt!, 'x'.repeat(101))
+  expect(invalid.prompt).toBeDefined()
+  expect(calls.some((item) => item.name === 'create_student_in_course')).toBe(false)
+  const done = await run(invalid.prompt!, 'Level 1')
   const call = calls.find((item) => item.name === 'create_student_in_course')
   expect(call?.args).toMatchObject({
-    input: { student: { name: 'New Student' }, enrollment: { courseId, level: 'Level 1' } },
+    input: { student: { name: 'New Student', group: 'Level 1' }, enrollment: { courseId } },
   })
+  expect(call?.args?.input).not.toHaveProperty('enrollment.level')
   expect(find(done, 'Back')).toEqual({ route: 'co.members', args: { id: courseId } })
 })
 
@@ -199,6 +203,7 @@ test('profile edits preserve displayed expected version and validate fields', as
   const run = (action: Action, input?: string) =>
     notebook({ ...ctx, ...action, args: action.args ?? {}, input })
   const edit = await run({ route: 'nb.edit', args: { studentId } })
+  expect(edit.rows.flat().some((button) => button.label === 'Level')).toBe(false)
   const question = await run(find(edit, 'Birth year'))
   expect((await run(question.prompt!, 'bad')).prompt).toBeDefined()
   await run(question.prompt!, '2000')

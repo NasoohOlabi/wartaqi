@@ -1,6 +1,5 @@
 import './course-sections.css'
 import { RowActions } from './RowActions'
-import { LevelInput } from './level'
 import { formatLevel } from './levelFormat'
 import { TableHeader, TableToolbar } from './DataTable'
 import { useDataTable } from './useDataTable'
@@ -34,7 +33,7 @@ import { rankStudents } from './studentSearch'
 
 type Board = ReturnType<typeof neonAdminBoardSchema.parse>
 
-type Draft = { id?: string; level?: string; teacherId?: string }
+type Draft = { id?: string; teacherId?: string }
 
 function CourseForm({
   course,
@@ -164,8 +163,6 @@ export function Courses({
   const [busy, setBusy] = useState(false)
   const [selected, setSelected] = useState<Record<string, string[]>>({})
   const [bulkTeacher, setBulkTeacher] = useState('unchanged')
-  const [bulkLevelEnabled, setBulkLevelEnabled] = useState(false)
-  const [bulkLevel, setBulkLevel] = useState('')
   const [failedSaves, setFailedSaves] = useState<Record<string, () => void>>({})
   const saveQueue = useRef<Promise<void>>(Promise.resolve())
   const pendingSaves = useRef(0)
@@ -251,18 +248,11 @@ export function Courses({
     { id: 'first', label: ar ? 'الاسم الأول' : 'First name', value: (s) => s.firstName },
     { id: 'last', label: ar ? 'اسم العائلة' : 'Last name', value: (s) => s.lastName },
     {
-      id: 'roster-level',
-      label: ar ? 'مستوى القائمة' : 'Roster level',
-      value: (s) => formatLevel(s.group),
-    },
-    {
       id: 'course-level',
       label: ar ? 'مستوى الدورة' : 'Course level',
       value: (s) =>
         formatLevel(
-          drafts[`${course?.id}:${s.studentId}`]?.level ??
-            courseEntries.find((entry) => entry.studentId === s.studentId)?.level ??
-            s.group,
+          courseEntries.find((entry) => entry.studentId === s.studentId)?.level ?? s.group,
         ),
     },
     {
@@ -592,31 +582,9 @@ export function Courses({
                           ))}
                         </select>
                       </label>
-                      <label className="course-student-check">
-                        <input
-                          type="checkbox"
-                          checked={bulkLevelEnabled}
-                          onChange={(event) => setBulkLevelEnabled(event.target.checked)}
-                        />
-                        {ar ? 'تغيير مستوى الدورة' : 'Change course level'}
-                      </label>
-                      {bulkLevelEnabled && (
-                        <label>
-                          {ar ? 'مستوى الدورة للمحدد' : 'Course level for selected'}
-                          <LevelInput
-                            value={bulkLevel}
-                            maxLength={200}
-                            onChange={(event) => setBulkLevel(event.target.value)}
-                          />
-                        </label>
-                      )}
                       <button
                         className="primary"
-                        disabled={
-                          busy ||
-                          !selectedIds.length ||
-                          (bulkTeacher === 'unchanged' && !bulkLevelEnabled)
-                        }
+                        disabled={busy || !selectedIds.length || bulkTeacher === 'unchanged'}
                         onClick={() => {
                           const ids = selectedIds
                           const snapshot = drafts
@@ -632,7 +600,6 @@ export function Courses({
                               ...(bulkTeacher !== 'unchanged'
                                 ? { teacherId: bulkTeacher === 'none' ? null : bulkTeacher }
                                 : {}),
-                              ...(bulkLevelEnabled ? { level: bulkLevel } : {}),
                             },
                             () => {
                               setDrafts((current) =>
@@ -640,8 +607,6 @@ export function Courses({
                                   Object.entries(current).map(([key, draft]) => {
                                     if (!draftKeys.includes(key)) return [key, draft]
                                     const next = { ...draft }
-                                    if (bulkLevelEnabled && next.level === snapshot[key]?.level)
-                                      delete next.level
                                     if (
                                       bulkTeacher !== 'unchanged' &&
                                       next.teacherId === snapshot[key]?.teacherId
@@ -685,15 +650,14 @@ export function Courses({
                       const storedDraft = drafts[draftKey]
                       const draft = {
                         id: storedDraft?.id ?? entry?.id ?? '',
-                        level: storedDraft?.level ?? (entry ? entry.level : student.group),
                         teacherId: storedDraft?.teacherId ?? entry?.teacherId ?? '',
                       }
-                      const clearField = (field: 'level' | 'teacherId', value: string) => {
+                      const clearTeacherDraft = (value: string) => {
                         setDrafts((current) => {
                           const stored = current[draftKey]
-                          if (!stored || stored[field] !== value) return current
+                          if (!stored || stored.teacherId !== value) return current
                           const next = { ...stored }
-                          delete next[field]
+                          delete next.teacherId
                           return { ...current, [draftKey]: next }
                         })
                       }
@@ -719,16 +683,10 @@ export function Courses({
                                 id,
                                 courseId: course.id,
                                 studentId: student.studentId,
-                                level: draft.level,
                                 teacherId: draft.teacherId || null,
                                 active,
                               },
-                          entry
-                            ? undefined
-                            : () => {
-                                clearField('level', draft.level)
-                                clearField('teacherId', draft.teacherId)
-                              },
+                          entry ? undefined : () => clearTeacherDraft(draft.teacherId),
                           `membership:${draftKey}`,
                         )
                       }
@@ -764,43 +722,8 @@ export function Courses({
                             {student.lastName || '—'}
                           </td>
                           {query.studentMode !== 'books' && (
-                            <td data-label={ar ? 'مستوى القائمة' : 'Roster level'}>
-                              <bdi>{formatLevel(student.group) || '—'}</bdi>
-                            </td>
-                          )}
-                          {query.studentMode !== 'books' && (
                             <td data-label={ar ? 'مستوى الدورة' : 'Course level'}>
-                              <LevelInput
-                                aria-label={`${ar ? 'مستوى الدورة' : 'Course level'}: ${student.firstName} ${student.lastName}`}
-                                maxLength={200}
-                                dir="auto"
-                                value={draft.level}
-                                disabled={busy && !entry}
-                                onChange={(event) => {
-                                  const level = event.target.value
-                                  setDrafts((current) => ({
-                                    ...current,
-                                    [draftKey]: { ...current[draftKey], level },
-                                  }))
-                                }}
-                                onBlur={() => {
-                                  if (entry && storedDraft?.level !== undefined)
-                                    void submit(
-                                      '/api/admin/enrollments/assignment',
-                                      {
-                                        kind: 'edit',
-                                        courseId: course.id,
-                                        id: entry.id,
-                                        level: draft.level,
-                                      },
-                                      () => clearField('level', draft.level),
-                                      `level:${draftKey}`,
-                                    )
-                                }}
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Enter') event.currentTarget.blur()
-                                }}
-                              />
+                              <bdi>{formatLevel(entry ? entry.level : student.group) || '—'}</bdi>
                             </td>
                           )}
                           {query.studentMode !== 'books' && (
@@ -824,7 +747,7 @@ export function Courses({
                                         id: entry.id,
                                         teacherId: teacherId || null,
                                       },
-                                      () => clearField('teacherId', teacherId),
+                                      () => clearTeacherDraft(teacherId),
                                       `teacher:${draftKey}`,
                                     )
                                 }}

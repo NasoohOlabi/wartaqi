@@ -99,35 +99,38 @@ export async function rosterWorkflow(ctx: BotContext, snapshot: NeonSnapshot): P
         backRoute,
         backArgs,
       )
-    if (inCourse && route === 'nb.add.save')
+    if (route === 'nb.add.save')
       return prompt(
         ctx,
-        L('Send the course level, or - for blank.', 'أرسل مستوى الدورة، أو - لتركه فارغاً.'),
+        L(
+          'Send the initial student level, or - for blank.',
+          'أرسل مستوى الطالب الأولي، أو - لتركه فارغاً.',
+        ),
         { route: 'nb.add.level', args: { ...args, name: ctx.input.trim() } },
         backRoute,
         backArgs,
       )
-    if (inCourse) {
-      const level = ctx.input.trim() === '-' ? '' : ctx.input.trim()
-      if (level.length > 200)
-        return prompt(
-          ctx,
-          L('Level must be at most 200 characters.', 'المستوى حتى ٢٠٠ حرف.'),
-          { route, args },
-          backRoute,
-          backArgs,
-        )
+    const level = ctx.input.trim() === '-' ? '' : ctx.input.trim()
+    const studentWithLevel = neonAdminStudentSchema.safeParse({ ...parsed.data, group: level })
+    if (!studentWithLevel.success)
+      return prompt(
+        ctx,
+        L('Level must be at most 100 characters.', 'المستوى حتى ١٠٠ حرف.'),
+        { route, args },
+        backRoute,
+        backArgs,
+      )
+    if (inCourse)
       await ctx.call('create_student_in_course', {
         input: {
-          student: parsed.data,
+          student: studentWithLevel.data,
           enrollment: {
             id: idSchema.parse(args.enrollmentId),
             courseId: idSchema.parse(args.courseId),
-            level,
           },
         },
       })
-    } else await ctx.call('save_student', { input: parsed.data })
+    else await ctx.call('save_student', { input: studentWithLevel.data })
     return {
       text: L('Student saved.', 'تم حفظ الطالب.'),
       rows: [[back(ctx, backRoute, backArgs), home(ctx)]],
@@ -154,7 +157,6 @@ export async function rosterWorkflow(ctx: BotContext, snapshot: NeonSnapshot): P
     const fields = [
       ['firstName', L('First name', 'الاسم الأول')],
       ['lastName', L('Last name', 'اسم العائلة')],
-      ['group', L('Level', 'المستوى')],
       ['whatsapp', L('Phone', 'الهاتف')],
       ['location', L('Location', 'الموقع')],
       ['birthYear', L('Birth year', 'سنة الميلاد')],
@@ -177,6 +179,7 @@ export async function rosterWorkflow(ctx: BotContext, snapshot: NeonSnapshot): P
       location: student.location ?? null,
       birthYear: student.birthYear ?? null,
     }
+    if (args.field === 'group') return unavailable(ctx)
     if (route === 'nb.phone' || ctx.input === undefined)
       return prompt(
         ctx,
@@ -207,7 +210,7 @@ export async function rosterWorkflow(ctx: BotContext, snapshot: NeonSnapshot): P
       .safeParse(JSON.parse(args.expected ?? '{}'))
     if (!previous.success) return unavailable(ctx)
     const field = z
-      .enum(['firstName', 'lastName', 'group', 'whatsapp', 'location', 'birthYear'])
+      .enum(['firstName', 'lastName', 'whatsapp', 'location', 'birthYear'])
       .safeParse(args.field)
     if (!field.success) return unavailable(ctx)
     const raw = ctx.input.trim()

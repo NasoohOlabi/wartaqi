@@ -2390,6 +2390,14 @@ The disposable PostgreSQL check exercised atomic rejection of stale selections, 
 
 At 10:51 Asia/Damascus, the owner asked for the course roster's Add student action to use the existing icon pattern. A 44px plus icon now sits beside search, on the left in Arabic and the right in English. Its accessible name and tooltip describe the course-specific action. Repository verification and four focused browser cases passed, including creation and cancellation and the icon's position at desktop and 320/390/430px phone widths.
 
+## 2026-11-26 10:59 Asia/Damascus — Keep student level across courses
+
+The owner requested a student-owned current level and one level in course membership. The server records the student's current level on first enrollment and preserves the recorded value through withdrawal and rejoining. The creation form and Telegram flow ask for one initial level. Existing profile edits preserve the current level. Passing course closure advances an eligible student while preserving the level on the completed course.
+
+Disposable PostgreSQL verified a passing student moved from 1 to 2, the old course retained level 1, and a new enrollment recorded level 2. Checks exercised failed results, close retries, legacy level values and atomic creation. Browser verification uses synthetic records. The PR records Railway deployment and provider verification.
+
+At 11:05 Asia/Damascus, this change was integrated with the new Groups and Books views. Individual and bulk teacher assignment keep their existing controls. The bulk assignment route preserves the course level when older clients include it.
+
 ## 2026-11-26 11:02 Asia/Damascus — Fill missing student roster levels
 
 The owner asked to recover levels for every student in All students. The earlier historical import stored some levels on course enrollments. All students reads a separate roster field, which was blank for 61 of the 130 students.

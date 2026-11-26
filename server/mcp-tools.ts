@@ -207,7 +207,7 @@ export function registerMcpTools(
     server.registerTool(
       'update_student',
       {
-        description: 'Update information for an active assigned student.',
+        description: 'Update an active assigned student’s name and contact details.',
         inputSchema: teacherStudentUpdateSchema,
       },
       (student) => result('/api/student/update', 'POST', student),
@@ -414,7 +414,7 @@ export function registerMcpTools(
   )
   post(
     'create_student_in_course',
-    'Atomically create a roster student and enrollment with stable IDs.',
+    'Atomically create a roster student and enrollment with stable IDs. The enrollment records the student’s initial level.',
     '/api/admin/students/enroll',
     neonAdminStudentEnrollSchema,
   )
@@ -438,7 +438,7 @@ export function registerMcpTools(
   )
   post(
     'save_enrollment',
-    'Set course membership, level and teacher. Withdrawal preserves history and grades.',
+    'Set course membership and teacher. First enrollment records the student’s current level. Withdrawal preserves level, history and grades.',
     '/api/admin/enrollments/membership',
     enrollmentMembershipSchema,
   )

@@ -96,18 +96,18 @@ export const enrollmentMembershipSchema = z.strictObject({
   id: z.uuid(),
   courseId: z.uuid(),
   studentId: z.uuid(),
-  level: z.string().trim().max(200),
+  // Legacy clients may still send a level. The server records it from the student.
+  level: enrollmentSchema.shape.level.optional(),
   active: z.boolean(),
 })
 export const enrollmentAssignmentSchema = z
   .discriminatedUnion('kind', [
     enrollmentMembershipSchema
       .pick({ courseId: true, id: true, teacherId: true, level: true, active: true })
-      .partial({ level: true, active: true })
+      .partial({ active: true })
       .extend({ kind: z.literal('edit') }),
     enrollmentMembershipSchema
       .pick({ courseId: true, teacherId: true, level: true })
-      .partial({ level: true })
       .extend({ kind: z.literal('group'), ids: z.array(z.uuid()).min(1) }),
   ])
   .refine(
@@ -221,12 +221,7 @@ export const neonAdminStudentSchema = z.union([
 ])
 export const neonAdminStudentEnrollSchema = z.strictObject({
   student: neonAdminStudentSchema,
-  enrollment: z.strictObject({
-    teacherId: z.uuid().nullable().optional(),
-    id: z.uuid(),
-    courseId: z.uuid(),
-    level: z.string().trim().max(200),
-  }),
+  enrollment: enrollmentMembershipSchema.omit({ studentId: true, active: true }),
 })
 export const neonAdminBoardSchema = z.object({
   accounts: z.array(

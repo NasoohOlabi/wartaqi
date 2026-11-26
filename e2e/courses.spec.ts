@@ -207,6 +207,7 @@ async function setupCourses(page: Page) {
     if (path === '/api/admin') return route.fulfill({ json: board })
     if (path === '/api/admin/enrollments/assignment') {
       const body = enrollmentAssignmentSchema.parse(route.request().postDataJSON())
+      expect(body).not.toHaveProperty('level')
       assignments.push(body)
       const gate = assignmentGate
       assignmentGate = undefined
@@ -225,7 +226,6 @@ async function setupCourses(page: Page) {
       if (entries.length !== ids.length)
         return route.fulfill({ status: 409, json: { error: 'Conflict' } })
       for (const entry of entries) {
-        if (body.level !== undefined) entry.level = body.level
         if (body.teacherId !== undefined) {
           entry.teacherId = body.teacherId
           entry.teacherName = body.teacherId ? 'Admin' : null
@@ -236,6 +236,7 @@ async function setupCourses(page: Page) {
     }
     if (path === '/api/admin/enrollments/membership') {
       const body = route.request().postDataJSON()
+      expect(body).not.toHaveProperty('level')
       const index = enrollments.findIndex((entry) => entry.id === body.id)
       if (index >= 0)
         enrollments[index] = {
@@ -243,7 +244,15 @@ async function setupCourses(page: Page) {
           ...body,
           teacherName: body.teacherId ? 'Admin' : null,
         }
-      else enrollments.push({ ...body, practical: null, theory: null, handbookReceived: false })
+      else
+        enrollments.push({
+          ...body,
+          level:
+            board.students.find((student) => student.studentId === body.studentId)?.group ?? '',
+          practical: null,
+          theory: null,
+          handbookReceived: false,
+        })
       return route.fulfill({ json: { saved: true } })
     }
     if (path === '/api/admin/enrollments/handbook') {
@@ -285,6 +294,7 @@ async function setupCourses(page: Page) {
     }
     if (path === '/api/admin/students/enroll') {
       const body = route.request().postDataJSON()
+      expect(body.enrollment).not.toHaveProperty('level')
       const student = {
         ...body.student,
         name: `${body.student.firstName} ${body.student.lastName}`,
@@ -294,6 +304,7 @@ async function setupCourses(page: Page) {
       board.students.push(student)
       enrollments.push({
         ...body.enrollment,
+        level: student.group,
         studentId: student.studentId,
         active: true,
         practical: null,
@@ -713,23 +724,25 @@ test('course enrollment and same-day attendance stay separate', async ({ page },
   await expect(page.getByRole('button', { name: 'Back to courses' })).toHaveCount(0)
   await page.getByRole('searchbox', { name: 'Find a student' }).fill('Nw Student')
   const newRow = page.getByRole('row').filter({ hasText: 'New' })
-  await newRow.getByLabel('Course level: New Student').fill('Beginner')
+  await expect(newRow.locator('td').nth(2)).toHaveText('A')
   await page.getByRole('searchbox', { name: 'Find a student' }).fill('Synthetic')
   await page.getByRole('searchbox', { name: 'Find a student' }).fill('New')
-  await expect(newRow.getByLabel('Course level: New Student')).toHaveValue('Beginner')
+  await expect(newRow.locator('td').nth(2)).toHaveText('A')
+  await newRow.getByLabel('Teacher: New Student').selectOption(teacherId)
   const membershipHeading = page.getByRole('heading', { name: /Manage students/ })
   const headingTop = () =>
     membershipHeading.evaluate((heading) => heading.getBoundingClientRect().top + window.scrollY)
   const beforeSave = await headingTop()
   await newRow.getByRole('switch').click()
   await expect.poll(() => enrollments.length).toBe(3)
+  expect(enrollments[2].teacherId).toBe(teacherId)
   await expect(savedToast).toHaveText('Saved')
   await expect(savedToast).toHaveCSS('position', 'fixed')
   expect(await headingTop()).toBeCloseTo(beforeSave)
   await page.clock.fastForward(4_000)
   await expect(savedToast).toBeHidden()
   await page.reload()
-  await expect(newRow.getByLabel('Course level: New Student')).toHaveValue('Beginner')
+  await expect(newRow.locator('td').nth(2)).toHaveText('A')
   await newRow.getByRole('switch').click()
   await expect.poll(() => enrollments[2].active).toBe(false)
   await clickAccountAction(page, 'العربية')
@@ -798,7 +811,7 @@ test('course enrollment and same-day attendance stay separate', async ({ page },
   await page.getByLabel('First name').fill('Quick')
   await page.getByLabel('Last name').fill('Student')
   await page.getByLabel('Level', { exact: true }).fill('Roster')
-  await page.getByLabel('Course level').fill('Course level')
+  await expect(page.getByLabel('Course level')).toHaveCount(0)
   await page.getByLabel('WhatsApp number').fill('+963 123')
   await page.getByLabel('Location').fill('Area')
   await page.getByLabel('Birth year').fill('2000')
@@ -854,27 +867,18 @@ test('course enrollment and same-day attendance stay separate', async ({ page },
     path: `.artifacts/verification/handbook-${testInfo.project.name}.png`,
     fullPage: true,
   })
-  await expect(page.getByLabel('Course level: Synthetic Student')).toHaveValue('')
-  await page.getByLabel('Course level: Synthetic Student').fill('Draft A')
-  await page.getByLabel('Course level: Synthetic Student').press('Enter')
-  await expect.poll(() => enrollments[0].level).toBe('Draft A')
+  const syntheticRow = page.getByRole('row').filter({ hasText: 'Synthetic' })
+  await expect(syntheticRow.locator('td').nth(2)).toHaveText('\u2014')
+  await page.getByLabel('Teacher: Synthetic Student').selectOption(teacherId)
+  await expect.poll(() => enrollments[0].teacherId).toBe(teacherId)
   await coursesNavigation.click()
   await clickRecordAction(page.getByRole('row').filter({ hasText: 'Course B' }), 'Manage students')
   await expect(page.getByLabel('Handbook received: Synthetic Student')).not.toBeChecked()
-  await expect(page.getByLabel('Course level: Synthetic Student')).toHaveValue('Advanced')
-  await page.getByLabel('Teacher: Synthetic Student').selectOption(teacherId)
-  await expect.poll(() => enrollments[1].teacherId).toBe(teacherId)
-  expect(enrollments[1].level).toBe('Advanced')
-  await page.getByLabel('Course level: Synthetic Student').fill('Updated B')
-  await page.getByLabel('Course level: Synthetic Student').blur()
-  await expect.poll(() => enrollments[1].level).toBe('Updated B')
-  expect(enrollments[1].id).toBe(enrollB)
+  await expect(syntheticRow.locator('td').nth(2)).toHaveText('Advanced')
   await coursesNavigation.click()
   await clickRecordAction(page.getByRole('row').filter({ hasText: 'Course A' }), 'Manage students')
-  await expect(page.getByLabel('Course level: Synthetic Student')).toHaveValue('Draft A')
-  await page.getByLabel('Course level: Synthetic Student').fill('Intermediate')
-  await page.getByLabel('Course level: Synthetic Student').press('Enter')
-  await expect.poll(() => enrollments[0].level).toBe('Intermediate')
+  await expect(syntheticRow.locator('td').nth(2)).toHaveText('\u2014')
+  await expect(page.getByLabel('Teacher: Synthetic Student')).toHaveValue(teacherId)
 })
 
 test('course roster modes focus the table and save a group across searches', async ({
@@ -892,17 +896,20 @@ test('course roster modes focus the table and save a group across searches', asy
   Object.assign(enrollments[0], { practical: 0, theory: 92, notes: 'Private feedback' })
   await page.goto(`/?page=app&view=courses&courseView=students&course=${courseA}`)
   const view = page.getByRole('combobox', { name: 'Student view' })
-  const level = page.getByLabel('Course level: Synthetic Student')
+  const level = page.getByRole('row').filter({ hasText: 'Synthetic' }).locator('td').nth(2)
   const receipt = page.getByLabel('Handbook received: Synthetic Student')
   const teachers = page.getByRole('combobox', { name: 'Teacher for selected' })
   const apply = page.getByRole('button', { name: 'Apply to selected' })
   const search = page.getByRole('searchbox', { name: 'Find a student' })
 
   await expect(view).toHaveValue('all')
-  await expect(level).toHaveValue('')
+  await expect(level).toHaveText('\u2014')
+  await expect(page.locator('th').filter({ hasText: /^Course level$/ })).toHaveCount(1)
+  await expect(page.locator('th').filter({ hasText: /^Roster level$/ })).toHaveCount(0)
+  await expect(page.getByLabel('Course level: Synthetic Student')).toHaveCount(0)
   await expect(page.getByRole('columnheader', { name: 'Actions' })).toHaveCount(0)
   await view.selectOption('books')
-  await expect(level).toHaveCount(0)
+  await expect(page.locator('th').filter({ hasText: /^Course level$/ })).toHaveCount(0)
   await receipt.click()
   await expect(savedToast).toHaveText('Saved')
   await page.reload()
@@ -936,49 +943,40 @@ test('course roster modes focus the table and save a group across searches', asy
   expect(enrollments.map((entry) => entry.level)).toEqual(['', 'Advanced', 'Individual B'])
 
   await search.fill('')
-  await page.getByRole('button', { name: 'Select visible' }).click()
-  await page.getByRole('checkbox', { name: 'Change course level' }).check()
-  await page.getByRole('textbox', { name: 'Course level for selected' }).fill('Group 2')
-  await teachers.selectOption({ label: 'Keep unchanged' })
-  await apply.click()
-  await expect(savedToast).toHaveText('Saved')
   await page.reload()
   await expect(view).toHaveValue('groups')
-  await expect(level).toHaveValue('Group 2')
-  await expect(page.getByLabel('Course level: New Student')).toHaveValue('Group 2')
+  await expect(level).toHaveText('\u2014')
   expect(enrollments[0]).toMatchObject({
     teacherId,
     practical: 0,
     theory: 92,
     notes: 'Private feedback',
     handbookReceived: true,
+    level: '',
   })
   expect(enrollments[1]).toMatchObject({ level: 'Advanced', teacherId: null })
 
+  const teacher = page.getByLabel('Teacher: Synthetic Student')
   failNextAssignment()
-  await level.fill('Group 3')
-  await level.press('Enter')
+  await teacher.selectOption('')
   await expect(page.getByRole('alert')).toBeVisible()
-  expect(enrollments[0].level).toBe('Group 2')
+  expect(enrollments[0].teacherId).toBe(teacherId)
   await page.getByRole('button', { name: 'Retry', exact: true }).click()
-  await expect(savedToast).toHaveText('Saved')
-  await page.reload()
-  await expect(level).toHaveValue('Group 3')
+  await expect.poll(() => enrollments[0].teacherId).toBeNull()
 
   const release = holdNextAssignment()
   try {
-    await level.fill('Group 4')
-    await level.press('Enter')
-    await expect.poll(() => assignments.at(-1)?.level).toBe('Group 4')
-    await level.fill('Group 3')
-    await level.press('Enter')
+    await teacher.selectOption(teacherId)
+    await expect.poll(() => assignments.at(-1)?.teacherId).toBe(teacherId)
+    await teacher.selectOption('')
   } finally {
     release()
   }
-  await expect.poll(() => assignments.at(-1)?.level).toBe('Group 3')
+  await expect.poll(() => assignments.at(-1)?.teacherId).toBeNull()
   await expect(savedToast).toHaveText('Saved')
   await page.reload()
-  await expect(level).toHaveValue('Group 3')
+  await expect(teacher).toHaveValue('')
+  await expect(level).toHaveText('\u2014')
 
   for (const language of ['en', 'ar']) {
     const ar = language === 'ar'
