@@ -31,6 +31,24 @@
   font-weight: 600;
 }
 
+.course-student-tools :is(input, select) {
+  width: 100%;
+  min-width: 0;
+}
+
+.course-student-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.course-student-name {
+  color: inherit;
+  font: inherit;
+}
+
 @media (max-width: 480px) {
   .course-page-heading {
     font-size: 1.25rem;

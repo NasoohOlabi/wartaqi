@@ -2,7 +2,12 @@ import { clickRecordAction, recordActions } from './recordActions'
 import { clickAccountAction } from './profileActions'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
-import { enrollmentSchema, courseSchema } from '../shared/neon'
+import {
+  enrollmentSchema,
+  enrollmentAssignmentSchema,
+  courseSchema,
+  type EnrollmentAssignment,
+} from '../shared/neon'
 
 test.use({ trace: 'off' })
 const teacherId = '10000000-0000-4000-8000-000000000001'
@@ -144,6 +149,9 @@ async function setupCourses(page: Page) {
   }
   const events: unknown[] = []
   const attemptedCourseIds: string[] = []
+  const assignments: EnrollmentAssignment[] = []
+  let assignmentGate: Promise<void> | undefined
+  let failAssignment = false
   let dropCourseResponse = true
   await page.route('**/api/auth/**', async (route) => {
     const now = new Date().toISOString()
@@ -197,6 +205,35 @@ async function setupCourses(page: Page) {
       return route.fulfill({ json: { saved: true } })
     }
     if (path === '/api/admin') return route.fulfill({ json: board })
+    if (path === '/api/admin/enrollments/assignment') {
+      const body = enrollmentAssignmentSchema.parse(route.request().postDataJSON())
+      assignments.push(body)
+      const gate = assignmentGate
+      assignmentGate = undefined
+      if (gate) await gate
+      if (failAssignment) {
+        failAssignment = false
+        return route.fulfill({ status: 503, json: { error: 'Unavailable' } })
+      }
+      const ids = body.kind === 'group' ? body.ids : [body.id]
+      const entries = enrollments.filter(
+        (entry) =>
+          entry.courseId === body.courseId &&
+          ids.includes(entry.id) &&
+          (body.kind === 'edit' || entry.active),
+      )
+      if (entries.length !== ids.length)
+        return route.fulfill({ status: 409, json: { error: 'Conflict' } })
+      for (const entry of entries) {
+        if (body.level !== undefined) entry.level = body.level
+        if (body.teacherId !== undefined) {
+          entry.teacherId = body.teacherId
+          entry.teacherName = body.teacherId ? 'Admin' : null
+        }
+        if (body.kind === 'edit' && body.active !== undefined) entry.active = body.active
+      }
+      return route.fulfill({ json: { saved: true } })
+    }
     if (path === '/api/admin/enrollments/membership') {
       const body = route.request().postDataJSON()
       const index = enrollments.findIndex((entry) => entry.id === body.id)
@@ -269,7 +306,25 @@ async function setupCourses(page: Page) {
     return route.fulfill({ json: { teacher, students, courses, enrollments, events } })
   })
   const savedToast = page.getByRole('status').filter({ hasText: /^(Saved|تم الحفظ)$/ })
-  return { board, courses, enrollments, events, attemptedCourseIds, savedToast }
+  return {
+    board,
+    courses,
+    enrollments,
+    events,
+    attemptedCourseIds,
+    savedToast,
+    assignments,
+    failNextAssignment: () => {
+      failAssignment = true
+    },
+    holdNextAssignment: () => {
+      let release = () => {}
+      assignmentGate = new Promise((resolve) => {
+        release = resolve
+      })
+      return release
+    },
+  }
 }
 
 test('course creation keeps retry and navigation identities separate', async ({ page }) => {
@@ -801,36 +856,153 @@ test('course enrollment and same-day attendance stay separate', async ({ page },
   })
   await expect(page.getByLabel('Course level: Synthetic Student')).toHaveValue('')
   await page.getByLabel('Course level: Synthetic Student').fill('Draft A')
+  await page.getByLabel('Course level: Synthetic Student').press('Enter')
+  await expect.poll(() => enrollments[0].level).toBe('Draft A')
   await coursesNavigation.click()
   await clickRecordAction(page.getByRole('row').filter({ hasText: 'Course B' }), 'Manage students')
   await expect(page.getByLabel('Handbook received: Synthetic Student')).not.toBeChecked()
   await expect(page.getByLabel('Course level: Synthetic Student')).toHaveValue('Advanced')
   await page.getByLabel('Teacher: Synthetic Student').selectOption(teacherId)
-  await page
-    .getByRole('row')
-    .filter({ hasText: 'Synthetic' })
-    .getByRole('button', { name: 'Save level' })
-    .click()
   await expect.poll(() => enrollments[1].teacherId).toBe(teacherId)
   expect(enrollments[1].level).toBe('Advanced')
   await page.getByLabel('Course level: Synthetic Student').fill('Updated B')
-  await page
-    .getByRole('row')
-    .filter({ hasText: 'Synthetic' })
-    .getByRole('button', { name: 'Save level' })
-    .click()
+  await page.getByLabel('Course level: Synthetic Student').blur()
   await expect.poll(() => enrollments[1].level).toBe('Updated B')
   expect(enrollments[1].id).toBe(enrollB)
   await coursesNavigation.click()
   await clickRecordAction(page.getByRole('row').filter({ hasText: 'Course A' }), 'Manage students')
   await expect(page.getByLabel('Course level: Synthetic Student')).toHaveValue('Draft A')
   await page.getByLabel('Course level: Synthetic Student').fill('Intermediate')
-  await page
-    .getByRole('row')
-    .filter({ hasText: 'Synthetic' })
-    .getByRole('button', { name: 'Save level' })
-    .click()
+  await page.getByLabel('Course level: Synthetic Student').press('Enter')
   await expect.poll(() => enrollments[0].level).toBe('Intermediate')
+})
+
+test('course roster modes focus the table and save a group across searches', async ({
+  page,
+}, testInfo) => {
+  const { enrollments, assignments, failNextAssignment, holdNextAssignment, savedToast } =
+    await setupCourses(page)
+  const secondId = '40000000-0000-4000-8000-000000000003'
+  enrollments.push({
+    ...enrollments[0],
+    id: secondId,
+    studentId: secondStudentId,
+    level: 'Individual B',
+  })
+  Object.assign(enrollments[0], { practical: 0, theory: 92, notes: 'Private feedback' })
+  await page.goto(`/?page=app&view=courses&courseView=students&course=${courseA}`)
+  const view = page.getByRole('combobox', { name: 'Student view' })
+  const level = page.getByLabel('Course level: Synthetic Student')
+  const receipt = page.getByLabel('Handbook received: Synthetic Student')
+  const teachers = page.getByRole('combobox', { name: 'Teacher for selected' })
+  const apply = page.getByRole('button', { name: 'Apply to selected' })
+  const search = page.getByRole('searchbox', { name: 'Find a student' })
+
+  await expect(view).toHaveValue('all')
+  await expect(level).toHaveValue('')
+  await expect(page.getByRole('columnheader', { name: 'Actions' })).toHaveCount(0)
+  await view.selectOption('books')
+  await expect(level).toHaveCount(0)
+  await receipt.click()
+  await expect(savedToast).toHaveText('Saved')
+  await page.reload()
+  await expect(view).toHaveValue('books')
+  await expect(receipt).toBeChecked()
+
+  await view.selectOption('groups')
+  await expect(receipt).toHaveCount(0)
+  await page.getByRole('checkbox', { name: 'Select: Synthetic Student' }).check()
+  await search.fill('New')
+  await expect(page.getByRole('checkbox', { name: 'Select: Synthetic Student' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Select visible' }).click()
+  await expect(page.getByText('Selected: 2', { exact: true })).toBeVisible()
+  await expect(apply).toBeDisabled()
+  await teachers.selectOption({ label: 'Admin' })
+  failNextAssignment()
+  await apply.click()
+  await expect(page.getByRole('alert')).toBeVisible()
+  expect(enrollments.map((entry) => entry.teacherId)).toEqual([null, null, null])
+  await apply.click()
+  await expect(savedToast).toHaveText('Saved')
+  expect(assignments.at(-1)).toMatchObject({
+    kind: 'group',
+    courseId: courseA,
+    ids: expect.arrayContaining([enrollA, secondId]),
+    teacherId,
+  })
+  expect(enrollments.map((entry) => entry.level)).toEqual(['', 'Advanced', 'Individual B'])
+
+  await search.fill('')
+  await page.getByRole('button', { name: 'Select visible' }).click()
+  await page.getByRole('checkbox', { name: 'Change course level' }).check()
+  await page.getByRole('textbox', { name: 'Course level for selected' }).fill('Group 2')
+  await teachers.selectOption({ label: 'Keep unchanged' })
+  await apply.click()
+  await expect(savedToast).toHaveText('Saved')
+  await page.reload()
+  await expect(view).toHaveValue('groups')
+  await expect(level).toHaveValue('Group 2')
+  await expect(page.getByLabel('Course level: New Student')).toHaveValue('Group 2')
+  expect(enrollments[0]).toMatchObject({
+    teacherId,
+    practical: 0,
+    theory: 92,
+    notes: 'Private feedback',
+    handbookReceived: true,
+  })
+  expect(enrollments[1]).toMatchObject({ level: 'Advanced', teacherId: null })
+
+  failNextAssignment()
+  await level.fill('Group 3')
+  await level.press('Enter')
+  await expect(page.getByRole('alert')).toBeVisible()
+  expect(enrollments[0].level).toBe('Group 2')
+  await page.getByRole('button', { name: 'Retry', exact: true }).click()
+  await expect(savedToast).toHaveText('Saved')
+  await page.reload()
+  await expect(level).toHaveValue('Group 3')
+
+  const release = holdNextAssignment()
+  try {
+    await level.fill('Group 4')
+    await level.press('Enter')
+    await expect.poll(() => assignments.at(-1)?.level).toBe('Group 4')
+    await level.fill('Group 3')
+    await level.press('Enter')
+  } finally {
+    release()
+  }
+  await expect.poll(() => assignments.at(-1)?.level).toBe('Group 3')
+  await expect(savedToast).toHaveText('Saved')
+  await page.reload()
+  await expect(level).toHaveValue('Group 3')
+
+  for (const language of ['en', 'ar']) {
+    if (language === 'ar') await clickAccountAction(page, 'العربية')
+    for (const width of testInfo.project.name === 'mobile' ? [320, 390, 430] : [1440]) {
+      await page.setViewportSize({ width, height: 844 })
+      for (const mode of ['groups', 'books']) {
+        await page
+          .locator('select')
+          .filter({ has: page.locator('option[value="groups"]') })
+          .selectOption(mode)
+        const table = page.locator('.course-students-table')
+        await expect(table).toBeVisible()
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        )
+        expect(
+          await table
+            .locator('..')
+            .evaluate((element) => element.scrollWidth <= element.clientWidth),
+        ).toBe(true)
+        if (width === 320 || width === 1440)
+          await page.screenshot({
+            path: `.artifacts/verification/course-student-${mode}-${width}-${language}.png`,
+          })
+      }
+    }
+  }
 })
 
 test('missing scores uses the left side of the Grades controls', async ({ page }, testInfo) => {

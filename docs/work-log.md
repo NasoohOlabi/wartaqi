@@ -2381,3 +2381,9 @@ The one-command PowerShell runner passed with 20 assertions and an extra plain-l
 At 14:18 Asia/Damascus, an Arabic read-back exposed a stale date proposed by Bonsai. The worker now bases a dated attendance lookup on the explicit date in the current question, and the real headless run checks the correct Arabic status after a confirmed write. The runner invokes the migration script directly to avoid a stalled Windows package-script wrapper. The rerun passed 21 assertions and cleaned up its disposable database.
 
 At 14:30 Asia/Damascus, PR validation failed when the mobile course-creation test pressed Back before the app returned to Courses. Delaying the synthetic save response reproduced the missing form field. Waiting for the saved course row fixed the reproduced failure and passed three repeats each on desktop and mobile after removing the delay. The application and Telegram worker are unchanged by this test correction.
+
+## 2026-11-26 10:30 Asia/Damascus — Simplify course roster work
+
+The owner asked for faster group setup, focused column views and automatic saving. Manage students now offers All columns, Groups and Books. Group selection carries across searches for the same course. An administrator can apply a shared teacher or course level to enrolled students, leaving either field unchanged. Teacher edits save on selection and course levels save on blur or Enter. Failed student saves can be retried from the page.
+
+The disposable PostgreSQL check exercised atomic rejection of stale selections, simultaneous changes, role restrictions and preservation of grades and handbook receipt. Synthetic browser verification covers both focused views, cross-search selection, save failures, rapid edits, reload and desktop and emulated phone layouts in English and Arabic. Deployment and live verification are recorded in the PR.
