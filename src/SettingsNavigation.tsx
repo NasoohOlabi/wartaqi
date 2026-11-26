@@ -1,3 +1,4 @@
+import './course-sections.css'
 import { DirectionProvider } from '@base-ui/react/direction-provider'
 import { NavigationMenu } from '@base-ui/react/navigation-menu'
 import { queryHref, setQuery } from './queryState'
@@ -19,11 +20,8 @@ export function SettingsNavigation({
   ]
   return (
     <DirectionProvider direction={ar ? 'rtl' : 'ltr'}>
-      <NavigationMenu.Root
-        className="settings-sections"
-        aria-label={ar ? 'أقسام الإعدادات' : 'Settings sections'}
-      >
-        <NavigationMenu.List>
+      <NavigationMenu.Root aria-label={ar ? 'أقسام الإعدادات' : 'Settings sections'}>
+        <NavigationMenu.List className="workspace-sections">
           {sections.map(({ id, label }) => {
             const values: Record<string, string> =
               id === 'history' && current === 'history'
@@ -43,6 +41,7 @@ export function SettingsNavigation({
               <NavigationMenu.Item key={id}>
                 <NavigationMenu.Link
                   active={current === id}
+                  aria-current={current === id ? 'page' : undefined}
                   href={href}
                   onClick={(event) => {
                     if (

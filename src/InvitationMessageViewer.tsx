@@ -5,6 +5,9 @@ import { CopyableInvitation } from './InviteAccounts'
 import { request } from './neon'
 import { useLanguage } from './useLanguage'
 import { setQuery } from './queryState'
+import type { Profile } from './ProfileMenu'
+import { WorkspaceNavigation } from './WorkspaceNavigation'
+import { WorkspacePageHeader } from './WorkspacePageHeader'
 
 type ViewerState =
   | { kind: 'ready' | 'loading' | 'unavailable' }
@@ -13,9 +16,13 @@ type ViewerState =
 export function InvitationMessageViewer({
   userId,
   requestId,
+  profile,
+  signOut,
 }: {
   userId: string
   requestId: string
+  profile: Profile
+  signOut: () => void
 }) {
   const { language } = useLanguage()
   const ar = language === 'ar'
@@ -61,41 +68,49 @@ export function InvitationMessageViewer({
   }
 
   return (
-    <main id="main-content" tabIndex={-1} className="workspace-auth panel space-y-3">
-      <h1>{ar ? 'رسالة الدعوة الخاصة' : 'Private invitation message'}</h1>
-      {state.kind === 'ready' && (
-        <button className="primary" onClick={() => void reveal()}>
-          {ar ? 'إظهار الدعوة' : 'Reveal invitation'}
-        </button>
-      )}
-      {state.kind === 'loading' && <p role="status">{ar ? 'جارٍ التحميل…' : 'Loading…'}</p>}
-      {state.kind === 'unavailable' && (
-        <p role="alert">
-          {ar
-            ? 'الرسالة غير متاحة أو انتهت صلاحيتها. تحقق من الحسابات وأعد تعيين كلمة المرور عند الحاجة.'
-            : 'The message is unavailable or expired. Check accounts and reset the password if needed.'}
-        </p>
-      )}
-      {state.kind === 'done' && (
-        <>
-          <p>
-            {ar
-              ? 'أرسل كل رسالة إلى صاحب الحساب بشكل خاص. ستختفي الرسائل عند مغادرة الصفحة.'
-              : 'Send each message privately to its recipient. The messages disappear when you leave this page.'}
-          </p>
-          {state.invitations.map((invitation) => (
-            <CopyableInvitation key={invitation.phone} invitation={invitation} ar={ar} />
-          ))}
-        </>
-      )}
-      <button
-        className="secondary"
-        onClick={() =>
-          setQuery({ view: 'settings', settingsSection: '', account: '', inviteMessage: '' }, true)
-        }
-      >
-        {ar ? 'العودة إلى الحسابات' : 'Back to accounts'}
-      </button>
-    </main>
+    <div className="workspace">
+      <WorkspaceNavigation administrator profile={profile} leave={signOut} />
+      <main id="main-content" tabIndex={-1} className="workspace-main">
+        <WorkspacePageHeader title={ar ? 'رسالة الدعوة الخاصة' : 'Private invitation message'} />
+        <section className="panel space-y-3">
+          {state.kind === 'ready' && (
+            <button className="primary" onClick={() => void reveal()}>
+              {ar ? 'إظهار الدعوة' : 'Reveal invitation'}
+            </button>
+          )}
+          {state.kind === 'loading' && <p role="status">{ar ? 'جارٍ التحميل…' : 'Loading…'}</p>}
+          {state.kind === 'unavailable' && (
+            <p role="alert">
+              {ar
+                ? 'الرسالة غير متاحة أو انتهت صلاحيتها. تحقق من الحسابات وأعد تعيين كلمة المرور عند الحاجة.'
+                : 'The message is unavailable or expired. Check accounts and reset the password if needed.'}
+            </p>
+          )}
+          {state.kind === 'done' && (
+            <>
+              <p>
+                {ar
+                  ? 'أرسل كل رسالة إلى صاحب الحساب بشكل خاص. ستختفي الرسائل عند مغادرة الصفحة.'
+                  : 'Send each message privately to its recipient. The messages disappear when you leave this page.'}
+              </p>
+              {state.invitations.map((invitation) => (
+                <CopyableInvitation key={invitation.phone} invitation={invitation} ar={ar} />
+              ))}
+            </>
+          )}
+          <button
+            className="secondary"
+            onClick={() =>
+              setQuery(
+                { view: 'settings', settingsSection: '', account: '', inviteMessage: '' },
+                true,
+              )
+            }
+          >
+            {ar ? 'العودة إلى الحسابات' : 'Back to accounts'}
+          </button>
+        </section>
+      </main>
+    </div>
   )
 }

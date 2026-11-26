@@ -18,9 +18,10 @@ import {
 import { useLanguage } from './useLanguage'
 import type { Profile } from './ProfileMenu'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
+import { WorkspacePageHeader } from './WorkspacePageHeader'
 import { SettingsNavigation } from './SettingsNavigation'
 import { getNotebook, request } from './neon'
-import { setQuery, useQueryState } from './queryState'
+import { returnToParent, setQuery, useQueryState } from './queryState'
 
 type Board = z.infer<typeof neonAdminBoardSchema>
 type Account = Board['accounts'][number]
@@ -98,7 +99,11 @@ export function AdminConsole({
         : query.settingsSection
   if (selectedSection === 'students' && inviting) setInviting(false)
   const activeEditing = editingStudentId ? linkedStudent : editing
-  const showStudentTable = !courseId && !creating && !editingStudentId
+  const studentFormOpen = creating || !!editingStudentId || !!editing
+  const showStudentTable = !studentFormOpen
+  const returnFromNewStudent = () =>
+    returnToParent(courseId ? { view: 'courses', courseView: 'students' } : { view: 'notebook' })
+  const returnToStudent = () => returnToParent({ view: 'student' })
   const studentTable = useDataTable('admin-students', board?.students ?? [], [
     { id: 'first', label: ar ? 'الاسم الأول' : 'First name', value: (s) => s.firstName },
     { id: 'last', label: ar ? 'اسم العائلة' : 'Last name', value: (s) => s.lastName },
@@ -148,15 +153,76 @@ export function AdminConsole({
   return (
     <div className="workspace">
       <WorkspaceNavigation administrator profile={profile} leave={signOut} />
-      <main id="main-content" className="workspace-main role-page" tabIndex={-1}>
-        <div className="role-heading">
-          <div>
-            {initialCreateStudent && <span>{ar ? 'مسؤول' : 'Administrator'}</span>}
-            <h1>
-              {initialCreateStudent ? (ar ? 'الطلاب' : 'Students') : ar ? 'الإعدادات' : 'Settings'}
-            </h1>
-          </div>
-          <div className="role-actions">
+      <main id="main-content" className="workspace-main" tabIndex={-1}>
+        <WorkspacePageHeader
+          title={
+            initialCreateStudent || creating
+              ? ar
+                ? '\u0625\u0636\u0627\u0641\u0629 \u0637\u0627\u0644\u0628'
+                : 'Add student'
+              : editingStudentId || editing
+                ? ar
+                  ? '\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u0637\u0627\u0644\u0628'
+                  : 'Edit student'
+                : inviting
+                  ? ar
+                    ? '\u0625\u0646\u0634\u0627\u0621 \u062d\u0633\u0627\u0628\u0627\u062a'
+                    : 'Create accounts'
+                  : query.account
+                    ? ar
+                      ? '\u0627\u0644\u062d\u0633\u0627\u0628'
+                      : 'Account'
+                    : ar
+                      ? '\u0627\u0644\u0625\u0639\u062f\u0627\u062f\u0627\u062a'
+                      : 'Settings'
+          }
+          parent={
+            initialCreateStudent ? (
+              <button className="secondary" onClick={returnFromNewStudent}>
+                {courseId
+                  ? ar
+                    ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0637\u0644\u0627\u0628 \u0627\u0644\u062f\u0648\u0631\u0629'
+                    : 'Back to course students'
+                  : query.tab === 'roster'
+                    ? ar
+                      ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0644\u0627\u0628'
+                      : 'Back to students'
+                    : ar
+                      ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629'
+                      : 'Back to dashboard'}
+              </button>
+            ) : editingStudentId ? (
+              <button className="secondary" onClick={returnToStudent}>
+                {ar
+                  ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0627\u0644\u0628'
+                  : 'Back to student'}
+              </button>
+            ) : creating || editing ? (
+              <button
+                className="secondary"
+                onClick={() => {
+                  setCreating(false)
+                  setEditing(null)
+                }}
+              >
+                {ar
+                  ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0644\u0627\u0628'
+                  : 'Back to students'}
+              </button>
+            ) : query.account ? (
+              <button
+                className="secondary"
+                onClick={() => {
+                  setQuery({ account: '' }, true)
+                }}
+              >
+                {ar
+                  ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u062d\u0633\u0627\u0628\u0627\u062a'
+                  : 'Back to accounts'}
+              </button>
+            ) : undefined
+          }
+          actions={
             <button
               className="icon-button"
               aria-label={t('Refresh')}
@@ -165,9 +231,12 @@ export function AdminConsole({
             >
               <RefreshCw size={20} strokeWidth={1.6} aria-hidden="true" focusable="false" />
             </button>
-          </div>
-        </div>
-        {!initialCreateStudent && <SettingsNavigation current={selectedSection} />}
+          }
+        >
+          {!studentFormOpen && !inviting && !query.account && (
+            <SettingsNavigation current={selectedSection} />
+          )}
+        </WorkspacePageHeader>
         {error && <p role="alert">{errorMessage(error)}</p>}
         {message && <p role="status">{message}</p>}
         {!board && !error && <p role="status">{ar ? 'جارٍ التحميل…' : 'Loading…'}</p>}
@@ -175,7 +244,9 @@ export function AdminConsole({
           <>
             {selectedSection === 'accounts' && !initialCreateStudent && (
               <section className="panel role-section">
-                <h2 className="title">{ar ? 'الحسابات' : 'Accounts'}</h2>
+                {!inviting && !query.account && (
+                  <h2 className="title">{ar ? 'الحسابات' : 'Accounts'}</h2>
+                )}
                 {inviting ? (
                   <InviteAccounts
                     userId={userId}
@@ -187,9 +258,6 @@ export function AdminConsole({
                   />
                 ) : query.account ? (
                   <>
-                    <button className="secondary" onClick={() => setQuery({ account: '' }, true)}>
-                      {ar ? 'العودة إلى الحسابات' : 'Back to accounts'}
-                    </button>
                     {(() => {
                       const account = board.accounts.find(
                         (item) => item.authUserId === query.account,
@@ -245,21 +313,10 @@ export function AdminConsole({
             )}
             {selectedSection === 'students' && (
               <section className="panel role-section">
-                <TableToolbar
-                  model={showStudentTable ? studentTable : undefined}
-                  className="mt-8 mb-4"
-                >
-                  <h2 className="title">{ar ? 'الطلاب' : 'Students'}</h2>
-                </TableToolbar>
-                {editingStudentId && (
-                  <button
-                    className="secondary mb-4"
-                    onClick={() => setQuery({ view: 'student' }, true)}
-                  >
-                    {ar
-                      ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0627\u0644\u0628'
-                      : 'Back to student'}
-                  </button>
+                {showStudentTable && (
+                  <TableToolbar model={studentTable} className="mb-4">
+                    <h2 className="title">{ar ? 'الطلاب' : 'Students'}</h2>
+                  </TableToolbar>
                 )}
                 {editingStudentId && !linkedStudent && (
                   <p>
@@ -268,7 +325,7 @@ export function AdminConsole({
                       : 'Student unavailable'}
                   </p>
                 )}
-                {!courseId && !editingStudentId && (
+                {showStudentTable && (
                   <button
                     className="secondary mb-4"
                     onClick={() => {
@@ -288,17 +345,18 @@ export function AdminConsole({
                     ar={ar}
                     courseName={courseId ? courseName : ''}
                     save={async (value) => {
+                      const source = window.location.search
                       const path = courseId ? '/api/admin/students/enroll' : '/api/admin/students'
                       const body = courseId
                         ? { student: value, enrollment: { id: enrollmentId, courseId } }
                         : value
-                      if (await save(path, body)) {
-                        if (courseId) {
-                          setQuery({ view: 'courses', courseView: 'students' }, true)
+                      if ((await save(path, body)) && window.location.search === source) {
+                        if (initialCreateStudent) {
+                          returnFromNewStudent()
                           return
                         }
                         if (editingStudentId) {
-                          setQuery({ view: 'student' }, true)
+                          returnToStudent()
                           return
                         }
                         setEditing(null)
@@ -306,12 +364,12 @@ export function AdminConsole({
                       }
                     }}
                     cancel={() => {
-                      if (courseId) {
-                        setQuery({ view: 'courses', courseView: 'students' }, true)
+                      if (initialCreateStudent) {
+                        returnFromNewStudent()
                         return
                       }
                       if (editingStudentId) {
-                        setQuery({ view: 'student' }, true)
+                        returnToStudent()
                         return
                       }
                       setEditing(null)

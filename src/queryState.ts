@@ -15,6 +15,7 @@ function subscribe(callback: () => void) {
 export function useQueryState() {
   const search = useSyncExternalStore(subscribe, () => window.location.search)
   const query = sanitizedSearch(search)
+  const explicitTab = tabSchema.safeParse(query.get('tab')).data
   const view =
     z
       .enum([
@@ -22,6 +23,7 @@ export function useQueryState() {
         'settings',
         'administration',
         'add-student',
+        'edit-student',
         'notebook',
         'courses',
         'student',
@@ -36,7 +38,8 @@ export function useQueryState() {
     page: z.enum(['home', 'app']).safeParse(query.get('page')).data ?? 'home',
     view: view === 'notebook' && query.get('tab') === 'history' ? 'history' : view,
     settingsSection: settingsSectionSchema.parse(query.get('settingsSection')),
-    tab: tabSchema.safeParse(query.get('tab')).data ?? 'dashboard',
+    tab: explicitTab ?? 'dashboard',
+    explicitTab,
     date: z.iso.date().safeParse(query.get('date')).data ?? today(),
     from: z.iso.date().safeParse(query.get('from')).data ?? today().slice(0, 7) + '-01',
     to: z.iso.date().safeParse(query.get('to')).data ?? today(),
@@ -50,8 +53,8 @@ export function useQueryState() {
       z.union([z.uuid(), z.literal('none'), z.literal('all')]).safeParse(query.get('course'))
         .data ?? '',
     courseView:
-      z.enum(['create', 'edit', 'students', 'grades']).safeParse(query.get('courseView')).data ??
-      '',
+      z.enum(['create', 'edit', 'students', 'grades', 'history']).safeParse(query.get('courseView'))
+        .data ?? '',
     studentMode:
       z.enum(['all', 'groups', 'books']).safeParse(query.get('studentMode')).data ?? 'all',
     all: query.get('all') === '1',
@@ -120,9 +123,27 @@ export function queryHref(values: Record<string, string>) {
   return window.location.pathname + (search ? `?${search}` : '')
 }
 
-export function setQuery(values: Record<string, string>, push = false) {
-  window.history[push ? 'pushState' : 'replaceState'](null, '', queryHref(values))
+function writeQuery(values: Record<string, string>, push: boolean, child = false) {
+  const href = queryHref(values)
+  const current = window.location.pathname + window.location.search + window.location.hash
+  if (href === current) return
+  const state = push ? (child ? { workspaceChild: true } : null) : window.history.state
+  window.history[push ? 'pushState' : 'replaceState'](state, '', href)
   window.dispatchEvent(new PopStateEvent('popstate'))
+  if (push) window.scrollTo(0, 0)
+}
+
+export function setQuery(values: Record<string, string>, push = false) {
+  writeQuery(values, push)
+}
+
+export function openChildView(values: Record<string, string>) {
+  writeQuery(values, true, true)
+}
+
+export function returnToParent(fallback: Record<string, string>) {
+  if (window.history.state?.workspaceChild === true) window.history.back()
+  else setQuery(fallback)
 }
 
 export function navigatePage(page: 'home' | 'app') {

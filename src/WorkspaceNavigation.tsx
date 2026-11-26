@@ -1,8 +1,15 @@
 import { useEffect, useRef } from 'react'
 import { ProfileMenu, type Profile } from './ProfileMenu'
-import { BookOpen, House } from 'lucide-react'
+import { BookOpen, House, Settings, UserRound } from 'lucide-react'
 import { useLanguage, type TranslationKey } from './useLanguage'
-import { navigateNotebook, setQuery, useQueryState, type Tab } from './queryState'
+import {
+  navigateNotebook,
+  openChildView,
+  returnToParent,
+  setQuery,
+  useQueryState,
+  type Tab,
+} from './queryState'
 import { WartaqIcon, WartaqLogo } from './brand/components'
 
 const tabs: { id: Exclude<Tab, 'dashboard'>; label: TranslationKey }[] = [
@@ -12,6 +19,7 @@ const tabs: { id: Exclude<Tab, 'dashboard'>; label: TranslationKey }[] = [
 
 export function WorkspaceNavigation({
   administrator,
+  student = false,
   offline = false,
   courseName,
   courses,
@@ -23,6 +31,7 @@ export function WorkspaceNavigation({
   disabled,
 }: {
   administrator: boolean
+  student?: boolean
   offline?: boolean
   courseName?: string
   courses?: { id: string; name: string; closed?: boolean }[]
@@ -39,12 +48,24 @@ export function WorkspaceNavigation({
     query.view === 'notebook' ||
     query.view === 'history' ||
     query.view === 'student' ||
+    (query.view === 'courses' && !!query.course) ||
     query.view === 'changes'
       ? query.courseScope === 'all'
         ? ''
         : query.courseScope || defaultCourse
       : defaultCourse
   const roster = query.view === 'notebook' && query.tab === 'roster'
+  const studentSubview = ['student', 'add-student', 'edit-student'].includes(query.view)
+  const coursesActive = query.view === 'courses' || (studentSubview && !!query.courseView)
+  const settingsActive = [
+    'settings',
+    'administration',
+    'history',
+    'diagnostics',
+    'telegram',
+    'invitation-message',
+  ].includes(query.view)
+  const notebookActive = query.view === 'notebook' || (studentSubview && !query.courseView)
   const courseNumber = courseName?.match(/^وارتق\s+([0-9\u0660-\u0669\u06f0-\u06f9]+)$/u)?.[1]
   const switcher = useRef<HTMLDetailsElement>(null)
   useEffect(() => {
@@ -170,75 +191,129 @@ export function WorkspaceNavigation({
           </details>
         )}
       </div>
-      <nav aria-label={t('Main navigation')} data-courses={administrator}>
-        <button
-          className={query.view === 'notebook' && query.tab === 'dashboard' ? 'active' : ''}
-          aria-label={language === 'ar' ? 'الرئيسية' : 'Dashboard'}
-          aria-current={query.view === 'notebook' && query.tab === 'dashboard' ? 'page' : undefined}
-          onClick={() => navigateNotebook('dashboard', notebookCourse)}
-        >
-          <House size={20} strokeWidth={1.6} aria-hidden="true" focusable="false" />
-          <span className="workspace-tab-long">{language === 'ar' ? 'الرئيسية' : 'Dashboard'}</span>
-          <span className="workspace-tab-short" aria-hidden="true">
-            {language === 'ar' ? 'الرئيسية' : 'Home'}
-          </span>
-        </button>
-        {administrator && (
-          <button
-            className={
-              query.view === 'courses' || (query.view === 'add-student' && !!query.courseView)
-                ? 'active'
-                : ''
-            }
-            aria-current={
-              query.view === 'courses' || (query.view === 'add-student' && !!query.courseView)
-                ? 'page'
-                : undefined
-            }
-            disabled={offline}
-            onClick={() => setQuery({ view: 'courses', courseView: '', course: '', q: '' }, true)}
-          >
-            <BookOpen size={20} strokeWidth={1.6} aria-hidden="true" focusable="false" />
-            <span>{language === 'ar' ? 'الدورات' : 'Courses'}</span>
-          </button>
-        )}
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={
-              query.view === 'notebook' &&
-              (query.tab === tab.id || (tab.id === 'attendance' && query.tab === 'summary'))
-                ? 'active'
-                : ''
-            }
-            aria-label={t(tab.label)}
-            aria-current={
-              query.view === 'notebook' &&
-              (query.tab === tab.id || (tab.id === 'attendance' && query.tab === 'summary'))
-                ? 'page'
-                : undefined
-            }
-            onClick={() =>
-              navigateNotebook(
-                tab.id,
-                tab.id === 'roster' && query.courseScope === 'all' ? 'all' : notebookCourse,
-                {
-                  ...(tab.id === 'roster' ? { student: '' } : {}),
-                },
-              )
-            }
-          >
-            <WartaqIcon name={tab.id === 'roster' ? 'students' : tab.id} />
-            <span className={tab.id === 'attendance' ? 'workspace-tab-long' : undefined}>
-              {t(tab.label)}
-            </span>
-            {tab.id === 'attendance' && (
-              <span className="workspace-tab-short" aria-hidden="true">
-                {language === 'ar' ? 'الحضور' : 'Attend'}
+      <nav aria-label={t('Main navigation')} data-courses={administrator} data-student={student}>
+        {student ? (
+          <>
+            <button
+              className={query.view !== 'profile' ? 'active' : ''}
+              aria-current={query.view !== 'profile' ? 'page' : undefined}
+              onClick={() => returnToParent({ view: 'notebook' })}
+            >
+              <WartaqIcon name="attendance" />
+              <span>{language === 'ar' ? 'حضوري' : 'My attendance'}</span>
+            </button>
+            <button
+              className={query.view === 'profile' ? 'active' : ''}
+              aria-current={query.view === 'profile' ? 'page' : undefined}
+              onClick={() => openChildView({ view: 'profile' })}
+            >
+              <UserRound size={20} aria-hidden="true" />
+              <span>{language === 'ar' ? 'إعدادات الملف الشخصي' : 'Profile settings'}</span>
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              className={notebookActive && query.tab === 'dashboard' ? 'active' : ''}
+              aria-label={language === 'ar' ? 'الرئيسية' : 'Dashboard'}
+              aria-current={notebookActive && query.tab === 'dashboard' ? 'page' : undefined}
+              onClick={() =>
+                navigateNotebook('dashboard', notebookCourse, {
+                  courseView: '',
+                  student: '',
+                  account: '',
+                })
+              }
+            >
+              <House size={20} strokeWidth={1.6} aria-hidden="true" focusable="false" />
+              <span className="workspace-tab-long">
+                {language === 'ar' ? 'الرئيسية' : 'Dashboard'}
               </span>
+              <span className="workspace-tab-short" aria-hidden="true">
+                {language === 'ar' ? 'الرئيسية' : 'Home'}
+              </span>
+            </button>
+            {administrator && (
+              <button
+                className={coursesActive ? 'active' : ''}
+                aria-current={coursesActive ? 'page' : undefined}
+                disabled={offline}
+                onClick={() =>
+                  setQuery(
+                    {
+                      view: 'courses',
+                      courseView: '',
+                      course: '',
+                      q: '',
+                      student: '',
+                      account: '',
+                    },
+                    true,
+                  )
+                }
+              >
+                <BookOpen size={20} strokeWidth={1.6} aria-hidden="true" focusable="false" />
+                <span>{language === 'ar' ? 'الدورات' : 'Courses'}</span>
+              </button>
             )}
-          </button>
-        ))}
+            {tabs.map((tab) => {
+              const active =
+                notebookActive &&
+                (query.tab === tab.id || (tab.id === 'attendance' && query.tab === 'summary'))
+              return (
+                <button
+                  key={tab.id}
+                  className={active ? 'active' : ''}
+                  aria-label={t(tab.label)}
+                  aria-current={active ? 'page' : undefined}
+                  onClick={() =>
+                    navigateNotebook(
+                      tab.id,
+                      tab.id === 'roster' && query.courseScope === 'all' ? 'all' : notebookCourse,
+                      {
+                        student: '',
+                        account: '',
+                        courseView: '',
+                      },
+                    )
+                  }
+                >
+                  <WartaqIcon name={tab.id === 'roster' ? 'students' : tab.id} />
+                  <span className={tab.id === 'attendance' ? 'workspace-tab-long' : undefined}>
+                    {t(tab.label)}
+                  </span>
+                  {tab.id === 'attendance' && (
+                    <span className="workspace-tab-short" aria-hidden="true">
+                      {language === 'ar' ? 'الحضور' : 'Attend'}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+            {administrator && (
+              <button
+                className={settingsActive ? 'active' : ''}
+                aria-current={settingsActive ? 'page' : undefined}
+                disabled={offline}
+                onClick={() =>
+                  setQuery(
+                    {
+                      view: 'settings',
+                      student: '',
+                      settingsSection: '',
+                      courseView: '',
+                      account: '',
+                    },
+                    true,
+                  )
+                }
+              >
+                <Settings size={20} strokeWidth={1.6} aria-hidden="true" />
+                <span>{language === 'ar' ? 'الإعدادات' : 'Settings'}</span>
+              </button>
+            )}
+          </>
+        )}
       </nav>
       <div className="workspace-identity">
         <span>{t('Attendance & notes')}</span>

@@ -338,6 +338,73 @@ async function setupCourses(page: Page) {
   }
 }
 
+test('course sections and Settings keep their place in the workspace', async ({
+  page,
+}, testInfo) => {
+  await setupCourses(page)
+  const nav = page.getByRole('navigation', { name: 'Main navigation' })
+  const sections = page.getByRole('navigation', { name: 'Course sections' })
+  const main = page.getByRole('main')
+  if (testInfo.project.name === 'mobile') await page.setViewportSize({ width: 320, height: 844 })
+  await page.goto(`/?page=app&view=courses&course=${courseA}&courseView=students`)
+  const search = page.getByRole('searchbox', { name: 'Find a student' })
+  const students = sections.getByRole('link', { name: 'Manage course students' })
+  const grades = sections.getByRole('link', { name: 'Course grades' })
+  const history = sections.getByRole('link', { name: 'Course history' })
+  await expect(students).toHaveAttribute('aria-current', 'page')
+  const frame = await main.boundingBox()
+  await search.fill('Synthetic')
+  const studentLink = page.getByRole('link', { name: 'Synthetic', exact: true })
+  await expect(studentLink).toHaveCSS('text-decoration-line', 'underline')
+  await studentLink.click()
+  await expect(nav.getByRole('button', { name: 'Courses' })).toHaveAttribute('aria-current', 'page')
+  await page.getByRole('button', { name: 'Back to students' }).click()
+  await expect(search).toHaveValue('Synthetic')
+  await grades.click()
+  await expect(grades).toHaveAttribute('aria-current', 'page')
+  await history.click()
+  await expect(page).toHaveURL(/courseView=history/)
+  await expect(history).toHaveAttribute('aria-current', 'page')
+  await expect(main.getByRole('heading', { name: /Course A.*History/, level: 1 })).toBeVisible()
+  await expect(nav.getByRole('button', { name: 'Courses' })).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByRole('navigation', { name: 'Settings sections' })).toHaveCount(0)
+  await mkdir('.artifacts/verification', { recursive: true })
+  await page.screenshot({
+    path: `.artifacts/verification/course-history-navigation-${testInfo.project.name}-en.png`,
+    scale: 'css',
+  })
+  await clickAccountAction(page, 'العربية')
+  await expect(page.getByRole('link', { name: 'سجل الدورة' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  await page.screenshot({
+    path: `.artifacts/verification/course-history-navigation-${testInfo.project.name}-ar.png`,
+    scale: 'css',
+  })
+  await clickAccountAction(page, 'English')
+  await page.reload()
+  await expect(history).toHaveAttribute('aria-current', 'page')
+  await page.goBack()
+  await expect(grades).toHaveAttribute('aria-current', 'page')
+  await nav.getByRole('button', { name: 'Settings' }).click()
+  const settings = page.getByRole('navigation', { name: 'Settings sections' })
+  await settings.getByRole('link', { name: 'History & corrections' }).click()
+  await expect(settings.getByRole('link', { name: 'History & corrections' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+  await expect(nav.getByRole('button', { name: 'Settings' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+  await expect(sections).toHaveCount(0)
+  const settingsFrame = await main.boundingBox()
+  expect(settingsFrame?.x).toBe(frame?.x)
+  expect(settingsFrame?.width).toBe(frame?.width)
+})
+
 test('course creation keeps retry and navigation identities separate', async ({ page }) => {
   const { courses, attemptedCourseIds, savedToast } = await setupCourses(page)
   await page.goto('/?page=app&view=courses')
@@ -643,7 +710,7 @@ test('course enrollment and same-day attendance stay separate', async ({ page },
   await clickRecordAction(firstCourseRow, 'Edit')
   await expect(page.getByRole('heading', { name: 'Edit course' })).toBeVisible()
   await expect(page.getByLabel('Course name')).toHaveValue('Course A')
-  await page.getByRole('button', { name: 'Back to courses' }).click()
+  await page.getByRole('button', { name: 'All courses' }).click()
   if (testInfo.project.name === 'mobile') {
     for (const language of ['en', 'ar']) {
       if (language === 'ar') {
@@ -721,7 +788,7 @@ test('course enrollment and same-day attendance stay separate', async ({ page },
     page.getByRole('row').filter({ hasText: 'Created course' }),
     'Manage students',
   )
-  await expect(page.getByRole('button', { name: 'Back to courses' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'All courses' })).toBeVisible()
   await page.getByRole('searchbox', { name: 'Find a student' }).fill('Nw Student')
   const newRow = page.getByRole('row').filter({ hasText: 'New' })
   await expect(newRow.locator('td').nth(2)).toHaveText('A')
@@ -1446,6 +1513,7 @@ test('grades, attendance, and withdrawal preserve course history', async ({ page
   await page.reload()
   await expect(courseRow).toContainText('Closed')
   await clickRecordAction(courseRow, 'History')
+  await expect(page).toHaveURL(/courseView=history/)
   await expect(page.getByRole('status').filter({ hasText: 'This course is closed' })).toBeVisible()
   await expect(page).toHaveURL(new RegExp(`course=${courseA}`))
   await expect(

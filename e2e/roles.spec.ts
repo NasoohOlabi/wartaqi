@@ -201,13 +201,25 @@ test('student sees only their attendance and loses it after access is denied', a
         .evaluate((image) => image instanceof HTMLImageElement && image.naturalWidth),
     )
     .toBe(44)
+  await page.setViewportSize({ width: 320, height: 844 })
   await openProfile(page)
   const menuBounds = await page.locator('.profile-panel').boundingBox()
   expect(menuBounds?.x).toBeGreaterThanOrEqual(0)
   expect(menuBounds ? menuBounds.x + menuBounds.width : 999).toBeLessThanOrEqual(320)
   await page.keyboard.press('Escape')
   await compactHeader(page, '.role-header')
-  await expect(page.getByRole('button', { name: /Notes|Students|History|Settings/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Notes|Students|History|^Settings$/ })).toHaveCount(
+    0,
+  )
+  const studentNav = page.getByRole('navigation', { name: 'Main navigation' })
+  await studentNav.getByRole('button', { name: 'Profile settings' }).click()
+  await expect(page.getByRole('heading', { name: 'Profile settings' })).toBeVisible()
+  await expect(studentNav.getByRole('button', { name: 'Profile settings' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+  await studentNav.getByRole('button', { name: 'My attendance' }).click()
+  await expect(page.getByRole('heading', { name: 'My attendance' })).toBeVisible()
   await clickAccountAction(page, 'العربية')
   await expect(page.getByRole('heading', { name: 'حضوري' })).toBeVisible()
   for (const width of [320, 390]) {
@@ -392,7 +404,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Accounts' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Add student', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Students', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Add student', level: 1 })).toBeVisible()
   await expect(page.locator('form.role-editor').getByLabel('First name')).toBeVisible()
   await expect(page.getByRole('table')).toHaveCount(0)
   const navigation = page.getByRole('navigation', { name: 'Main navigation' })
@@ -414,19 +426,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
   await clickAccountAction(page, 'English')
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Accounts' })).toHaveCount(0)
-  await expect(
-    page.locator('thead th > button.table-sort, thead th:not(:has(button.table-sort))'),
-  ).toHaveText([
-    'First name',
-    'Last name',
-    'Level',
-    'WhatsApp',
-    'Location',
-    'Birth year',
-    'Teacher',
-    'Active',
-    'Actions',
-  ])
+  await expect(page.getByRole('button', { name: 'Take attendance' })).toBeVisible()
   await page.getByRole('button', { name: 'Add student', exact: true }).click()
   await page.locator('form.role-editor').getByLabel('First name').fill('Synthetic Direct')
   await page.locator('form.role-editor').getByLabel('Last name').fill('Student')
@@ -436,10 +436,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     page.locator('form.role-editor').getByLabel('Teacher').locator('option:checked'),
   ).toHaveText('Unassigned')
   await page.getByRole('button', { name: 'Save student' }).click()
-  await expect(page.getByRole('status')).toHaveText('Saved.')
-  await expect(page.getByRole('region', { name: 'Student list' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Sort options' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Filter options' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Take attendance' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Accounts' })).toHaveCount(0)
   expect(posts[0].path).toBe('/api/admin/students')
   expect(posts[0].body).toMatchObject({ teacherId: null })
@@ -538,7 +535,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
   })
   await page.setViewportSize({ width: 320, height: 844 })
   await expectSettingsLayout(settingsSections, false)
-  const lastControl = page.locator('.role-page button:visible').last()
+  const lastControl = page.locator('.workspace-main button:visible').last()
   await lastControl.scrollIntoViewIfNeeded()
   const controlBox = await lastControl.boundingBox()
   const navBox = await page.locator('.workspace-rail nav').boundingBox()
@@ -550,7 +547,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
         return { top: box.top, width: box.width, height: box.height }
       }),
     )
-    expect(boxes).toHaveLength(4)
+    expect(boxes).toHaveLength(5)
     for (const box of boxes) {
       expect(box.width).toBeGreaterThanOrEqual(44)
       expect(box.height).toBeGreaterThanOrEqual(44)
@@ -594,7 +591,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
           return { top: box.top, width: box.width, height: box.height }
         }),
       )
-      expect(boxes).toHaveLength(4)
+      expect(boxes).toHaveLength(5)
       for (const box of boxes) {
         expect(box.width).toBeGreaterThanOrEqual(44)
         expect(box.height).toBeGreaterThanOrEqual(44)
@@ -962,7 +959,9 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
   await expect(page.locator('.workspace')).toBeVisible()
   await page.getByRole('button', { name: 'Students', exact: true }).click()
   await openProfile(page)
-  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
+  await expect(
+    page.locator('.profile-panel').getByRole('button', { name: 'Settings', exact: true }),
+  ).toBeVisible()
   await page.keyboard.press('Escape')
   await utilityIcon(page, 'Sign out')
   await utilityIcon(page, 'العربية')
@@ -995,7 +994,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
   await expect(page).toHaveURL(new RegExp(`student=${studentId}`))
   await expect(page.getByRole('heading', { name: 'Student information' })).toBeVisible()
   await page.getByRole('button', { name: 'Edit student', exact: true }).click()
-  await expect(page).toHaveURL(/view=settings/)
+  await expect(page).toHaveURL(/view=edit-student/)
   await expect(page.locator('form.role-editor').getByLabel('First name')).toHaveValue(
     'Synthetic Student',
   )

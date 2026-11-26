@@ -1,7 +1,8 @@
 import './course-sections.css'
+import { WorkspacePageHeader } from './WorkspacePageHeader'
 import { RowActions } from './RowActions'
 import { formatLevel } from './levelFormat'
-import { TableHeader, TableToolbar } from './DataTable'
+import { TableControls, TableHeader, TableToolbar } from './DataTable'
 import { useDataTable } from './useDataTable'
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -28,7 +29,7 @@ import { courseAttendance, missingCourseScores, savedGradeResult } from '../shar
 import { CourseExportDialog } from './CourseExportDialog'
 import { request } from './neon'
 import { useLanguage } from './useLanguage'
-import { setQuery, useQueryState } from './queryState'
+import { openChildView, setQuery, useQueryState } from './queryState'
 import { rankStudents } from './studentSearch'
 
 type Board = ReturnType<typeof neonAdminBoardSchema.parse>
@@ -67,7 +68,7 @@ function CourseForm({
   )
 }
 
-export function CourseSections({
+function CourseSections({
   courseId,
   ar,
   current,
@@ -94,7 +95,7 @@ export function CourseSections({
     },
   ] as const
   return (
-    <nav aria-label={ar ? 'أقسام الدورة' : 'Course sections'} className="course-sections">
+    <nav aria-label={ar ? 'أقسام الدورة' : 'Course sections'} className="workspace-sections">
       {sections.map(({ id, label, accessible }) => (
         <a
           key={id}
@@ -109,11 +110,12 @@ export function CourseSections({
             )
               return
             event.preventDefault()
+            if (current === id) return
             setQuery(
               {
-                view: id === 'history' ? 'history' : 'courses',
+                view: 'courses',
                 course: courseId,
-                courseView: id === 'history' ? '' : id,
+                courseView: id,
                 tab: '',
                 q: '',
                 group: '',
@@ -123,12 +125,54 @@ export function CourseSections({
             )
           }}
           aria-current={current === id ? 'page' : undefined}
-          href={`?${new URLSearchParams({ page: 'app', view: id === 'history' ? 'history' : 'courses', course: courseId, ...(id === 'history' ? {} : { courseView: id }) })}`}
+          href={`?${new URLSearchParams({ page: 'app', view: 'courses', course: courseId, courseView: id })}`}
         >
           {label}
         </a>
       ))}
     </nav>
+  )
+}
+
+export function CoursePageHeader({
+  course,
+  ar,
+  current,
+  actions,
+}: {
+  course: Pick<Course, 'id' | 'name'>
+  ar: boolean
+  current: 'students' | 'grades' | 'history'
+  actions?: React.ReactNode
+}) {
+  const section = {
+    students: ar
+      ? '\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0637\u0644\u0627\u0628'
+      : 'Manage students',
+    grades: ar ? '\u0627\u0644\u062f\u0631\u062c\u0627\u062a' : 'Grades',
+    history: ar ? '\u0627\u0644\u0633\u062c\u0644' : 'History',
+  }[current]
+  return (
+    <WorkspacePageHeader
+      parent={
+        <button
+          className="secondary"
+          onClick={() => setQuery({ view: 'courses', courseView: '', course: '', q: '' }, true)}
+        >
+          {ar ? '\u0643\u0644 \u0627\u0644\u062f\u0648\u0631\u0627\u062a' : 'All courses'}
+        </button>
+      }
+      title={
+        <>
+          <bdi>{course.name}</bdi>
+          {' \u2014 '}
+          {section}
+        </>
+      }
+      actions={actions}
+    >
+      <CourseSections courseId={course.id} ar={ar} current={current} />
+    </WorkspacePageHeader>
   )
 }
 
@@ -232,7 +276,7 @@ export function Courses({
     return operation
   }
   const go = (courseView: string, courseId = query.course) =>
-    setQuery({ courseView, course: courseId, q: '' }, true)
+    setQuery({ courseView, course: courseId, q: '', group: '', student: '' }, true)
   const courseEntries = enrollments.filter((item) => item.courseId === query.course)
   const matching = board ? rankStudents(board.students, query.q) : []
   const courseTable = useDataTable('courses', courses, [
@@ -415,19 +459,7 @@ export function Courses({
                             {
                               label: ar ? 'السجل' : 'History',
                               icon: History,
-                              onClick: () =>
-                                setQuery(
-                                  {
-                                    view: 'history',
-                                    tab: '',
-                                    course: item.id,
-                                    courseView: '',
-                                    q: '',
-                                    group: '',
-                                    student: '',
-                                  },
-                                  true,
-                                ),
+                              onClick: () => go('history', item.id),
                             },
                             {
                               label: ar ? 'تعديل' : 'Edit',
@@ -463,18 +495,22 @@ export function Courses({
       )}
       {(query.courseView === 'create' || (query.courseView === 'edit' && course)) && (
         <>
-          <button className="secondary" onClick={() => go('', '')}>
-            {ar ? 'العودة للدورات' : 'Back to courses'}
-          </button>
-          <h1 className="title">
-            {query.courseView === 'create'
-              ? ar
-                ? 'إنشاء دورة'
-                : 'Create course'
-              : ar
-                ? 'تعديل الدورة'
-                : 'Edit course'}
-          </h1>
+          <WorkspacePageHeader
+            parent={
+              <button className="secondary" onClick={() => go('', '')}>
+                {ar ? '\u0643\u0644 \u0627\u0644\u062f\u0648\u0631\u0627\u062a' : 'All courses'}
+              </button>
+            }
+            title={
+              query.courseView === 'create'
+                ? ar
+                  ? '\u0625\u0646\u0634\u0627\u0621 \u062f\u0648\u0631\u0629'
+                  : 'Create course'
+                : ar
+                  ? '\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u062f\u0648\u0631\u0629'
+                  : 'Edit course'
+            }
+          />
           <CourseForm
             key={query.courseView === 'create' ? 'create' : course?.id}
             course={query.courseView === 'edit' ? course : undefined}
@@ -486,22 +522,36 @@ export function Courses({
           />
         </>
       )}
+      {query.courseView && query.courseView !== 'create' && !course && (
+        <WorkspacePageHeader
+          title={
+            ar
+              ? '\u0627\u0644\u062f\u0648\u0631\u0629 \u063a\u064a\u0631 \u0645\u062a\u0627\u062d\u0629'
+              : 'Course unavailable'
+          }
+          parent={
+            <button className="secondary" onClick={() => go('', '')}>
+              {ar ? '\u0643\u0644 \u0627\u0644\u062f\u0648\u0631\u0627\u062a' : 'All courses'}
+            </button>
+          }
+        />
+      )}
       {course && (query.courseView === 'students' || query.courseView === 'grades') && (
         <>
           {query.courseView === 'students' && (
-            <>
-              <TableToolbar model={membershipTable}>
-                <h1 className="title course-page-heading">
-                  {course.name} — {ar ? 'إدارة الطلاب' : 'Manage students'}
-                </h1>
-              </TableToolbar>
-              <CourseSections courseId={course.id} ar={ar} current="students" />
-            </>
+            <CoursePageHeader
+              course={course}
+              ar={ar}
+              current="students"
+              actions={
+                <div className="table-toolbar-actions">
+                  <TableControls model={membershipTable} />
+                </div>
+              }
+            />
           )}
           {query.courseView === 'grades' && !board && (
-            <h1 className="title">
-              {course.name} — {ar ? 'الدرجات' : 'Grades'}
-            </h1>
+            <CoursePageHeader course={course} ar={ar} current="grades" />
           )}
           {query.courseView === 'students' && (
             <>
@@ -533,7 +583,7 @@ export function Courses({
                     className="icon-button shrink-0"
                     aria-label={addStudentLabel}
                     title={addStudentLabel}
-                    onClick={() => setQuery({ view: 'add-student', courseView: 'students' }, true)}
+                    onClick={() => openChildView({ view: 'add-student', courseView: 'students' })}
                   >
                     <Plus size={22} aria-hidden="true" />
                   </button>
@@ -694,7 +744,7 @@ export function Courses({
                         <tr key={student.studentId}>
                           <td data-label={ar ? 'الاسم الأول' : 'First name'}>
                             {query.studentMode === 'groups' && entry?.active ? (
-                              <label className="course-student-check course-student-name">
+                              <div className="course-student-check course-student-name">
                                 <input
                                   type="checkbox"
                                   aria-label={`${ar ? 'تحديد' : 'Select'}: ${student.firstName} ${student.lastName}`}
@@ -712,10 +762,28 @@ export function Courses({
                                     })
                                   }}
                                 />
-                                <bdi>{student.firstName}</bdi>
-                              </label>
+                                <a
+                                  className="course-name-link"
+                                  href={`?${new URLSearchParams({ page: 'app', view: 'student', student: student.studentId, course: course.id, courseView: 'students' })}`}
+                                  onClick={(event) => {
+                                    event.preventDefault()
+                                    openChildView({ view: 'student', student: student.studentId })
+                                  }}
+                                >
+                                  <bdi>{student.firstName}</bdi>
+                                </a>
+                              </div>
                             ) : (
-                              <bdi>{student.firstName}</bdi>
+                              <a
+                                className="course-name-link"
+                                href={`?${new URLSearchParams({ page: 'app', view: 'student', student: student.studentId, course: course.id, courseView: 'students' })}`}
+                                onClick={(event) => {
+                                  event.preventDefault()
+                                  openChildView({ view: 'student', student: student.studentId })
+                                }}
+                              >
+                                <bdi>{student.firstName}</bdi>
+                              </a>
                             )}
                           </td>
                           <td dir="auto" data-label={ar ? 'اسم العائلة' : 'Last name'}>
@@ -965,28 +1033,27 @@ function GradePage({
   )
   return (
     <>
-      <TableToolbar
-        model={gradeTable}
-        className="grade-title-bar"
+      <CoursePageHeader
+        course={course}
+        ar={ar}
+        current="grades"
         actions={
-          <button
-            className="secondary flex items-center gap-2"
-            aria-label={ar ? 'تصدير Excel' : 'Export Excel'}
-            data-diagnostic-action="export"
-            title={ar ? 'تصدير Excel' : 'Export Excel'}
-            disabled={busy || settingsDirty || !!gradeDirty}
-            onClick={() => setExportOpen(true)}
-          >
-            <Download size={20} aria-hidden="true" />
-            <span className="hidden sm:inline">{ar ? 'تصدير Excel' : 'Export Excel'}</span>
-          </button>
+          <div className="table-toolbar-actions">
+            <button
+              className="secondary flex items-center gap-2"
+              aria-label={ar ? 'تصدير Excel' : 'Export Excel'}
+              data-diagnostic-action="export"
+              title={ar ? 'تصدير Excel' : 'Export Excel'}
+              disabled={busy || settingsDirty || !!gradeDirty}
+              onClick={() => setExportOpen(true)}
+            >
+              <Download size={20} aria-hidden="true" />
+              <span className="hidden sm:inline">{ar ? 'تصدير Excel' : 'Export Excel'}</span>
+            </button>
+            <TableControls model={gradeTable} />
+          </div>
         }
-      >
-        <h1 className="title course-page-heading">
-          {course.name} — {ar ? 'الدرجات' : 'Grades'}
-        </h1>
-      </TableToolbar>
-      <CourseSections courseId={course.id} ar={ar} current="grades" />
+      />
       {exportOpen && (
         <CourseExportDialog
           course={course}
@@ -1087,7 +1154,16 @@ function GradePage({
               return (
                 <tr key={entry.id} className={`grade-row-${effective}`}>
                   <td dir="auto" data-label={ar ? 'الاسم الأول' : 'First name'}>
-                    {student.firstName}
+                    <a
+                      className="course-name-link"
+                      href={`?${new URLSearchParams({ page: 'app', view: 'student', student: student.studentId, course: course.id, courseView: 'grades' })}`}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        openChildView({ view: 'student', student: student.studentId })
+                      }}
+                    >
+                      {student.firstName}
+                    </a>
                   </td>
                   <td dir="auto" data-label={ar ? 'اسم العائلة' : 'Last name'}>
                     {student.lastName || '—'}
