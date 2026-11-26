@@ -99,6 +99,24 @@ export const enrollmentMembershipSchema = z.strictObject({
   level: z.string().trim().max(200),
   active: z.boolean(),
 })
+export const enrollmentAssignmentSchema = z
+  .discriminatedUnion('kind', [
+    enrollmentMembershipSchema
+      .pick({ courseId: true, id: true, teacherId: true, level: true, active: true })
+      .partial({ level: true, active: true })
+      .extend({ kind: z.literal('edit') }),
+    enrollmentMembershipSchema
+      .pick({ courseId: true, teacherId: true, level: true })
+      .partial({ level: true })
+      .extend({ kind: z.literal('group'), ids: z.array(z.uuid()).min(1) }),
+  ])
+  .refine(
+    (value) =>
+      value.level !== undefined ||
+      value.teacherId !== undefined ||
+      (value.kind === 'edit' && value.active !== undefined),
+  )
+export type EnrollmentAssignment = z.infer<typeof enrollmentAssignmentSchema>
 export const enrollmentGradesSchema = z.strictObject({
   id: z.uuid(),
   notes: z.string().optional(),

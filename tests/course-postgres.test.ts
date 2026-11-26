@@ -247,6 +247,77 @@ integration(
           })
         ).status,
       ).toBe(200)
+      const assignmentPath = '/api/admin/enrollments/assignment'
+      const group = {
+        kind: 'group',
+        courseId: courseIds[0],
+        ids: [enrollmentIds[0], otherEnrollmentId],
+        teacherId,
+      }
+      const edit = { kind: 'edit', courseId: courseIds[0], id: otherEnrollmentId }
+      for (const subject of [subjects.teacher, subjects.student]) {
+        expect((await call(assignmentPath, subject, group)).status).toBe(403)
+      }
+      expect((await call(assignmentPath, subjects.admin, edit)).status).toBe(400)
+      expect(
+        (
+          await call(assignmentPath, subjects.admin, {
+            ...group,
+            ids: [enrollmentIds[0], enrollmentIds[1]],
+          })
+        ).status,
+      ).toBe(409)
+      const readEnrollment = async (id: string) =>
+        neonSnapshotSchema
+          .parse(await (await call('/api/notebook', subjects.admin)).json())
+          .enrollments.find((entry) => entry.id === id)
+      expect(await readEnrollment(enrollmentIds[0])).toMatchObject({ teacherId: null })
+      expect((await call(assignmentPath, subjects.admin, { ...edit, active: false })).status).toBe(
+        200,
+      )
+      expect((await call(assignmentPath, subjects.admin, group)).status).toBe(409)
+      expect(await readEnrollment(enrollmentIds[0])).toMatchObject({ teacherId: null })
+      expect((await call(assignmentPath, subjects.admin, { ...edit, active: true })).status).toBe(
+        200,
+      )
+      const writes = await Promise.all([
+        call(assignmentPath, subjects.admin, group),
+        call(assignmentPath, subjects.admin, { ...edit, level: ' Group level ' }),
+      ])
+      expect(writes.map(({ status }) => status)).toEqual([200, 200])
+      expect(await readEnrollment(enrollmentIds[0])).toMatchObject({
+        level: 'Level 1',
+        teacherId,
+        practical: 0,
+        theory: 100,
+        handbookReceived: true,
+        active: true,
+      })
+      expect(await readEnrollment(otherEnrollmentId)).toMatchObject({
+        level: 'Group level',
+        teacherId,
+        practical: 12,
+        theory: 34,
+        active: true,
+      })
+      expect(
+        (await call(assignmentPath, subjects.admin, { ...group, teacherId: null, level: '' }))
+          .status,
+      ).toBe(200)
+      expect(await readEnrollment(enrollmentIds[0])).toMatchObject({ level: '', teacherId: null })
+      expect(await readEnrollment(otherEnrollmentId)).toMatchObject({ level: '', teacherId: null })
+      expect(await readEnrollment(enrollmentIds[1])).toMatchObject({
+        level: 'Level 2',
+        teacherId: null,
+      })
+      for (const [id, level] of [
+        [enrollmentIds[0], 'Level 1'],
+        [otherEnrollmentId, 'Other student private level'],
+      ]) {
+        expect((await call(assignmentPath, subjects.admin, { ...edit, id, level })).status).toBe(
+          200,
+        )
+      }
       const teacherSnapshot = neonSnapshotSchema.parse(
         await (await call('/api/notebook', subjects.teacher)).json(),
       )

@@ -24,6 +24,7 @@ import {
   courseStatusSchema,
   courseSettingsSchema,
   enrollmentSchema,
+  enrollmentAssignmentSchema,
   enrollmentMembershipSchema,
   enrollmentHandbookSchema,
   enrollmentGradesSchema,
@@ -525,6 +526,35 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
     )
     if (!result.rowCount) throw new HttpError(400)
     return { saved: true }
+  } else if (path === '/api/admin/enrollments/assignment') {
+    const assignment = enrollmentAssignmentSchema.parse(body)
+    const bulk = assignment.kind === 'group'
+    const ids = bulk ? assignment.ids : [assignment.id]
+    await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [assignment.courseId])
+    if (assignment.teacherId) {
+      const teacher = await db.query('SELECT id FROM teachers WHERE id = $1 FOR SHARE', [
+        assignment.teacherId,
+      ])
+      if (!teacher.rowCount) throw new HttpError(400)
+    }
+    const result = await db.query(
+      `UPDATE course_enrollments
+       SET level = COALESCE($3, level),
+           teacher_id = CASE WHEN $4 THEN $5::uuid ELSE teacher_id END,
+           active = COALESCE($6, active)
+       WHERE course_id = $1 AND id = ANY($2::uuid[]) AND (NOT $7::boolean OR active)`,
+      [
+        assignment.courseId,
+        ids,
+        assignment.level ?? null,
+        assignment.teacherId !== undefined,
+        assignment.teacherId ?? null,
+        bulk ? null : (assignment.active ?? null),
+        bulk,
+      ],
+    )
+    if (result.rowCount !== ids.length) throw new HttpError(409)
+    return { saved: true }
   } else if (path === '/api/admin/enrollments' || path === '/api/admin/enrollments/membership') {
     const legacy = path === '/api/admin/enrollments'
     const enrollment = legacy
@@ -819,6 +849,7 @@ export function createHandler(
         '/api/admin/courses/status',
         '/api/admin/courses/settings',
         '/api/admin/enrollments',
+        '/api/admin/enrollments/assignment',
         '/api/admin/enrollments/membership',
         '/api/admin/enrollments/grades',
         '/api/admin/enrollments/decision',
@@ -846,6 +877,7 @@ export function createHandler(
         '/api/admin/courses/status',
         '/api/admin/courses/settings',
         '/api/admin/enrollments',
+        '/api/admin/enrollments/assignment',
         '/api/admin/enrollments/membership',
         '/api/admin/enrollments/grades',
         '/api/admin/enrollments/decision',
@@ -872,6 +904,7 @@ export function createHandler(
         '/api/admin/courses/status',
         '/api/admin/courses/settings',
         '/api/admin/enrollments',
+        '/api/admin/enrollments/assignment',
         '/api/admin/enrollments/membership',
         '/api/admin/enrollments/grades',
         '/api/admin/enrollments/decision',
