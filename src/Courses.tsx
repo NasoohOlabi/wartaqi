@@ -13,6 +13,7 @@ import {
   Lock,
   LockOpen,
   Pencil,
+  Plus,
   Save,
   Star,
   UsersRound,
@@ -153,6 +154,7 @@ export function Courses({
 }) {
   const { language } = useLanguage()
   const ar = language === 'ar'
+  const addStudentLabel = ar ? 'إضافة طالب جديد إلى هذه الدورة' : 'Add new student to this course'
   const query = useQueryState()
   const course = courses.find((item) => item.id === query.course)
   const [board, setBoard] = useState<Board | null>(null)
@@ -514,15 +516,6 @@ export function Courses({
           {query.courseView === 'students' && (
             <>
               <div className="course-student-tools flex flex-wrap items-end gap-3">
-                <label className="min-w-0 flex-[1_0_6rem]">
-                  {ar ? 'البحث عن طالب' : 'Find a student'}
-                  <input
-                    type="search"
-                    value={query.q}
-                    onChange={(event) => setQuery({ q: event.target.value })}
-                    dir="auto"
-                  />
-                </label>
                 <label>
                   {ar ? 'طريقة العرض' : 'View'}
                   <select
@@ -535,12 +528,26 @@ export function Courses({
                     <option value="books">{ar ? 'الكتب' : 'Books'}</option>
                   </select>
                 </label>
-                <button
-                  className="primary"
-                  onClick={() => setQuery({ view: 'add-student', courseView: 'students' }, true)}
-                >
-                  {ar ? 'إضافة طالب جديد إلى هذه الدورة' : 'Add new student to this course'}
-                </button>
+                <div className="flex min-w-0 flex-[1_0_10rem] items-end gap-2">
+                  <label className="min-w-0 flex-1">
+                    {ar ? 'البحث عن طالب' : 'Find a student'}
+                    <input
+                      type="search"
+                      value={query.q}
+                      onChange={(event) => setQuery({ q: event.target.value })}
+                      dir="auto"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="icon-button shrink-0"
+                    aria-label={addStudentLabel}
+                    title={addStudentLabel}
+                    onClick={() => setQuery({ view: 'add-student', courseView: 'students' }, true)}
+                  >
+                    <Plus size={22} aria-hidden="true" />
+                  </button>
+                </div>
               </div>
               {query.studentMode === 'groups' && (
                 <div className="flex flex-wrap items-end gap-3">

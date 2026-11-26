@@ -10,7 +10,7 @@ Teacher choices save immediately. A course level saves when you leave the field 
 
 Successful saves on Courses, Manage students and Grades show a brief confirmation in the lower corner, above the navigation on phones. Save errors appear in the page.
 
-**Add new student to this course** opens the normal student form with the course context and a course-level field. Saving creates the roster entry and active enrollment in one transaction, then returns to managing that course. Cancel returns without creating either. Stable IDs make a retry safe if a response is lost. The ordinary dashboard Add student flow remains separate from courses.
+The **+** icon beside student search opens **Add new student to this course** with the course context and a course-level field. Saving creates the roster entry and active enrollment in one transaction, then returns to managing that course. Cancel returns without creating either. Stable IDs make a retry safe if a response is lost. The ordinary dashboard Add student flow remains separate from courses.
 
 Enter practical (عملي) and theory (نظري) scores later on **Grades**, not during enrollment or student creation. Scores are optional numbers from 0 through 100, including zero. Saving grades changes only scores; it preserves membership and level. A student can belong to several courses with one stable enrollment per student/course pair.
 

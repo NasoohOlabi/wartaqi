@@ -981,9 +981,29 @@ test('course roster modes focus the table and save a group across searches', asy
   await expect(level).toHaveValue('Group 3')
 
   for (const language of ['en', 'ar']) {
-    if (language === 'ar') await clickAccountAction(page, 'العربية')
+    const ar = language === 'ar'
+    if (ar) await clickAccountAction(page, 'العربية')
+    const addStudent = page.getByRole('button', {
+      name: ar ? 'إضافة طالب جديد إلى هذه الدورة' : 'Add new student to this course',
+      exact: true,
+    })
+    const studentSearch = page.getByRole('searchbox', {
+      name: ar ? 'البحث عن طالب' : 'Find a student',
+    })
+    await expect(addStudent).toHaveText('')
+    await expect(addStudent.locator('svg')).toBeVisible()
     for (const width of testInfo.project.name === 'mobile' ? [320, 390, 430] : [1440]) {
       await page.setViewportSize({ width, height: 844 })
+      const addBox = await addStudent.boundingBox()
+      const searchBox = await studentSearch.boundingBox()
+      if (!addBox || !searchBox) throw new Error('Missing roster search or add-student icon')
+      expect(addBox.width).toBe(44)
+      expect(addBox.height).toBe(44)
+      expect(addBox.y + addBox.height).toBeCloseTo(searchBox.y + searchBox.height)
+      const gap = ar
+        ? searchBox.x - addBox.x - addBox.width
+        : addBox.x - searchBox.x - searchBox.width
+      expect(gap).toBeCloseTo(8)
       for (const mode of ['groups', 'books']) {
         await page
           .locator('select')
