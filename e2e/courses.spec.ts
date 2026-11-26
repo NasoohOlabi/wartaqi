@@ -911,7 +911,10 @@ test('course roster modes focus the table and save a group across searches', asy
 
   await view.selectOption('groups')
   await expect(receipt).toHaveCount(0)
-  await page.getByRole('checkbox', { name: 'Select: Synthetic Student' }).check()
+  const selectStudent = page.getByRole('checkbox', { name: 'Select: Synthetic Student' })
+  await expect(selectStudent.locator('..')).toHaveCSS('flex-direction', 'row')
+  expect((await selectStudent.locator('..').boundingBox())?.height).toBeGreaterThanOrEqual(44)
+  await selectStudent.check()
   await search.fill('New')
   await expect(page.getByRole('checkbox', { name: 'Select: Synthetic Student' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Select visible' }).click()
