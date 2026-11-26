@@ -2381,3 +2381,11 @@ The one-command PowerShell runner passed with 20 assertions and an extra plain-l
 At 14:18 Asia/Damascus, an Arabic read-back exposed a stale date proposed by Bonsai. The worker now bases a dated attendance lookup on the explicit date in the current question, and the real headless run checks the correct Arabic status after a confirmed write. The runner invokes the migration script directly to avoid a stalled Windows package-script wrapper. The rerun passed 21 assertions and cleaned up its disposable database.
 
 At 14:30 Asia/Damascus, PR validation failed when the mobile course-creation test pressed Back before the app returned to Courses. Delaying the synthetic save response reproduced the missing form field. Waiting for the saved course row fixed the reproduced failure and passed three repeats each on desktop and mobile after removing the delay. The application and Telegram worker are unchanged by this test correction.
+
+## 2026-11-26 11:02 Asia/Damascus — Fill missing student roster levels
+
+The owner asked to recover levels for every student in All students. The earlier historical import stored some levels on course enrollments. All students reads a separate roster field, which was blank for 61 of the 130 students.
+
+Matched students against the five private Wartaq course workbooks using normalized names and corroborating contact details where available. Used the latest reliably matched level for 38 students and assigned level 1 to the remaining 23. Preserved the 69 existing roster levels. The source workbooks were read only. Jira was unavailable in this session.
+
+A rolled-back transaction rehearsed the update before it was committed on Railway. A fresh database read verified all 130 expected values and zero blanks, including inactive students. Student profiles outside the roster level field, courses, enrollments and attendance events matched their pre-update fingerprints. Production health returned HTTP 200. The private recovery plan stays out of Git. This entry records a data repair with no application or schema changes.
