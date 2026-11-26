@@ -52,6 +52,8 @@ export function useQueryState() {
     courseView:
       z.enum(['create', 'edit', 'students', 'grades']).safeParse(query.get('courseView')).data ??
       '',
+    studentMode:
+      z.enum(['all', 'groups', 'books']).safeParse(query.get('studentMode')).data ?? 'all',
     all: query.get('all') === '1',
     missingScores: query.get('missing') === '1',
     unmarked: query.get('unmarked') === '1',
@@ -73,6 +75,7 @@ const allowedKeys = new Set([
   'account',
   'course',
   'courseView',
+  'studentMode',
   'all',
   'missing',
   'unmarked',

@@ -13,6 +13,7 @@ import {
   Lock,
   LockOpen,
   Pencil,
+  Plus,
   Save,
   Star,
   UsersRound,
@@ -33,7 +34,7 @@ import { rankStudents } from './studentSearch'
 
 type Board = ReturnType<typeof neonAdminBoardSchema.parse>
 
-type Draft = { id: string; level: string; teacherId: string }
+type Draft = { id?: string; level?: string; teacherId?: string }
 
 function CourseForm({
   course,
@@ -153,6 +154,7 @@ export function Courses({
 }) {
   const { language } = useLanguage()
   const ar = language === 'ar'
+  const addStudentLabel = ar ? 'إضافة طالب جديد إلى هذه الدورة' : 'Add new student to this course'
   const query = useQueryState()
   const course = courses.find((item) => item.id === query.course)
   const [board, setBoard] = useState<Board | null>(null)
@@ -160,6 +162,13 @@ export function Courses({
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [selected, setSelected] = useState<Record<string, string[]>>({})
+  const [bulkTeacher, setBulkTeacher] = useState('unchanged')
+  const [bulkLevelEnabled, setBulkLevelEnabled] = useState(false)
+  const [bulkLevel, setBulkLevel] = useState('')
+  const [failedSaves, setFailedSaves] = useState<Record<string, () => void>>({})
+  const saveQueue = useRef<Promise<void>>(Promise.resolve())
+  const pendingSaves = useRef(0)
   useEffect(() => {
     let cancelled = false
     request('/api/admin', userId)
@@ -178,24 +187,52 @@ export function Courses({
     const timer = window.setTimeout(() => setSaved(false), 4_000)
     return () => window.clearTimeout(timer)
   }, [saved])
-  async function submit(path: string, body: unknown) {
+  function submit(
+    path: string,
+    body: unknown,
+    onSuccess?: () => void,
+    saveKey?: string,
+    refreshOnly = false,
+  ) {
+    pendingSaves.current += 1
     setBusy(true)
-    setError('')
-    setSaved(false)
-    try {
-      await request(path, userId, body)
-      if (path === '/api/admin/courses/status') {
-        setBoard(neonAdminBoardSchema.parse(await request('/api/admin', userId)))
+    const operation = saveQueue.current.then(async () => {
+      setError('')
+      setSaved(false)
+      if (saveKey)
+        setFailedSaves((current) => {
+          const next = { ...current }
+          delete next[saveKey]
+          return next
+        })
+      let writeSucceeded = refreshOnly
+      try {
+        if (!writeSucceeded) {
+          await request(path, userId, body)
+          writeSucceeded = true
+        }
+        if (path === '/api/admin/courses/status') {
+          setBoard(neonAdminBoardSchema.parse(await request('/api/admin', userId)))
+        }
+        if (!(await refresh()) && saveKey) throw new Error('Could not refresh student changes')
+        onSuccess?.()
+        setSaved(true)
+        return true
+      } catch (cause) {
+        if (saveKey)
+          setFailedSaves((current) => ({
+            ...current,
+            [saveKey]: () => void submit(path, body, onSuccess, saveKey, writeSucceeded),
+          }))
+        else setError(cause instanceof Error ? cause.message : 'Save failed')
+        return false
+      } finally {
+        pendingSaves.current -= 1
+        if (!pendingSaves.current) setBusy(false)
       }
-      await refresh()
-      setSaved(true)
-      return true
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Save failed')
-      return false
-    } finally {
-      setBusy(false)
-    }
+    })
+    saveQueue.current = operation.then(() => undefined)
+    return operation
   }
   const go = (courseView: string, courseId = query.course) =>
     setQuery({ courseView, course: courseId, q: '' }, true)
@@ -210,7 +247,7 @@ export function Courses({
       value: (item) => (item.open ? (ar ? 'مفتوحة' : 'Open') : ar ? 'مغلقة' : 'Closed'),
     },
   ])
-  const membershipTable = useDataTable('course-students', matching, [
+  const membershipColumns: Parameters<typeof useDataTable<(typeof matching)[number]>>[2] = [
     { id: 'first', label: ar ? 'الاسم الأول' : 'First name', value: (s) => s.firstName },
     { id: 'last', label: ar ? 'اسم العائلة' : 'Last name', value: (s) => s.lastName },
     {
@@ -230,7 +267,7 @@ export function Courses({
     },
     {
       id: 'teacher',
-      label: ar ? '\u0627\u0644\u0645\u0639\u0644\u0645' : 'Teacher',
+      label: ar ? 'المعلم' : 'Teacher',
       value: (s) => {
         const teacherId =
           drafts[`${course?.id}:${s.studentId}`]?.teacherId ??
@@ -264,7 +301,24 @@ export function Courses({
             ? 'لا'
             : 'No',
     },
-  ])
+  ]
+  const membershipTable = useDataTable(
+    'course-students',
+    matching,
+    membershipColumns.filter(
+      (column) =>
+        query.studentMode === 'all' ||
+        (query.studentMode === 'groups'
+          ? column.id !== 'handbook'
+          : ['first', 'last', 'enrolled', 'handbook'].includes(column.id)),
+    ),
+  )
+  const selectedIds = selected[course?.id ?? ''] ?? []
+  const visibleIds = membershipTable.rows.flatMap((student) => {
+    const entry = courseEntries.find((item) => item.studentId === student.studentId && item.active)
+    return entry ? [entry.id] : []
+  })
+  const retries = Object.values(failedSaves)
   return (
     <section className="panel space-y-5">
       <div className="course-save-status" role="status">
@@ -281,6 +335,20 @@ export function Courses({
         </TableToolbar>
       )}
       {error && <p role="alert">{error}</p>}
+      {retries.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <p role="alert">
+            {ar ? 'تعذر تأكيد حفظ تغييرات الطلاب.' : 'Could not confirm the student changes.'}
+          </p>
+          <button
+            className="secondary"
+            disabled={busy}
+            onClick={() => retries.forEach((retry) => retry())}
+          >
+            {ar ? 'إعادة المحاولة' : 'Retry'}
+          </button>
+        </div>
+      )}
       {!query.courseView && (
         <>
           <button className="primary" onClick={() => go('create', '')}>
@@ -447,21 +515,159 @@ export function Courses({
           )}
           {query.courseView === 'students' && (
             <>
-              <button
-                className="primary"
-                onClick={() => setQuery({ view: 'add-student', courseView: 'students' }, true)}
-              >
-                {ar ? 'إضافة طالب جديد إلى هذه الدورة' : 'Add new student to this course'}
-              </button>
-              <label>
-                {ar ? 'البحث عن طالب' : 'Find a student'}
-                <input
-                  type="search"
-                  value={query.q}
-                  onChange={(event) => setQuery({ q: event.target.value })}
-                  dir="auto"
-                />
-              </label>
+              <div className="course-student-tools flex flex-wrap items-end gap-3">
+                <label>
+                  {ar ? 'طريقة العرض' : 'View'}
+                  <select
+                    aria-label={ar ? 'عرض الطلاب' : 'Student view'}
+                    value={query.studentMode}
+                    onChange={(event) => setQuery({ studentMode: event.target.value })}
+                  >
+                    <option value="all">{ar ? 'كل الأعمدة' : 'All columns'}</option>
+                    <option value="groups">{ar ? 'المجموعات' : 'Groups'}</option>
+                    <option value="books">{ar ? 'الكتب' : 'Books'}</option>
+                  </select>
+                </label>
+                <div className="flex min-w-0 flex-[1_0_10rem] items-end gap-2">
+                  <label className="min-w-0 flex-1">
+                    {ar ? 'البحث عن طالب' : 'Find a student'}
+                    <input
+                      type="search"
+                      value={query.q}
+                      onChange={(event) => setQuery({ q: event.target.value })}
+                      dir="auto"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="icon-button shrink-0"
+                    aria-label={addStudentLabel}
+                    title={addStudentLabel}
+                    onClick={() => setQuery({ view: 'add-student', courseView: 'students' }, true)}
+                  >
+                    <Plus size={22} aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+              {query.studentMode === 'groups' && (
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      className="secondary"
+                      disabled={busy || !visibleIds.length}
+                      onClick={() =>
+                        setSelected((current) => ({
+                          ...current,
+                          [course.id]: [...new Set([...selectedIds, ...visibleIds])],
+                        }))
+                      }
+                    >
+                      {ar ? 'تحديد الظاهرين' : 'Select visible'}
+                    </button>
+                    <span role="status">
+                      {ar ? `المحدد: ${selectedIds.length}` : `Selected: ${selectedIds.length}`}
+                    </span>
+                  </div>
+                  {selectedIds.length > 0 && (
+                    <>
+                      <button
+                        className="secondary"
+                        disabled={busy || !selectedIds.length}
+                        onClick={() => setSelected((current) => ({ ...current, [course.id]: [] }))}
+                      >
+                        {ar ? 'مسح التحديد' : 'Clear selection'}
+                      </button>
+                      <label>
+                        {ar ? 'المعلم للمحدد' : 'Teacher for selected'}
+                        <select
+                          value={bulkTeacher}
+                          onChange={(event) => setBulkTeacher(event.target.value)}
+                        >
+                          <option value="unchanged">{ar ? 'بدون تغيير' : 'Keep unchanged'}</option>
+                          <option value="none">{ar ? 'بلا معلم' : 'No teacher'}</option>
+                          {board?.teachers.map((teacher) => (
+                            <option key={teacher.teacherId} value={teacher.teacherId}>
+                              {teacher.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="course-student-check">
+                        <input
+                          type="checkbox"
+                          checked={bulkLevelEnabled}
+                          onChange={(event) => setBulkLevelEnabled(event.target.checked)}
+                        />
+                        {ar ? 'تغيير مستوى الدورة' : 'Change course level'}
+                      </label>
+                      {bulkLevelEnabled && (
+                        <label>
+                          {ar ? 'مستوى الدورة للمحدد' : 'Course level for selected'}
+                          <LevelInput
+                            value={bulkLevel}
+                            maxLength={200}
+                            onChange={(event) => setBulkLevel(event.target.value)}
+                          />
+                        </label>
+                      )}
+                      <button
+                        className="primary"
+                        disabled={
+                          busy ||
+                          !selectedIds.length ||
+                          (bulkTeacher === 'unchanged' && !bulkLevelEnabled)
+                        }
+                        onClick={() => {
+                          const ids = selectedIds
+                          const snapshot = drafts
+                          const draftKeys = courseEntries
+                            .filter((entry) => ids.includes(entry.id))
+                            .map((entry) => `${course.id}:${entry.studentId}`)
+                          void submit(
+                            '/api/admin/enrollments/assignment',
+                            {
+                              kind: 'group',
+                              courseId: course.id,
+                              ids,
+                              ...(bulkTeacher !== 'unchanged'
+                                ? { teacherId: bulkTeacher === 'none' ? null : bulkTeacher }
+                                : {}),
+                              ...(bulkLevelEnabled ? { level: bulkLevel } : {}),
+                            },
+                            () => {
+                              setDrafts((current) =>
+                                Object.fromEntries(
+                                  Object.entries(current).map(([key, draft]) => {
+                                    if (!draftKeys.includes(key)) return [key, draft]
+                                    const next = { ...draft }
+                                    if (bulkLevelEnabled && next.level === snapshot[key]?.level)
+                                      delete next.level
+                                    if (
+                                      bulkTeacher !== 'unchanged' &&
+                                      next.teacherId === snapshot[key]?.teacherId
+                                    )
+                                      delete next.teacherId
+                                    return [key, next]
+                                  }),
+                                ),
+                              )
+                              setSelected((current) => ({
+                                ...current,
+                                [course.id]: (current[course.id] ?? []).filter(
+                                  (id) => !ids.includes(id),
+                                ),
+                              }))
+                            },
+                            `group:${course.id}`,
+                          )
+                        }}
+                      >
+                        {ar ? 'تطبيق على المحددين' : 'Apply to selected'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
               <div
                 className="role-table-scroll"
                 role="region"
@@ -469,79 +675,169 @@ export function Courses({
                 tabIndex={0}
               >
                 <table className="mobile-record-table role-table course-students-table">
-                  <TableHeader model={membershipTable} actions />
+                  <TableHeader model={membershipTable} />
                   <tbody>
                     {membershipTable.rows.map((student) => {
                       const entry = courseEntries.find(
                         (item) => item.studentId === student.studentId,
                       )
                       const draftKey = `${course.id}:${student.studentId}`
-                      const draft = drafts[draftKey] ?? {
-                        id: entry?.id ?? '',
-                        level: entry ? entry.level : student.group,
-                        teacherId: entry?.teacherId ?? '',
+                      const storedDraft = drafts[draftKey]
+                      const draft = {
+                        id: storedDraft?.id ?? entry?.id ?? '',
+                        level: storedDraft?.level ?? (entry ? entry.level : student.group),
+                        teacherId: storedDraft?.teacherId ?? entry?.teacherId ?? '',
+                      }
+                      const clearField = (field: 'level' | 'teacherId', value: string) => {
+                        setDrafts((current) => {
+                          const stored = current[draftKey]
+                          if (!stored || stored[field] !== value) return current
+                          const next = { ...stored }
+                          delete next[field]
+                          return { ...current, [draftKey]: next }
+                        })
                       }
                       const saveMembership = (active: boolean) => {
+                        if (!active && entry)
+                          setSelected((current) => ({
+                            ...current,
+                            [course.id]: (current[course.id] ?? []).filter((id) => id !== entry.id),
+                          }))
                         const id = draft.id || crypto.randomUUID()
-                        setDrafts((current) => ({
-                          ...current,
-                          [draftKey]: { ...draft, id },
-                        }))
-                        void submit('/api/admin/enrollments/membership', {
-                          id,
-                          courseId: course.id,
-                          studentId: student.studentId,
-                          level: draft.level,
-                          teacherId: draft.teacherId || null,
-                          active,
-                        })
+                        if (!entry)
+                          setDrafts((current) => ({
+                            ...current,
+                            [draftKey]: { ...current[draftKey], id },
+                          }))
+                        void submit(
+                          entry
+                            ? '/api/admin/enrollments/assignment'
+                            : '/api/admin/enrollments/membership',
+                          entry
+                            ? { kind: 'edit', courseId: course.id, id, active }
+                            : {
+                                id,
+                                courseId: course.id,
+                                studentId: student.studentId,
+                                level: draft.level,
+                                teacherId: draft.teacherId || null,
+                                active,
+                              },
+                          entry
+                            ? undefined
+                            : () => {
+                                clearField('level', draft.level)
+                                clearField('teacherId', draft.teacherId)
+                              },
+                          `membership:${draftKey}`,
+                        )
                       }
                       return (
                         <tr key={student.studentId}>
-                          <td dir="auto" data-label={ar ? 'الاسم الأول' : 'First name'}>
-                            {student.firstName}
+                          <td data-label={ar ? 'الاسم الأول' : 'First name'}>
+                            {query.studentMode === 'groups' && entry?.active ? (
+                              <label className="course-student-check course-student-name">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`${ar ? 'تحديد' : 'Select'}: ${student.firstName} ${student.lastName}`}
+                                  checked={selectedIds.includes(entry.id)}
+                                  onChange={(event) => {
+                                    const checked = event.target.checked
+                                    setSelected((current) => {
+                                      const ids = current[course.id] ?? []
+                                      return {
+                                        ...current,
+                                        [course.id]: checked
+                                          ? [...ids, entry.id]
+                                          : ids.filter((id) => id !== entry.id),
+                                      }
+                                    })
+                                  }}
+                                />
+                                <bdi>{student.firstName}</bdi>
+                              </label>
+                            ) : (
+                              <bdi>{student.firstName}</bdi>
+                            )}
                           </td>
                           <td dir="auto" data-label={ar ? 'اسم العائلة' : 'Last name'}>
                             {student.lastName || '—'}
                           </td>
-                          <td data-label={ar ? 'مستوى القائمة' : 'Roster level'}>
-                            <bdi>{formatLevel(student.group) || '—'}</bdi>
-                          </td>
-                          <td data-label={ar ? 'مستوى الدورة' : 'Course level'}>
-                            <LevelInput
-                              aria-label={`${ar ? 'مستوى الدورة' : 'Course level'}: ${student.firstName} ${student.lastName}`}
-                              maxLength={200}
-                              dir="auto"
-                              value={draft.level}
-                              onChange={(event) =>
-                                setDrafts((current) => ({
-                                  ...current,
-                                  [draftKey]: { ...draft, level: event.target.value },
-                                }))
-                              }
-                            />
-                          </td>
-                          <td data-label={ar ? '\u0627\u0644\u0645\u0639\u0644\u0645' : 'Teacher'}>
-                            <select
-                              aria-label={`${ar ? '\u0627\u0644\u0645\u0639\u0644\u0645' : 'Teacher'}: ${student.firstName} ${student.lastName}`}
-                              value={draft.teacherId}
-                              onChange={(event) =>
-                                setDrafts((current) => ({
-                                  ...current,
-                                  [draftKey]: { ...draft, teacherId: event.target.value },
-                                }))
-                              }
-                            >
-                              <option value="">
-                                {ar ? '\u0628\u0644\u0627 \u0645\u0639\u0644\u0645' : 'No teacher'}
-                              </option>
-                              {board?.teachers.map((teacher) => (
-                                <option key={teacher.teacherId} value={teacher.teacherId}>
-                                  {teacher.name}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
+                          {query.studentMode !== 'books' && (
+                            <td data-label={ar ? 'مستوى القائمة' : 'Roster level'}>
+                              <bdi>{formatLevel(student.group) || '—'}</bdi>
+                            </td>
+                          )}
+                          {query.studentMode !== 'books' && (
+                            <td data-label={ar ? 'مستوى الدورة' : 'Course level'}>
+                              <LevelInput
+                                aria-label={`${ar ? 'مستوى الدورة' : 'Course level'}: ${student.firstName} ${student.lastName}`}
+                                maxLength={200}
+                                dir="auto"
+                                value={draft.level}
+                                disabled={busy && !entry}
+                                onChange={(event) => {
+                                  const level = event.target.value
+                                  setDrafts((current) => ({
+                                    ...current,
+                                    [draftKey]: { ...current[draftKey], level },
+                                  }))
+                                }}
+                                onBlur={() => {
+                                  if (entry && storedDraft?.level !== undefined)
+                                    void submit(
+                                      '/api/admin/enrollments/assignment',
+                                      {
+                                        kind: 'edit',
+                                        courseId: course.id,
+                                        id: entry.id,
+                                        level: draft.level,
+                                      },
+                                      () => clearField('level', draft.level),
+                                      `level:${draftKey}`,
+                                    )
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === 'Enter') event.currentTarget.blur()
+                                }}
+                              />
+                            </td>
+                          )}
+                          {query.studentMode !== 'books' && (
+                            <td data-label={ar ? 'المعلم' : 'Teacher'}>
+                              <select
+                                aria-label={`${ar ? 'المعلم' : 'Teacher'}: ${student.firstName} ${student.lastName}`}
+                                value={draft.teacherId}
+                                disabled={busy && !entry}
+                                onChange={(event) => {
+                                  const teacherId = event.target.value
+                                  setDrafts((current) => ({
+                                    ...current,
+                                    [draftKey]: { ...current[draftKey], teacherId },
+                                  }))
+                                  if (entry)
+                                    void submit(
+                                      '/api/admin/enrollments/assignment',
+                                      {
+                                        kind: 'edit',
+                                        courseId: course.id,
+                                        id: entry.id,
+                                        teacherId: teacherId || null,
+                                      },
+                                      () => clearField('teacherId', teacherId),
+                                      `teacher:${draftKey}`,
+                                    )
+                                }}
+                              >
+                                <option value="">{ar ? 'بلا معلم' : 'No teacher'}</option>
+                                {board?.teachers.map((teacher) => (
+                                  <option key={teacher.teacherId} value={teacher.teacherId}>
+                                    {teacher.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                          )}
                           <td data-label={ar ? 'مسجل' : 'Enrolled'}>
                             <input
                               type="checkbox"
@@ -552,32 +848,27 @@ export function Courses({
                               onChange={(event) => saveMembership(event.target.checked)}
                             />
                           </td>
-                          <td data-label={ar ? 'استلم الكتاب' : 'Handbook received'}>
-                            <label className="inline-flex size-11 items-center justify-center align-middle">
-                              <input
-                                type="checkbox"
-                                aria-label={`${ar ? 'استلم الكتاب' : 'Handbook received'}: ${student.firstName} ${student.lastName}`}
-                                checked={entry?.handbookReceived ?? false}
-                                disabled={busy || !entry}
-                                onChange={(event) =>
-                                  entry &&
-                                  void submit('/api/admin/enrollments/handbook', {
-                                    id: entry.id,
-                                    handbookReceived: event.target.checked,
-                                  })
-                                }
-                              />
-                            </label>
-                          </td>
-                          <td data-label={ar ? 'الإجراءات' : 'Actions'}>
-                            <button
-                              className="secondary"
-                              disabled={busy || !entry}
-                              onClick={() => saveMembership(entry?.active ?? false)}
-                            >
-                              {ar ? 'حفظ المستوى والمعلم' : 'Save level and teacher'}
-                            </button>
-                          </td>
+                          {query.studentMode !== 'groups' && (
+                            <td data-label={ar ? 'استلم الكتاب' : 'Handbook received'}>
+                              <label className="inline-flex size-11 items-center justify-center align-middle">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`${ar ? 'استلم الكتاب' : 'Handbook received'}: ${student.firstName} ${student.lastName}`}
+                                  checked={entry?.handbookReceived ?? false}
+                                  disabled={busy || !entry}
+                                  onChange={(event) =>
+                                    entry &&
+                                    void submit(
+                                      '/api/admin/enrollments/handbook',
+                                      { id: entry.id, handbookReceived: event.target.checked },
+                                      undefined,
+                                      `handbook:${draftKey}`,
+                                    )
+                                  }
+                                />
+                              </label>
+                            </td>
+                          )}
                         </tr>
                       )
                     })}

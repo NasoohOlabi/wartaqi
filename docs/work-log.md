@@ -2382,10 +2382,18 @@ At 14:18 Asia/Damascus, an Arabic read-back exposed a stale date proposed by Bon
 
 At 14:30 Asia/Damascus, PR validation failed when the mobile course-creation test pressed Back before the app returned to Courses. Delaying the synthetic save response reproduced the missing form field. Waiting for the saved course row fixed the reproduced failure and passed three repeats each on desktop and mobile after removing the delay. The application and Telegram worker are unchanged by this test correction.
 
+## 2026-11-26 10:30 Asia/Damascus — Simplify course roster work
+
+The owner asked for faster group setup, focused column views and automatic saving. Manage students now offers All columns, Groups and Books. Group selection carries across searches for the same course. An administrator can apply a shared teacher or course level to enrolled students, leaving either field unchanged. Teacher edits save on selection and course levels save on blur or Enter. Failed student saves can be retried from the page.
+
+The disposable PostgreSQL check exercised atomic rejection of stale selections, simultaneous changes, role restrictions and preservation of grades and handbook receipt. Synthetic browser verification covers both focused views, cross-search selection, save failures, rapid edits, reload and desktop and emulated phone layouts in English and Arabic. Deployment and live verification are recorded in the PR.
+
+At 10:51 Asia/Damascus, the owner asked for the course roster's Add student action to use the existing icon pattern. A 44px plus icon now sits beside search, on the left in Arabic and the right in English. Its accessible name and tooltip describe the course-specific action. Repository verification and four focused browser cases passed, including creation and cancellation and the icon's position at desktop and 320/390/430px phone widths.
+
 ## 2026-11-26 11:02 Asia/Damascus — Fill missing student roster levels
 
 The owner asked to recover levels for every student in All students. The earlier historical import stored some levels on course enrollments. All students reads a separate roster field, which was blank for 61 of the 130 students.
 
 Matched students against the five private Wartaq course workbooks using normalized names and corroborating contact details where available. Used the latest reliably matched level for 38 students and assigned level 1 to the remaining 23. Preserved the 69 existing roster levels. The source workbooks were read only. Jira was unavailable in this session.
 
-A rolled-back transaction rehearsed the update before it was committed on Railway. A fresh database read verified all 130 expected values and zero blanks, including inactive students. Student profiles outside the roster level field, courses, enrollments and attendance events matched their pre-update fingerprints. Production health returned HTTP 200. The private recovery plan stays out of Git. This entry records a data repair with no application or schema changes.
+A rolled-back transaction rehearsed the update before it was committed on Railway. A fresh database read and the deployed notebook handler both verified all 130 expected values and zero blanks, including inactive students. Student profiles outside the roster level field, courses, enrollments and attendance events matched their pre-update fingerprints. Production health returned HTTP 200. The private recovery plan stays out of Git. This entry records a data repair with no application or schema changes.
