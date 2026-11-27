@@ -2577,3 +2577,8 @@ At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing
 The owner reported that a slow enrollment save left the switch looking off. A second tap after the save could undo the enrollment. The switch now displays the requested state during the save and accepts another tap after it settles. A failed confirmation restores the last confirmed state. Retry uses the original operation and displays its pending change.
 
 Four focused Chromium checks passed on desktop English and mobile Arabic. They cover a held enrollment write and refresh, a blocked second tap, later withdrawal, failed rejoin and retry with the original enrollment ID, and the earlier inactive roster regression. The course suite passed against disposable PostgreSQL. The PR records the release checks and Railway verification.
+
+## 2026-11-27 16:24 Asia/Damascus ? MCP enrollment levels
+
+- Investigated repeated successful saves followed by old levels in the notebook. The membership handler ignored the supplied level and returned success. PR #219 addresses client readback scheduling.
+- Route explicit MCP levels through the administrator enrollment write and keep legacy membership payloads from replacing them. The disposable PostgreSQL regression covers write, readback and stale membership replay. Local bun run verify passed with 155 tests and 14 opt-in skips. Production readback requires deployment and authorized access.
