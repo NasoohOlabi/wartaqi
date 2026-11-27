@@ -5,11 +5,22 @@ import { formatLevel } from './levelFormat'
 import { TableControls, TableHeader, TableToolbar } from './DataTable'
 import { useDataTable } from './useDataTable'
 import { useEffect, useRef, useState } from 'react'
+import { pointerIntersection } from '@dnd-kit/collision'
+import { Accessibility } from '@dnd-kit/dom'
+import {
+  DragDropProvider,
+  DragOverlay,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useDragOperation,
+} from '@dnd-kit/react'
 import { useAdminBoardReplica } from './useRoleReplica'
 import {
   Check,
   ClipboardList,
   Download,
+  GripVertical,
   History,
   Lock,
   LockOpen,
@@ -42,6 +53,121 @@ type Board = ReturnType<typeof neonAdminBoardSchema.parse>
 
 type Draft = { id?: string; teacherId?: string }
 
+function GroupMember({
+  name,
+  enrollmentId,
+  teacherId,
+  options,
+  ar,
+  disabled,
+  move,
+}: {
+  name: string
+  enrollmentId: string
+  teacherId: Enrollment['teacherId']
+  options: { teacherId: Enrollment['teacherId']; name: string }[]
+  ar: boolean
+  disabled: boolean
+  move: (enrollmentId: string, teacherId: Enrollment['teacherId']) => void
+}) {
+  const { ref, handleRef, isDragging } = useDraggable({
+    id: enrollmentId,
+    disabled: disabled || !options.length,
+    data: { teacherId, name },
+  })
+  const moveLabel = ar ? 'نقل إلى مجموعة' : 'Move to group'
+  const dragLabel = `${ar ? 'اسحب الطالب' : 'Drag student'}: ${name}`
+  return (
+    <li ref={ref} className={`course-group-member${isDragging ? ' is-dragging' : ''}`}>
+      {options.length > 0 && (
+        <button
+          ref={handleRef}
+          type="button"
+          tabIndex={-1}
+          className="course-group-grip"
+          aria-label={dragLabel}
+          title={dragLabel}
+          disabled={disabled}
+        >
+          <GripVertical size={18} aria-hidden="true" />
+        </button>
+      )}
+      <bdi className="min-w-0 [overflow-wrap:anywhere]">{name}</bdi>
+      {options.length > 0 && (
+        <select
+          className="min-h-11 min-w-0 max-w-full"
+          aria-label={`${moveLabel}: ${name}`}
+          value=""
+          disabled={disabled}
+          onChange={(event) =>
+            move(enrollmentId, event.target.value === 'unassigned' ? null : event.target.value)
+          }
+        >
+          <option value="" disabled>
+            {moveLabel}
+          </option>
+          {options.map((destination) => (
+            <option
+              key={destination.teacherId ?? 'unassigned'}
+              value={destination.teacherId ?? 'unassigned'}
+            >
+              {destination.name}
+            </option>
+          ))}
+        </select>
+      )}
+    </li>
+  )
+}
+
+function GroupSection({
+  teacherId,
+  group,
+  options,
+  ar,
+  disabled,
+  move,
+  eligible,
+}: {
+  teacherId: Enrollment['teacherId']
+  eligible: boolean
+  group: { name: string; members: { name: string; enrollmentId: string }[] }
+  options: { teacherId: Enrollment['teacherId']; name: string }[]
+  ar: boolean
+  disabled: boolean
+  move: (enrollmentId: string, teacherId: Enrollment['teacherId']) => void
+}) {
+  const { source } = useDragOperation()
+  const { ref, isDropTarget } = useDroppable({
+    id: teacherId ?? 'unassigned',
+    disabled: disabled || !eligible || source?.data?.teacherId === teacherId,
+    collisionDetector: pointerIntersection,
+  })
+  return (
+    <details ref={ref} className="rounded-lg border border-[var(--dark-border,#cde1df)] px-3">
+      <summary
+        data-course-group={teacherId ?? 'unassigned'}
+        data-drop-target={isDropTarget || undefined}
+        className={`course-group-target min-h-11 cursor-pointer py-2.5 font-medium [overflow-wrap:anywhere]${isDropTarget ? ' is-drop-target' : ''}`}
+      >
+        <bdi>{group.name}</bdi> ({group.members.length})
+      </summary>
+      {group.members.length ? (
+        <ul className="space-y-2 pb-3">
+          {group.members.map(({ name, enrollmentId }) => (
+            <GroupMember
+              key={enrollmentId}
+              {...{ name, enrollmentId, teacherId, options, ar, disabled, move }}
+            />
+          ))}
+        </ul>
+      ) : (
+        <p className="muted pb-3">{ar ? 'لا يوجد طلاب' : 'No students'}</p>
+      )}
+    </details>
+  )
+}
+
 function CourseGroups({
   ar,
   board,
@@ -56,7 +182,6 @@ function CourseGroups({
   move: (enrollmentId: string, teacherId: Enrollment['teacherId']) => void
 }) {
   const unassigned = ar ? 'غير معيّن' : 'Unassigned'
-  const moveLabel = ar ? 'نقل إلى مجموعة' : 'Move to group'
   const groups = new Map<
     Enrollment['teacherId'],
     { name: string; members: { name: string; enrollmentId: string }[] }
@@ -81,54 +206,37 @@ function CourseGroups({
     ...board.teachers.map(({ teacherId, name }) => ({ teacherId, name })),
     { teacherId: null, name: unassigned },
   ]
-  return [...groups].map(([teacherId, group]) => {
-    const options = destinations.filter((destination) => destination.teacherId !== teacherId)
-    return (
-      <details
-        key={teacherId ?? 'unassigned'}
-        className="rounded-lg border border-[var(--dark-border,#cde1df)] px-3"
-      >
-        <summary className="min-h-11 cursor-pointer py-2.5 font-medium [overflow-wrap:anywhere]">
-          <bdi>{group.name}</bdi> ({group.members.length})
-        </summary>
-        {group.members.length ? (
-          <ul className="space-y-2 pb-3">
-            {group.members.map(({ name, enrollmentId }) => (
-              <li key={enrollmentId} className="flex flex-wrap items-center justify-between gap-2">
-                <bdi className="min-w-0 [overflow-wrap:anywhere]">{name}</bdi>
-                {options.length > 0 && (
-                  <select
-                    className="min-h-11 min-w-0 max-w-full"
-                    aria-label={`${moveLabel}: ${name}`}
-                    value=""
-                    disabled={disabled}
-                    onChange={(event) => {
-                      const destination = event.target.value
-                      move(enrollmentId, destination === 'unassigned' ? null : destination)
-                    }}
-                  >
-                    <option value="" disabled>
-                      {moveLabel}
-                    </option>
-                    {options.map((destination) => (
-                      <option
-                        key={destination.teacherId ?? 'unassigned'}
-                        value={destination.teacherId ?? 'unassigned'}
-                      >
-                        {destination.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted pb-3">{ar ? 'لا يوجد طلاب' : 'No students'}</p>
-        )}
-      </details>
-    )
-  })
+  const visibleGroups = [...groups].filter(
+    ([teacherId, group]) => !teacherId || group.members.length,
+  )
+  return (
+    <DragDropProvider
+      sensors={[PointerSensor]}
+      plugins={(defaults) => defaults.filter((plugin) => plugin !== Accessibility)}
+      onDragEnd={(event) => {
+        const { source, target } = event.operation
+        if (event.canceled || disabled || !source || !target) return
+        const enrollment = enrollments.find((entry) => entry.id === source.id && entry.active)
+        const destination = destinations.find(
+          (entry) => (entry.teacherId ?? 'unassigned') === target.id,
+        )
+        if (enrollment && destination && enrollment.teacherId !== destination.teacherId)
+          move(enrollment.id, destination.teacherId)
+      }}
+    >
+      {visibleGroups.map(([teacherId, group]) => (
+        <GroupSection
+          key={teacherId ?? 'unassigned'}
+          {...{ teacherId, group, ar, disabled, move }}
+          eligible={destinations.some((destination) => destination.teacherId === teacherId)}
+          options={destinations.filter((destination) => destination.teacherId !== teacherId)}
+        />
+      ))}
+      <DragOverlay className="course-group-overlay">
+        {(source) => <bdi>{typeof source.data?.name === 'string' ? source.data.name : ''}</bdi>}
+      </DragOverlay>
+    </DragDropProvider>
+  )
 }
 
 function CourseForm({
