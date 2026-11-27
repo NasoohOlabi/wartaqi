@@ -1,6 +1,7 @@
 ﻿import { expect, test } from '@playwright/test'
 import { mockSyntheticNotebook } from './syntheticNotebook'
 import { clickAccountAction } from './profileActions'
+import { expectMobileBack } from './headerLayout'
 
 for (const language of ['en', 'ar'] as const) {
   for (const width of [320, 1280]) {
@@ -50,6 +51,11 @@ for (const language of ['en', 'ar'] as const) {
       await page
         .getByRole('button', { name: language === 'ar' ? 'فتح المحادثة' : 'Open conversation' })
         .click()
+      const backLabel = language === 'ar' ? 'العودة إلى القائمة' : 'Back to list'
+      const back =
+        width === 320
+          ? await expectMobileBack(page, backLabel)
+          : page.getByRole('button', { name: backLabel, exact: true })
       await expect(page.getByText('<img src=x onerror=alert(1)>', { exact: true })).toBeVisible()
       await expect(page.locator('img[src="x"]')).toHaveCount(0)
       await page
@@ -65,6 +71,12 @@ for (const language of ['en', 'ar'] as const) {
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
       ).toBe(true)
+      await back.click()
+      await expect(
+        page.getByRole('button', {
+          name: language === 'ar' ? 'فتح المحادثة' : 'Open conversation',
+        }),
+      ).toBeVisible()
     })
   }
 }

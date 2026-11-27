@@ -21,10 +21,14 @@ export function InviteAccounts({
   userId,
   ar,
   done,
+  onSendingChange,
+  backLabel,
 }: {
   userId: string
   ar: boolean
   done: () => void
+  onSendingChange: (sending: boolean) => void
+  backLabel: string
 }) {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -38,6 +42,7 @@ export function InviteAccounts({
   async function submit(person: Person) {
     if (sending.current) return
     sending.current = true
+    onSendingChange(true)
     setState({ kind: 'sending' })
     try {
       const payload = invitationRequestSchema.parse({
@@ -54,6 +59,7 @@ export function InviteAccounts({
       setState({ kind: 'uncertain', person })
     } finally {
       sending.current = false
+      onSendingChange(false)
     }
   }
   if (state.kind === 'done') {
@@ -66,8 +72,8 @@ export function InviteAccounts({
             : 'Send this message privately to the account holder. The password disappears when you leave this page.'}
         </p>
         <CopyableInvitation invitation={state.invitation} ar={ar}>
-          <button type="button" className="secondary" onClick={done}>
-            {ar ? 'العودة إلى الحسابات' : 'Back to accounts'}
+          <button type="button" className="secondary workspace-page-back" onClick={done}>
+            {backLabel}
           </button>
         </CopyableInvitation>
       </div>
@@ -178,8 +184,8 @@ export function InviteAccounts({
       )}
       {state.kind !== 'sending' && (
         <div className="role-actions">
-          <button type="button" className="secondary" onClick={done}>
-            {ar ? 'العودة إلى الحسابات' : 'Back to accounts'}
+          <button type="button" className="secondary workspace-page-back" onClick={done}>
+            {backLabel}
           </button>
         </div>
       )}

@@ -29,7 +29,7 @@ import { courseAttendance, missingCourseScores, savedGradeResult } from '../shar
 import { CourseExportDialog } from './CourseExportDialog'
 import { request } from './neon'
 import { useLanguage } from './useLanguage'
-import { openChildView, setQuery, useQueryState } from './queryState'
+import { courseListBack, openChildView, setQuery, useQueryState } from './queryState'
 import { rankStudents } from './studentSearch'
 
 type Board = ReturnType<typeof neonAdminBoardSchema.parse>
@@ -152,14 +152,12 @@ export function CoursePageHeader({
     grades: ar ? '\u0627\u0644\u062f\u0631\u062c\u0627\u062a' : 'Grades',
     history: ar ? '\u0627\u0644\u0633\u062c\u0644' : 'History',
   }[current]
+  const back = courseListBack(ar)
   return (
     <WorkspacePageHeader
       parent={
-        <button
-          className="secondary"
-          onClick={() => setQuery({ view: 'courses', courseView: '', course: '', q: '' }, true)}
-        >
-          {ar ? '\u0643\u0644 \u0627\u0644\u062f\u0648\u0631\u0627\u062a' : 'All courses'}
+        <button className="secondary workspace-page-back" onClick={back.onClick}>
+          {back.label}
         </button>
       }
       title={
@@ -277,6 +275,7 @@ export function Courses({
   }
   const go = (courseView: string, courseId = query.course) =>
     setQuery({ courseView, course: courseId, q: '', group: '', student: '' }, true)
+  const back = courseListBack(ar, { clearStudentFilters: true })
   const courseEntries = enrollments.filter((item) => item.courseId === query.course)
   const matching = board ? rankStudents(board.students, query.q) : []
   const courseTable = useDataTable('courses', courses, [
@@ -497,8 +496,8 @@ export function Courses({
         <>
           <WorkspacePageHeader
             parent={
-              <button className="secondary" onClick={() => go('', '')}>
-                {ar ? '\u0643\u0644 \u0627\u0644\u062f\u0648\u0631\u0627\u062a' : 'All courses'}
+              <button className="secondary workspace-page-back" onClick={back.onClick}>
+                {back.label}
               </button>
             }
             title={
@@ -530,8 +529,8 @@ export function Courses({
               : 'Course unavailable'
           }
           parent={
-            <button className="secondary" onClick={() => go('', '')}>
-              {ar ? '\u0643\u0644 \u0627\u0644\u062f\u0648\u0631\u0627\u062a' : 'All courses'}
+            <button className="secondary workspace-page-back" onClick={back.onClick}>
+              {back.label}
             </button>
           }
         />

@@ -162,6 +162,17 @@ export function ProfileSettings({
       )}
     </section>
   )
+  const back = {
+    label:
+      role === 'student'
+        ? ar
+          ? 'العودة إلى حضوري'
+          : 'Back to my attendance'
+        : ar
+          ? 'العودة إلى مساحة العمل'
+          : 'Back to workspace',
+    onClick: () => returnToParent({ view: 'notebook' }),
+  }
   return (
     <div className="workspace">
       <WorkspaceNavigation
@@ -169,23 +180,14 @@ export function ProfileSettings({
         student={role === 'student'}
         profile={profile}
         leave={signOut}
+        back={back}
       />
       <main id="main-content" tabIndex={-1} className="workspace-main">
         <WorkspacePageHeader
           title={ar ? 'إعدادات الملف الشخصي' : 'Profile settings'}
           parent={
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => returnToParent({ view: 'notebook' })}
-            >
-              {role === 'student'
-                ? ar
-                  ? 'العودة إلى حضوري'
-                  : 'Back to my attendance'
-                : ar
-                  ? 'العودة إلى مساحة العمل'
-                  : 'Back to workspace'}
+            <button type="button" className="secondary workspace-page-back" onClick={back.onClick}>
+              {back.label}
             </button>
           }
         />

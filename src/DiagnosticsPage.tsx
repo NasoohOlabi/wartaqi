@@ -155,36 +155,44 @@ export function DiagnosticsPage({
     }
   }, [])
   useEffect(() => {
-    if (selected) timelineHeading.current?.focus()
+    if (selected) {
+      timelineHeading.current?.focus()
+      if (window.matchMedia('(max-width: 700px)').matches) window.scrollTo(0, 0)
+    }
   }, [selected])
+
+  const back = {
+    label: ar ? 'العودة إلى القائمة' : 'Back to list',
+    onClick: () => {
+      latestRead.current++
+      setShowReplay(false)
+      setSelected(null)
+      setLoading(false)
+      setError(false)
+      requestAnimationFrame(() => {
+        const button = journeyTrigger.current && document.getElementById(journeyTrigger.current)
+        if (button) button.focus()
+        else listSection.current?.focus()
+      })
+    },
+  }
 
   return (
     <div className="workspace">
-      <WorkspaceNavigation administrator profile={profile} leave={signOut} />
+      <WorkspaceNavigation
+        administrator
+        profile={profile}
+        leave={signOut}
+        back={selected ? back : undefined}
+      />
       <main id="main-content" className="workspace-main" tabIndex={-1}>
         <WorkspacePageHeader title={ar ? 'التشخيص' : 'Diagnostics'}>
           <SettingsNavigation current="diagnostics" />
         </WorkspacePageHeader>
         {selected ? (
           <section className="panel space-y-4" aria-busy={loading}>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                latestRead.current++
-                setShowReplay(false)
-                setSelected(null)
-                setLoading(false)
-                setError(false)
-                requestAnimationFrame(() => {
-                  const button =
-                    journeyTrigger.current && document.getElementById(journeyTrigger.current)
-                  if (button) button.focus()
-                  else listSection.current?.focus()
-                })
-              }}
-            >
-              {ar ? 'العودة إلى القائمة' : 'Back to list'}
+            <button type="button" className="secondary workspace-page-back" onClick={back.onClick}>
+              {back.label}
             </button>
             <h2 className="title break-words" tabIndex={-1} ref={timelineHeading} dir="auto">
               {selected.actorName || selected.actorId}

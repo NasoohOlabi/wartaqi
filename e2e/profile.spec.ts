@@ -1,6 +1,7 @@
 import { mockSyntheticNotebook } from './syntheticNotebook'
 import { clickAccountAction } from './profileActions'
 import { expect, test } from '@playwright/test'
+import { expectMobileBack } from './headerLayout'
 import { mkdir } from 'node:fs/promises'
 
 test('profile menu preserves attendance draft and dismisses', async ({ page }) => {
@@ -89,6 +90,7 @@ for (const role of ['administrator', 'teacher', 'student']) {
     )
     await page.goto('/?page=app&view=profile')
     await expect(page.getByRole('heading', { name: 'Profile settings' })).toBeVisible()
+    await expectMobileBack(page, role === 'student' ? 'Back to my attendance' : 'Back to workspace')
     await page.getByLabel('Name', { exact: true }).fill('Updated User')
     await page.locator('input[type=file]').setInputFiles({
       name: 'invalid.txt',
