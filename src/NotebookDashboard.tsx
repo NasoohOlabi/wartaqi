@@ -63,10 +63,10 @@ export function NotebookDashboard({
   ).size
   const unmarked = students.length - marked
   const numberFormatter = new Intl.NumberFormat(language)
-  const dateFormatter = new Intl.DateTimeFormat(language, {
+  const dateFormatter = new Intl.DateTimeFormat(ar ? 'ar' : 'en-GB', {
+    weekday: 'long',
     day: 'numeric',
-    month: 'short',
-    year: 'numeric',
+    month: 'numeric',
     timeZone: 'UTC',
   })
   const number = (value: number) => numberFormatter.format(value)
