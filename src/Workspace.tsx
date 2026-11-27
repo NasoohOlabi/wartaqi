@@ -342,6 +342,9 @@ function Notebook({
     query.view === 'notebook' || query.view === 'student' || settingsHistory
   const navigation = (
     <WorkspaceNavigation
+      back={
+        query.view === 'student' ? { label: studentBackLabel, onClick: returnToList } : undefined
+      }
       defaultCourse={preference.defaultCourse}
       courses={
         showCourseSwitcher
@@ -896,7 +899,7 @@ function StudentDetails({
     return (
       <section className="panel">
         <p>{ar ? 'الطالب غير متاح' : 'Student unavailable'}</p>
-        <button className="secondary" onClick={onBack}>
+        <button className="secondary student-details-back" onClick={onBack}>
           {backLabel}
         </button>
       </section>
@@ -920,7 +923,10 @@ function StudentDetails({
       <section className="panel student-details-overview" aria-labelledby="student-details-title">
         <WorkspacePageHeader
           parent={
-            <button className="secondary inline-flex min-h-11 items-center gap-2" onClick={onBack}>
+            <button
+              className="secondary student-details-back inline-flex min-h-11 items-center gap-2"
+              onClick={onBack}
+            >
               <ArrowLeft className="icon-directional shrink-0" size={18} aria-hidden="true" />
               {backLabel}
             </button>

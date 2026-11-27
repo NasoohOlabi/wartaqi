@@ -2417,3 +2417,9 @@ The navigation scenario exercises the course tabs, student return with a saved s
 The owner asked for two rows per student on the course Students page. The first row holds the name fields and course level when shown. The second holds the teacher, enrollment and handbook controls available in the selected view. In Groups, the teacher selector uses the space available alongside the enrollment switch.
 
 The course roster browser scenario passed for All columns, Groups and Books in English and Arabic at 320, 390 and 430px and on desktop. It checks row geometry and overflow with synthetic names, including a long mixed-script name, and exercises saved teacher assignments across searches. The PR records release checks and Railway verification.
+
+## 2026-11-27 08:43 Asia/Damascus — Move mobile student Back into the top app bar
+
+The owner asked for Android-standard placement on the Arabic student profile. The mobile top app bar now shows a 48px Back control at the leading edge, on the right in Arabic and the left in English. Its direction, accessible label and return destination follow the current language and student entry path. The desktop profile keeps its labelled Back control.
+
+The browser regression checks the leading position, icon direction, touch target, page width and return focus at 320, 360, 390 and 430px. The 360px Arabic deep link also exercises the numbered course layout and returns to the course-scoped roster. The fixtures are synthetic. Physical Android behavior requires a device check. The PR records release and Railway verification.

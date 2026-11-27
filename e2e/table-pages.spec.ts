@@ -467,7 +467,7 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile')
-  const { writes } = await syntheticTables(page)
+  const { writes } = await syntheticTables(page, 'administrator', 'وارتق 5')
   await page.goto('/?page=app&tab=roster')
   const table = page.locator('.roster-students-table')
   const rows = table.locator('tbody tr')
@@ -519,13 +519,31 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
     ).toBeVisible()
     const details = page.locator('.student-details')
     const edit = details.getByRole('button', { name: ar ? 'تعديل الطالب' : 'Edit student' })
+    const backName = ar ? 'العودة إلى الطلاب' : 'Back to students'
+    const back = page.getByRole('button', { name: backName, exact: true })
+    const appBar = page.locator('.workspace-brand')
+    const logo = appBar.locator('.wartaq-logo')
+    await expect(appBar.getByRole('button', { name: backName, exact: true })).toBeVisible()
+    await expect(back).toHaveCount(1)
+    await expect(back.locator('svg')).toHaveCSS(
+      'transform',
+      ar ? 'matrix(-1, 0, 0, 1, 0, 0)' : 'none',
+    )
     const courses = details.getByRole('heading', { name: ar ? 'الدورات' : 'Courses' })
     const history = details.getByRole('region', { name: ar ? 'سجل الحضور' : 'Attendance history' })
     const addNote = details.getByRole('button', { name: ar ? 'إضافة ملاحظة' : 'Add note' })
     await expect(history.locator('tbody tr')).toHaveCount(3)
     await expect(history.locator('thead')).toBeHidden()
-    for (const width of [320, 390, 430]) {
+    for (const width of [320, 360, 390, 430]) {
       await page.setViewportSize({ width, height: 844 })
+      const backBounds = await back.boundingBox()
+      const logoBounds = await logo.boundingBox()
+      if (!backBounds || !logoBounds) throw new Error('Top app bar controls are hidden')
+      expect(backBounds.width).toBeGreaterThanOrEqual(48)
+      expect(backBounds.height).toBeGreaterThanOrEqual(48)
+      if (ar) expect(backBounds.x).toBeGreaterThanOrEqual(logoBounds.x + logoBounds.width)
+      else expect(backBounds.x + backBounds.width).toBeLessThanOrEqual(logoBounds.x)
+      await expect(back).toBeInViewport({ ratio: 1 })
       await expect(edit.locator('svg[aria-hidden="true"]')).toBeVisible()
       await expect(edit).toBeInViewport()
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
@@ -548,7 +566,8 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
           scale: 'css',
         })
     }
-    await page.goBack()
+    await back.click()
+    await expect(open).toBeFocused()
     await sort.click()
     const columns = page.getByLabel(ar ? 'إضافة عمود' : 'Add column', { exact: true })
     await expect(columns.locator('option:not([disabled])')).toHaveCount(7)
@@ -586,6 +605,28 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
     await page.keyboard.press('Escape')
     await expect(rows).toHaveCount(6)
   }
+  await page.setViewportSize({ width: 360, height: 800 })
+  await clickAccountAction(page, 'فاتح')
+  await page.goto(`/?page=app&view=student&tab=roster&course=${courseId}&student=${studentIds[0]}`)
+  const appBar = page.locator('.workspace-brand')
+  const back = appBar.getByRole('button', { name: 'العودة إلى الطلاب', exact: true })
+  const course = appBar.getByLabel('تغيير الدورة')
+  await expect(course).toHaveText('5')
+  await expect(course).toBeInViewport({ ratio: 1 })
+  await expect(back).toBeInViewport({ ratio: 1 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360)
+  await page.screenshot({
+    path: '.artifacts/verification/student-profile-numbered-course-ar.png',
+    scale: 'css',
+  })
+  await back.click()
+  await expect(page).toHaveURL(
+    (url) =>
+      url.searchParams.get('tab') === 'roster' &&
+      url.searchParams.get('course') === courseId &&
+      !url.searchParams.has('student'),
+  )
+  await expect(rows.first().locator('.roster-mobile-open')).toHaveText('Zulu Family')
   expect(writes).toEqual([])
 })
 
