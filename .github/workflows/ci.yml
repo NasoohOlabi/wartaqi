@@ -80,7 +80,11 @@ jobs:
         with:
           bun-version: 1.3.0
       - run: bun install --frozen-lockfile
-      - run: bunx playwright install --with-deps chromium
+      - name: Install Chromium and its Ubuntu dependencies
+        run: |
+          # Chromium uses Ubuntu packages. Keep the unrelated runner feed out of apt update.
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/microsoft-prod.sources
+          bunx playwright install --with-deps chromium
       - name: Run Playwright shard
         env:
           SHARD: ${{ matrix.shard }}/${{ strategy.job-total }}
