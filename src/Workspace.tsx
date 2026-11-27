@@ -1645,6 +1645,29 @@ function AttendanceView({
   )
 }
 
+function RosterStudentStatus({
+  active,
+  ar,
+  compact,
+}: {
+  active: boolean
+  ar: boolean
+  compact?: boolean
+}) {
+  const label = active ? (ar ? 'نشط' : 'Active') : ar ? 'غير نشط' : 'Inactive'
+  const Icon = active ? CircleCheck : CircleMinus
+  return (
+    <span
+      className={compact ? 'roster-mobile-status' : 'block'}
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      <Icon className="mx-auto" size={20} aria-hidden="true" />
+    </span>
+  )
+}
+
 function RosterView({
   students,
   exportStudents,
@@ -1786,6 +1809,7 @@ function RosterView({
                   >
                     <bdi>{student.firstName ?? student.name}</bdi>
                   </button>
+                  <RosterStudentStatus active={student.active} ar={ar} compact />
                   <button
                     type="button"
                     className="icon-button roster-mobile-open"
@@ -1804,7 +1828,7 @@ function RosterView({
                 <td className="roster-last-name" data-label={ar ? 'اسم العائلة' : 'Last name'}>
                   <bdi>{student.lastName || '—'}</bdi>
                 </td>
-                <td data-label={ar ? 'رقم الهاتف' : 'Phone'}>
+                <td className="roster-student-phone" data-label={ar ? 'رقم الهاتف' : 'Phone'}>
                   {student.whatsapp ? (
                     <PhoneNumber value={student.whatsapp} />
                   ) : ar ? (
@@ -1878,19 +1902,7 @@ function RosterView({
                   })()}
                 </td>
                 <td className="roster-student-status" data-label={ar ? 'الحالة' : 'Active'}>
-                  <span
-                    role="img"
-                    aria-label={
-                      student.active ? (ar ? 'نشط' : 'Active') : ar ? 'غير نشط' : 'Inactive'
-                    }
-                    title={student.active ? (ar ? 'نشط' : 'Active') : ar ? 'غير نشط' : 'Inactive'}
-                  >
-                    {student.active ? (
-                      <CircleCheck className="mx-auto" size={20} aria-hidden="true" />
-                    ) : (
-                      <CircleMinus className="mx-auto" size={20} aria-hidden="true" />
-                    )}
-                  </span>
+                  <RosterStudentStatus active={student.active} ar={ar} />
                 </td>
                 <td className="roster-desktop-action" data-label={ar ? 'الإجراءات' : 'Actions'}>
                   <button
