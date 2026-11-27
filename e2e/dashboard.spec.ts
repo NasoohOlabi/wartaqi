@@ -154,7 +154,8 @@ test('follow-up uses recorded absences through the selected date', async ({ page
   const dateInput = page.getByLabel('Session date')
   const firstDate = await dateInput.inputValue()
   const nextDate = new Date(`${firstDate}T00:00:00Z`)
-  nextDate.setUTCDate(nextDate.getUTCDate() + 1)
+  const daysUntilWednesday = (3 - nextDate.getUTCDay() + 7) % 7 || 7
+  nextDate.setUTCDate(nextDate.getUTCDate() + daysUntilWednesday)
   const secondDate = nextDate.toISOString().slice(0, 10)
 
   await page.getByRole('button', { name: /Continue attendance/i }).click()
@@ -175,6 +176,54 @@ test('follow-up uses recorded absences through the selected date', async ({ page
   await expect(strip.locator('li').nth(0)).toContainText('absent')
   await expect(strip.locator('li').nth(1)).toContainText('excused')
   await expect(page.getByText('1 absence', { exact: true })).toBeVisible()
+
+  const dateLabel = page.locator(`.dashboard-strip time[datetime="${secondDate}"]`)
+  const day = nextDate.getUTCDate()
+  const month = nextDate.getUTCMonth() + 1
+  await expect(dateLabel).toHaveText(new RegExp(`^Wednesday,? 0?${day}/0?${month}$`))
+  for (const language of ['en', 'ar']) {
+    if (language === 'ar') {
+      await clickAccountAction(page, 'العربية')
+      await expect(dateLabel).toHaveText(
+        /^الأربعاء، \p{Decimal_Number}{1,2}\u200f?\/\p{Decimal_Number}{1,2}$/u,
+      )
+    }
+    await page.evaluate(() => document.fonts.ready)
+    for (const width of [320, 390, 430, 1280]) {
+      await page.setViewportSize({ width, height: 844 })
+      const card = dateLabel.locator('..')
+      expect(
+        await card.evaluate((element) => {
+          const [date, status] = element.children
+          const cardBounds = element.getBoundingClientRect()
+          const range = document.createRange()
+          return {
+            stacked: date.getBoundingClientRect().bottom <= status.getBoundingClientRect().top,
+            lines: [date, status].map((line) => {
+              range.selectNodeContents(line)
+              const rects = Array.from(range.getClientRects())
+              return {
+                rows: new Set(rects.map((rect) => rect.top)).size,
+                fits: rects.every(
+                  (rect) => rect.left >= cardBounds.left && rect.right <= cardBounds.right,
+                ),
+              }
+            }),
+            viewportFits: document.documentElement.scrollWidth <= innerWidth,
+          }
+        }),
+        `${language} at ${width}px`,
+      ).toEqual({
+        stacked: true,
+        lines: [
+          { rows: 1, fits: true },
+          { rows: 1, fits: true },
+        ],
+        viewportFits: true,
+      })
+    }
+  }
+  await clickAccountAction(page, 'English')
   await page.getByLabel('Session date').fill(firstDate)
   await expect(strip.locator('li')).toHaveCount(1)
   await page.getByRole('button', { name: 'Omar', exact: true }).click()
