@@ -1,4 +1,5 @@
 import { clickAccountAction } from './profileActions'
+import { expectMobileBack } from './headerLayout'
 import { expect, test, type Page } from '@playwright/test'
 test.use({ trace: 'off' })
 const adminId = '10000000-0000-4000-8000-000000000001'
@@ -32,7 +33,7 @@ test('administrator creates one invitation and can safely retry it', async ({
   page,
   baseURL,
 }, testInfo) => {
-  if (testInfo.project.name === 'mobile') await page.setViewportSize({ width: 320, height: 800 })
+  if (testInfo.project.name === 'mobile') await page.setViewportSize({ width: 360, height: 800 })
   await mockAuth(page, adminId)
   let posts = 0
   let requestId = ''
@@ -85,6 +86,12 @@ test('administrator creates one invitation and can safely retry it', async ({
   await expect(page.getByRole('button', { name: 'Take attendance' })).toBeVisible()
   await clickAccountAction(page, 'Settings')
   await page.getByRole('button', { name: 'Create accounts' }).click()
+  if (testInfo.project.name === 'mobile') {
+    await expectMobileBack(page, 'Back to accounts')
+    await clickAccountAction(page, 'العربية')
+    await expectMobileBack(page, 'العودة إلى الحسابات')
+    await clickAccountAction(page, 'English')
+  }
   const main = page.getByRole('main')
   const firstName = page.getByLabel('First name')
   const lastName = page.getByLabel('Last name')

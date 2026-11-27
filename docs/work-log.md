@@ -2500,6 +2500,12 @@ Playwright discovery found 78, 81 and 73 cases in the shards. The combined cases
 
 At 10:21 Asia/Damascus, PR #206 passed Validation in 3m 21s. Its HTML reports used 1.4 MB total, down from 138 MB in the baseline PR. The first main run stopped before browser tests on one runner after the preconfigured Microsoft apt feed returned HTTP 403. `Verify` failed and Railway blocked that deployment. Browser jobs now remove that unused feed on their disposable runners and still install Chromium's dependencies from Ubuntu. The local release check passed with 229 browser cases and three skips. The follow-up PR records hosted verification and Railway deployment evidence.
 
+## 2026-11-27 10:36 Asia/Damascus — Put mobile return controls in the app bar
+
+The owner requested fixes for all return controls identified in the site audit. At 360×800, the fixed tabs covered the Create accounts form's Back button. Mobile child screens now use the leading app-bar arrow already used for student profiles. Course pages, student and account forms, invitation messages, personal settings, diagnostics, Telegram conversations and offline changes keep their existing return destinations. The desktop controls remain in the page.
+
+Synthetic browser checks exercise the leading 48px target, accessible label, tooltip, arrow direction and return behavior on phone layouts, plus labelled desktop actions. They cover the account form before edits, the invitation receipt, course subpages and return to the existing list. The PR records release and Railway checks. Physical device behavior requires a separate check.
+
 ## 2026-11-27 10:44 Asia/Damascus — Offline workspace and live delivery
 
 The owner requested durable, fast offline work and live updates across the site for a small teaching team. The design and verification matrix document role-scoped device storage, optimistic edits, explicit conflict review, and repair after missed signals. Transactional PostgreSQL notifications wake authenticated Socket.IO clients. Routine notebook, profile and grade edits survive reloads and replay with their original operation IDs. Access administration and external effects require a connection.
@@ -2507,3 +2513,5 @@ The owner requested durable, fast offline work and live updates across the site 
 Local verification exercised independent signed-in browsers against real Bun and disposable Postgres, denied sockets, missed notifications, rollback, conflicting and repeated mutations, same-account grade recovery and receipt backup/restore. Desktop and phone tests cover saved records during a stalled request, Settings queue delivery and identity isolation. The PR records final release and Railway checks. Browser storage eviction, physical devices and network latency in the field require separate measurement.
 
 At 10:55 Asia/Damascus, the integrated release gate passed with 167 unit and integration tests, 246 desktop and mobile browser cases, artifact checks, history scanning and dependency audit. One optional provider test and four project-specific browser cases skipped. The real two-device test completed in 3.3 seconds locally. Railway Postgres accepted migrations 019 and 020 in one transaction. Six enabled triggers and the receipt table were verified, and the existing service remained healthy before promotion.
+
+At 10:57 Asia/Damascus, integrated the new mobile app-bar return controls from main. My changes now uses the shared return destination from desktop or phone, including the previous Settings view. Invitation navigation retains connection checks. Typechecking passed after integration.

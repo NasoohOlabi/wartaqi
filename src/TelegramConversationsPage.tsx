@@ -93,7 +93,10 @@ export function TelegramConversationsPage({
     }
   }, [])
   useEffect(() => {
-    if (selected) detailHeading.current?.focus()
+    if (selected) {
+      detailHeading.current?.focus()
+      if (window.matchMedia('(max-width: 700px)').matches) window.scrollTo(0, 0)
+    }
   }, [selected])
   const date = (value: string) => new Date(value).toLocaleString(ar ? 'ar' : 'en')
   const outcomeLabel = (value: string) => {
@@ -113,9 +116,25 @@ export function TelegramConversationsPage({
     return labels[value] ?? 'خطأ في الخدمة'
   }
 
+  const back = {
+    label: ar ? 'العودة إلى القائمة' : 'Back to list',
+    onClick: () => {
+      latest.current++
+      setSelected(null)
+      setTurns(null)
+      setLoading(false)
+      setError(false)
+    },
+  }
+
   return (
     <div className="workspace">
-      <WorkspaceNavigation administrator profile={profile} leave={signOut} />
+      <WorkspaceNavigation
+        administrator
+        profile={profile}
+        leave={signOut}
+        back={selected ? back : undefined}
+      />
       <main id="main-content" className="workspace-main" tabIndex={-1}>
         <WorkspacePageHeader title={ar ? 'محادثات تيليغرام' : 'Telegram conversations'}>
           <SettingsNavigation current="telegram" />
@@ -124,17 +143,11 @@ export function TelegramConversationsPage({
           {selected ? (
             <>
               <button
-                className="secondary"
+                className="secondary workspace-page-back"
                 type="button"
-                onClick={() => {
-                  latest.current++
-                  setSelected(null)
-                  setTurns(null)
-                  setLoading(false)
-                  setError(false)
-                }}
+                onClick={back.onClick}
               >
-                {ar ? 'العودة إلى القائمة' : 'Back to list'}
+                {back.label}
               </button>
               <h2 className="title" ref={detailHeading} tabIndex={-1}>
                 {ar ? 'المحادثة' : 'Conversation'}

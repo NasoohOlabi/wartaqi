@@ -67,9 +67,17 @@ export function InvitationMessageViewer({
     }
   }
 
+  const back = {
+    label: ar
+      ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u062d\u0633\u0627\u0628\u0627\u062a'
+      : 'Back to accounts',
+    onClick: () =>
+      setQuery({ view: 'settings', settingsSection: '', account: '', inviteMessage: '' }, true),
+  }
+
   return (
     <div className="workspace">
-      <WorkspaceNavigation administrator profile={profile} leave={signOut} />
+      <WorkspaceNavigation administrator profile={profile} leave={signOut} back={back} />
       <main id="main-content" tabIndex={-1} className="workspace-main">
         <WorkspacePageHeader title={ar ? 'رسالة الدعوة الخاصة' : 'Private invitation message'} />
         <section className="panel space-y-3">
@@ -98,16 +106,8 @@ export function InvitationMessageViewer({
               ))}
             </>
           )}
-          <button
-            className="secondary"
-            onClick={() =>
-              setQuery(
-                { view: 'settings', settingsSection: '', account: '', inviteMessage: '' },
-                true,
-              )
-            }
-          >
-            {ar ? 'العودة إلى الحسابات' : 'Back to accounts'}
+          <button className="secondary workspace-page-back" onClick={back.onClick}>
+            {back.label}
           </button>
         </section>
       </main>

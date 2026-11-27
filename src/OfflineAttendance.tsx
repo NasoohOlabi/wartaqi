@@ -15,6 +15,7 @@ import {
   type PendingAttendance,
   type OfflineSnapshot,
 } from './offlineAttendanceStore'
+import type { WorkspaceBack } from './WorkspaceNavigation'
 import { localGrant, offlineAccess } from './offlineAccess'
 
 const profileFieldLabels: Record<ProfileField, [string, string]> = {
@@ -34,13 +35,13 @@ function mayReview(userId: string) {
 
 export function OfflineAttendance({
   userId,
-  close,
+  back,
   syncChanges,
   syncing,
   offline,
 }: {
   userId: string
-  close: () => void
+  back: WorkspaceBack
   syncChanges: (retryBlocked?: boolean) => Promise<boolean>
   syncing: boolean
   offline: boolean
@@ -112,8 +113,8 @@ export function OfflineAttendance({
             ? '\u0627\u0646\u062a\u0647\u062a \u0635\u0644\u0627\u062d\u064a\u0629 \u0627\u0644\u0648\u0635\u0648\u0644'
             : 'Offline access expired. Connect and sign in again.'}
         </p>
-        <button className="secondary" onClick={close}>
-          {ar ? '\u0631\u062c\u0648\u0639' : 'Back'}
+        <button className="secondary workspace-page-back" onClick={back.onClick}>
+          {back.label}
         </button>
       </section>
     )
@@ -159,8 +160,8 @@ export function OfflineAttendance({
               {ar ? '\u0645\u0632\u0627\u0645\u0646\u0629 \u0627\u0644\u0622\u0646' : 'Sync now'}
             </button>
           )}
-          <button className="secondary" onClick={close}>
-            {ar ? '\u0631\u062c\u0648\u0639' : 'Back'}
+          <button className="secondary workspace-page-back" onClick={back.onClick}>
+            {back.label}
           </button>
         </div>
       </header>

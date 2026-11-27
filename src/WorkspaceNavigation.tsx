@@ -17,6 +17,8 @@ const tabs: { id: Exclude<Tab, 'dashboard'>; label: TranslationKey }[] = [
   { id: 'roster', label: 'Students' },
 ]
 
+export type WorkspaceBack = { label: string; onClick: () => void }
+
 export function WorkspaceNavigation({
   administrator,
   student = false,
@@ -42,7 +44,7 @@ export function WorkspaceNavigation({
   profile?: Profile
   leave: () => void
   disabled?: boolean
-  back?: { label: string; onClick: () => void }
+  back?: WorkspaceBack
 }) {
   const { t, language } = useLanguage()
   const query = useQueryState()

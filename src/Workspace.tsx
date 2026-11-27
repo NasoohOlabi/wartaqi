@@ -38,6 +38,7 @@ import {
   type Student,
 } from '../shared/ledger'
 import {
+  courseListBack,
   navigateNotebook,
   openChildView,
   returnToParent,
@@ -414,11 +415,24 @@ function Notebook({
     )
   const showCourseSwitcher =
     query.view === 'notebook' || query.view === 'student' || settingsHistory
+  const changesBack = {
+    label: language === 'ar' ? 'رجوع' : 'Back',
+    onClick: () => returnToParent({ view: 'notebook' }),
+  }
+  const back =
+    query.view === 'student'
+      ? { label: studentBackLabel, onClick: returnToList }
+      : reviewChanges
+        ? changesBack
+        : administrator && query.view === 'courses' && query.courseView
+          ? courseListBack(language === 'ar', {
+              clearStudentFilters:
+                !selectedCourse || query.courseView === 'create' || query.courseView === 'edit',
+            })
+          : undefined
   const navigation = (
     <WorkspaceNavigation
-      back={
-        query.view === 'student' ? { label: studentBackLabel, onClick: returnToList } : undefined
-      }
+      back={back}
       defaultCourse={preference.defaultCourse}
       courses={
         showCourseSwitcher
@@ -497,7 +511,7 @@ function Notebook({
             syncChanges={refresh}
             syncing={ledger.busy}
             offline={ledger.offline}
-            close={() => returnToParent({ view: 'notebook' })}
+            back={changesBack}
           />
         </main>
       </div>
@@ -981,7 +995,7 @@ function StudentDetails({
     return (
       <section className="panel">
         <p>{ar ? 'الطالب غير متاح' : 'Student unavailable'}</p>
-        <button className="secondary student-details-back" onClick={onBack}>
+        <button className="secondary workspace-page-back" onClick={onBack}>
           {backLabel}
         </button>
       </section>
@@ -1007,7 +1021,7 @@ function StudentDetails({
         <WorkspacePageHeader
           parent={
             <button
-              className="secondary student-details-back inline-flex min-h-11 items-center gap-2"
+              className="secondary workspace-page-back inline-flex min-h-11 items-center gap-2"
               onClick={onBack}
             >
               <ArrowLeft className="icon-directional shrink-0" size={18} aria-hidden="true" />
