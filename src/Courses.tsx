@@ -218,7 +218,8 @@ export function Courses({
   const [bulkTeacher, setBulkTeacher] = useState('unchanged')
   const [failedSaves, setFailedSaves] = useState<Record<string, () => void>>({})
   const [pendingMembership, setPendingMembership] = useState<Record<string, boolean>>({})
-  const saveQueue = useRef<Promise<void>>(Promise.resolve())
+  const writeQueue = useRef<Promise<void>>(Promise.resolve())
+  const readbackQueue = useRef<Promise<void>>(Promise.resolve())
   const pendingSaves = useRef(0)
   useEffect(() => {
     if (!saved) return
@@ -238,7 +239,12 @@ export function Courses({
       setPendingMembership((current) => ({ ...current, [membership.key]: membership.active }))
     pendingSaves.current += 1
     setBusy(true)
-    const operation = saveQueue.current.then(async () => {
+    const write = writeQueue.current.then(async () => {
+      if (offlineRef.current) throw new Error('Connect to Wartaq to save course changes.')
+      if (!refreshOnly) await request(path, userId, body)
+    })
+    writeQueue.current = write.catch(() => undefined)
+    const operation = readbackQueue.current.then(async () => {
       setError('')
       setSaved(false)
       if (saveKey)
@@ -249,11 +255,8 @@ export function Courses({
         })
       let writeSucceeded = refreshOnly
       try {
-        if (offlineRef.current) throw new Error('Connect to Wartaq to save course changes.')
-        if (!writeSucceeded) {
-          await request(path, userId, body)
-          writeSucceeded = true
-        }
+        await write
+        writeSucceeded = true
         if (path === '/api/admin/courses/status') {
           await refreshBoard()
         }
@@ -285,7 +288,7 @@ export function Courses({
         if (!pendingSaves.current) setBusy(false)
       }
     })
-    saveQueue.current = operation.then(() => undefined)
+    readbackQueue.current = operation.then(() => undefined)
     return operation
   }
   const go = (courseView: string, courseId = query.course) =>

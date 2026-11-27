@@ -17,6 +17,8 @@ Use synthetic identities and independent browser contexts. Test through the same
 | Layout and local speed           | Run Arabic and English, phone and desktop. Notices remain readable and operable. Navigate/filter cached screens with the data request stalled.                                              |
 | Release                          | Run format, lint, typecheck, unit and browser suites, real database integration, artifact and dependency security checks. Confirm Railway health and deployment identity separately.        |
 
+The slow post-write read scenarios hold the notebook snapshot after an accepted attendance tap or course teacher assignment. A second edit reaches the server before the read returns. Both marks survive reload. Two edits to the same assignment reach the server in submission order and the last one survives reload.
+
 For rollback preserve existing receipt and ledger filters, IndexedDB pending IDs and all user work. Database notification triggers are additive. An old application simply ignores notifications. Avoid clearing client storage to resolve delivery problems.
 
 ## Reproducing the checks

@@ -24,6 +24,10 @@ The device confirms a save after the IndexedDB transaction commits. Each attenda
 
 ### Workspace change stream
 
+Successful notebook uploads release the delivery queue while the post-write snapshot refreshes. A slow read can delay readback, while the next locally saved edit can still reach the server. An authorization denial still triggers a checked refresh before the delivery queue proceeds.
+
+Course edits accepted by the interface send in submission order. Readback and retry notices also follow submission order. A previous edit's snapshot refresh can finish while a later edit is already sending.
+
 See the [sync design](sync-design.md) and [verification matrix](sync-verification.md). Each committed domain write triggers PostgreSQL NOTIFY. Each web process forwards a content-free Socket.IO hint. A single client connection wakes subscribed projections, which fetch through existing role-checked routes. A listener restart, client reconnect, foregrounding the page or a periodic visible-page check repairs missed hints. Administrator grades use field comparisons and operation receipts to reconcile local and server changes. Student devices persist only their own attendance projection. A first sign-in and authority-changing operations require a live server.
 
 A server rollback after any phone edit must retain the receipt filter on all event projections. Older servers would otherwise reject the receipt as an unknown ledger event. Preserve receipt rows in backup and restore.
