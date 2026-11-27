@@ -2417,3 +2417,9 @@ The navigation scenario exercises the course tabs, student return with a saved s
 The owner asked for two rows per student on the course Students page. The first row holds the name fields and course level when shown. The second holds the teacher, enrollment and handbook controls available in the selected view. In Groups, the teacher selector uses the space available alongside the enrollment switch.
 
 The course roster browser scenario passed for All columns, Groups and Books in English and Arabic at 320, 390 and 430px and on desktop. It checks row geometry and overflow with synthetic names, including a long mixed-script name, and exercises saved teacher assignments across searches. The PR records release checks and Railway verification.
+
+## 2026-11-27 08:51 Asia/Damascus — Fix the notebook roster heading
+
+The owner reported that the Export contacts label squeezed the Arabic Students heading into individual letters. The course roster now uses a localized 44px download icon. Export, Sort and Filter share the heading row when they fit and wrap together when space is tight. `AGENTS.md` records the icon preference and directs agents to ask when an icon alone may be unclear.
+
+The contact export scenario passed in desktop and emulated phone Chromium at 320, 360, 390, 430 and 1624px in English and Arabic. It checked the heading, toolbar and filtered-roster vCard download using synthetic records. The PR records release checks and deployment verification.

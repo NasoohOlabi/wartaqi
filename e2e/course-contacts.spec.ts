@@ -114,20 +114,48 @@ test('exports active course contacts and offers direct WhatsApp links', async ({
   expect(content).toContain('TEL;TYPE=CELL:+442012345678\r\n')
   expect(content).not.toMatch(/Missing|Withdrawn|Inactive|Other/)
   await page.getByLabel('Find a student').fill('')
-  for (const width of [1624, 320, 390, 430]) {
-    await page.setViewportSize({ width, height: 844 })
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
-      true,
-    )
-    if (width <= 430)
+  for (const [title, exportLabel, sortLabel, filterLabel] of [
+    ['Your students', 'Export contacts', 'Sort options', 'Filter options'],
+    ['طلابك', 'تصدير جهات الاتصال', 'خيارات الفرز', 'خيارات التصفية'],
+  ]) {
+    if (title === 'طلابك') await clickAccountAction(page, 'العربية')
+    const heading = page.getByRole('heading', { name: title, exact: true })
+    const exportAction = page.getByRole('button', { name: exportLabel, exact: true })
+    await expect(exportAction).toHaveText('')
+    await expect(exportAction).toHaveAttribute('title', exportLabel)
+    await expect(exportAction.locator('svg[aria-hidden="true"]')).toBeVisible()
+    for (const width of [1624, 320, 360, 390, 430]) {
+      await page.setViewportSize({ width, height: 844 })
+      const target = await exportAction.boundingBox()
+      expect(target?.width).toBeGreaterThanOrEqual(44)
+      expect(target?.height).toBeGreaterThanOrEqual(44)
+      for (const label of [sortLabel, filterLabel]) {
+        const control = page.getByRole('button', { name: label, exact: true })
+        await expect(control).toBeVisible()
+        expect((await control.boundingBox())?.y).toBe(target?.y)
+      }
+      const headingLines = await heading.evaluate(
+        (el) => el.clientHeight / Number.parseFloat(getComputedStyle(el).lineHeight),
+      )
+      expect(headingLines).toBe(1)
+      if (title === 'طلابك' || width >= 390) {
+        const headingBox = await heading.boundingBox()
+        expect(headingBox?.y).toBeGreaterThanOrEqual(target?.y ?? 0)
+        expect((headingBox?.y ?? 0) + (headingBox?.height ?? 0)).toBeLessThanOrEqual(
+          (target?.y ?? 0) + (target?.height ?? 0),
+        )
+      }
       expect(
-        await page
-          .locator('.roster-students-table')
-          .evaluate((el) => el.scrollWidth <= el.parentElement!.clientWidth + 1),
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
       ).toBe(true)
+      if (width <= 430)
+        expect(
+          await page
+            .locator('.roster-students-table')
+            .evaluate((el) => el.scrollWidth <= el.parentElement!.clientWidth + 1),
+        ).toBe(true)
+    }
   }
-  await clickAccountAction(page, 'العربية')
-  await expect(page.getByRole('button', { name: 'تصدير جهات الاتصال' })).toBeVisible()
   const arabicChat = page.getByRole('link', { name: 'محادثة واتساب: ٠٩١٢٣٤٥٦٧٨' })
   await expect(arabicChat).toHaveAttribute('href', 'https://wa.me/963912345678')
   await expect(arabicChat).toHaveText('')
@@ -136,14 +164,5 @@ test('exports active course contacts and offers direct WhatsApp links', async ({
     const target = await arabicChat.boundingBox()
     expect(target?.width).toBeGreaterThanOrEqual(44)
     expect(target?.height).toBeGreaterThanOrEqual(44)
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
-      true,
-    )
-    if (width <= 430)
-      expect(
-        await page
-          .locator('.roster-students-table')
-          .evaluate((el) => el.scrollWidth <= el.parentElement!.clientWidth + 1),
-      ).toBe(true)
   }
 })
