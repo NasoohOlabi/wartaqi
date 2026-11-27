@@ -3,9 +3,18 @@ import { clickAccountAction } from './profileActions'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 import {
+  applyGradeChanges,
+  gradeChangesConflict,
+  gradeOperationSchema,
+  gradeRecoverySchema,
+} from '../shared/gradeSync'
+import type { LedgerEvent } from '../shared/ledger'
+import { acceptSyntheticSync } from './syntheticSync'
+import {
   enrollmentSchema,
   enrollmentAssignmentSchema,
   courseSchema,
+  type Enrollment,
   type EnrollmentAssignment,
 } from '../shared/neon'
 
@@ -86,7 +95,7 @@ async function setupCourses(page: Page) {
     { id: courseA, name: 'Course A', open: true },
     { id: courseB, name: 'Course B', open: true },
   ]
-  const enrollments = [
+  const enrollments: Enrollment[] = [
     {
       id: enrollA,
       teacherId: null as string | null,
@@ -99,6 +108,7 @@ async function setupCourses(page: Page) {
       active: true,
       handbookReceived: false,
       notes: '',
+      gradeDecisions: [],
     },
     {
       id: enrollB,
@@ -112,6 +122,7 @@ async function setupCourses(page: Page) {
       active: true,
       handbookReceived: false,
       notes: '',
+      gradeDecisions: [],
     },
   ]
   const board = {
@@ -147,18 +158,25 @@ async function setupCourses(page: Page) {
       teacherId,
     })),
   }
-  const events: unknown[] = []
+  const events: LedgerEvent[] = []
   const attemptedCourseIds: string[] = []
   const assignments: EnrollmentAssignment[] = []
   let assignmentGate: Promise<void> | undefined
   let failAssignment = false
   let dropCourseResponse = true
+  let identity: string | null = teacherId
+  let administratorId = teacherId
   await page.route('**/api/auth/**', async (route) => {
+    if (new URL(route.request().url()).pathname.endsWith('/sign-out')) {
+      identity = null
+      return route.fulfill({ json: { success: true } })
+    }
+    if (!identity) return route.fulfill({ json: null })
     const now = new Date().toISOString()
     await route.fulfill({
       json: {
         user: {
-          id: teacherId,
+          id: identity,
           name: 'Updated Admin',
           email: 'admin@example.test',
           emailVerified: true,
@@ -167,7 +185,7 @@ async function setupCourses(page: Page) {
         },
         session: {
           id: 'session',
-          userId: teacherId,
+          userId: identity,
           token: 'synthetic',
           expiresAt: new Date(Date.now() + 3600000).toISOString(),
           createdAt: now,
@@ -179,7 +197,8 @@ async function setupCourses(page: Page) {
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname
     if (path.startsWith('/api/auth/')) return route.fallback()
-    if (path === '/api/me') return route.fulfill({ json: { account: teacher } })
+    if (path === '/api/me')
+      return route.fulfill({ json: { account: { ...teacher, id: administratorId } } })
     if (path === '/api/admin/courses/settings') {
       const body = route.request().postDataJSON()
       const index = courses.findIndex((item) => item.id === body.id)
@@ -287,10 +306,21 @@ async function setupCourses(page: Page) {
       return route.fulfill({ json: { saved: true } })
     }
     if (path === '/api/admin/enrollments/grades') {
-      const body = route.request().postDataJSON()
+      const input: unknown = route.request().postDataJSON()
+      const recovered = gradeRecoverySchema.safeParse(input)
+      const body = recovered.success ? recovered.data.operation : gradeOperationSchema.parse(input)
       const index = enrollments.findIndex((entry) => entry.id === body.id)
-      enrollments[index] = { ...enrollments[index], ...body }
-      return route.fulfill({ json: { saved: true } })
+      if (index < 0) return route.fulfill({ json: { status: 'blocked' } })
+      const entry = enrollmentSchema.parse(enrollments[index])
+      if (gradeChangesConflict(entry, body.fields))
+        return route.fulfill({
+          json: {
+            status: 'conflict',
+            current: { practical: entry.practical, theory: entry.theory, notes: entry.notes },
+          },
+        })
+      enrollments[index] = { ...entry, ...applyGradeChanges(entry, body.fields) }
+      return route.fulfill({ json: { status: 'accepted' } })
     }
     if (path === '/api/admin/students/enroll') {
       const body = route.request().postDataJSON()
@@ -314,7 +344,19 @@ async function setupCourses(page: Page) {
       return route.fulfill({ json: board })
     }
     if (path === '/api/events') events.push(...route.request().postDataJSON().events)
-    return route.fulfill({ json: { teacher, students, courses, enrollments, events } })
+    if (path === '/api/attendance/sync' || path === '/api/student/sync')
+      return route.fulfill({
+        json: acceptSyntheticSync(path, route.request().postDataJSON(), events),
+      })
+    return route.fulfill({
+      json: {
+        teacher: { ...teacher, id: administratorId },
+        students,
+        courses,
+        enrollments,
+        events,
+      },
+    })
   })
   const savedToast = page.getByRole('status').filter({ hasText: /^(Saved|تم الحفظ)$/ })
   return {
@@ -328,6 +370,10 @@ async function setupCourses(page: Page) {
     failNextAssignment: () => {
       failAssignment = true
     },
+    signInAs: (userId: string, adminId: string) => {
+      identity = userId
+      administratorId = adminId
+    },
     holdNextAssignment: () => {
       let release = () => {}
       assignmentGate = new Promise((resolve) => {
@@ -337,6 +383,146 @@ async function setupCourses(page: Page) {
     },
   }
 }
+
+test('offline grades survive reload and replay from the dashboard with review', async ({
+  page,
+  context,
+}) => {
+  const { enrollments } = await setupCourses(page)
+  let networkAvailable = true
+  await page.route('**/api/**', async (route) => {
+    if (networkAvailable) await route.fallback()
+    else await route.abort('internetdisconnected')
+  })
+  const gradeUrl = `/?page=app&view=courses&course=${courseA}&courseView=grades`
+  await page.goto(gradeUrl)
+  const practical = page.getByLabel('Practical: Synthetic Student')
+  const note = page.getByLabel('Course performance note: Synthetic Student')
+  await expect(practical).toHaveValue('')
+  await page.evaluate(() => navigator.serviceWorker.ready.then(() => true))
+  await page.reload()
+  await expect
+    .poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)))
+    .toBe(true)
+  networkAvailable = false
+  await context.setOffline(true)
+  await practical.fill('75')
+  await note.fill('Offline performance review')
+  await page.evaluate(() => {
+    const add = IDBObjectStore.prototype.add
+    IDBObjectStore.prototype.add = function (value, key) {
+      if (this.name === 'grades') {
+        IDBObjectStore.prototype.add = add
+        throw new DOMException('Synthetic grade storage failure', 'QuotaExceededError')
+      }
+      return add.call(this, value, key)
+    }
+  })
+  await page.getByRole('button', { name: 'Save grades', exact: true }).click()
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Unable to save grade changes on this device.' }),
+  ).toBeVisible()
+  await expect(practical).toHaveValue('75')
+  await expect(note).toHaveValue('Offline performance review')
+  await page.getByRole('button', { name: 'Save grades', exact: true }).click()
+  await expect(
+    page.getByText('Grade changes saved on this device and waiting to sync.'),
+  ).toBeVisible()
+  await page.reload()
+  await expect(practical).toHaveValue('75')
+  await expect(note).toHaveValue('Offline performance review')
+  expect(enrollments[0].practical).toBeNull()
+  enrollments[0].practical = 85
+  await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
+  networkAvailable = true
+  await context.setOffline(false)
+  const sync = page.getByRole('complementary', { name: 'Grade sync' })
+  await expect(sync.getByText('Grade changes need review.', { exact: false })).toBeVisible()
+  await expect(sync.getByText('Saved value 85')).toBeVisible()
+  await expect(sync.getByText('Your value 75')).toBeVisible()
+  await sync.getByRole('button', { name: 'Keep my grade changes' }).click()
+  await expect.poll(() => enrollments[0].notes).toBe('Offline performance review')
+  expect(enrollments[0].practical).toBe(75)
+  await expect(sync).toHaveCount(0)
+  await page.goto(gradeUrl)
+  await expect(practical).toHaveValue('75')
+  await expect(note).toHaveValue('Offline performance review')
+})
+
+test('earlier grade edits require the same authorized administrator and an explicit retry', async ({
+  page,
+}) => {
+  const { enrollments, signInAs } = await setupCourses(page)
+  const gradeUrl = `/?page=app&view=courses&course=${courseA}&courseView=grades`
+  const sent: unknown[] = []
+  let reachable = false
+  await page.route('**/api/admin/enrollments/grades', async (route) => {
+    sent.push(route.request().postDataJSON())
+    if (!reachable) return route.abort('connectionreset')
+    return route.fallback()
+  })
+  await page.goto(gradeUrl)
+  await page
+    .getByLabel('Course performance note: Synthetic Student')
+    .fill('Private earlier grade edit')
+  await page.getByRole('button', { name: 'Save grades', exact: true }).click()
+  await expect.poll(() => sent.length).toBeGreaterThan(0)
+  const original = gradeOperationSchema.parse(sent[0])
+  await clickAccountAction(page, 'Sign out')
+  await expect(page.getByRole('button', { name: 'Save grades', exact: true })).toHaveCount(0)
+
+  reachable = true
+  const notice = page.getByRole('complementary', { name: 'Grade sync' })
+  signInAs(otherAdminId, teacherId)
+  await page.goto(gradeUrl)
+  await expect(page.getByRole('region', { name: 'Course grades' })).toBeVisible()
+  await expect(notice).toHaveCount(0)
+  signInAs(teacherId, otherAdminId)
+  await page.reload()
+  await expect(page.getByRole('region', { name: 'Course grades' })).toBeVisible()
+  await expect(notice).toHaveCount(0)
+  signInAs(teacherId, teacherId)
+  const authorizationRequested = Promise.withResolvers<void>()
+  const authorize = Promise.withResolvers<void>()
+  await page.route(
+    '**/api/me',
+    async (route) => {
+      authorizationRequested.resolve()
+      await authorize.promise
+      await route.fallback()
+    },
+    { times: 1 },
+  )
+  await page.reload()
+  await authorizationRequested.promise
+  await expect(notice).toHaveCount(0)
+  authorize.resolve()
+  await expect(notice.getByText('Private earlier grade edit', { exact: false })).toBeVisible()
+  expect(enrollments[0].notes).toBe('')
+  await notice.getByRole('button', { name: 'Send earlier grade changes' }).click()
+  await expect.poll(() => enrollments[0].notes).toBe('Private earlier grade edit')
+  const recovered = gradeRecoverySchema.parse(sent.at(-1))
+  expect(recovered.operation.requestId).toBe(original.requestId)
+  await expect(notice).toHaveCount(0)
+})
+
+test('a browser without Web Locks reports grade delivery unavailable and keeps the draft', async ({
+  page,
+}) => {
+  const { enrollments } = await setupCourses(page)
+  await page.addInitScript(() => Object.defineProperty(navigator, 'locks', { value: undefined }))
+  await page.goto(`/?page=app&view=courses&course=${courseA}&courseView=grades`)
+  const note = page.getByLabel('Course performance note: Synthetic Student')
+  await expect(
+    page.getByText('This browser cannot safely save and sync grade changes.'),
+  ).toBeVisible()
+  await note.fill('Draft without locks')
+  await page.getByRole('button', { name: 'Save grades', exact: true }).click()
+  await expect(page.getByText('Unable to save grade changes on this device.')).toBeVisible()
+  await expect(note).toHaveValue('Draft without locks')
+  await expect(page.getByRole('complementary', { name: 'Grade sync' })).toHaveCount(0)
+  expect(enrollments[0].notes).toBe('')
+})
 
 test('course sections and Settings keep their place in the workspace', async ({
   page,
@@ -1056,18 +1242,27 @@ test('course roster modes focus the table and save a group across searches', asy
     })
     await expect(addStudent).toHaveText('')
     await expect(addStudent.locator('svg')).toBeVisible()
+    await expect(addStudent).toBeEnabled()
     for (const width of testInfo.project.name === 'mobile' ? [320, 390, 430] : [1440]) {
       await page.setViewportSize({ width, height: 844 })
-      const addBox = await addStudent.boundingBox()
-      const searchBox = await studentSearch.boundingBox()
-      if (!addBox || !searchBox) throw new Error('Missing roster search or add-student icon')
-      expect(addBox.width).toBe(44)
-      expect(addBox.height).toBe(44)
-      expect(addBox.y + addBox.height).toBeCloseTo(searchBox.y + searchBox.height)
-      const gap = ar
-        ? searchBox.x - addBox.x - addBox.width
-        : addBox.x - searchBox.x - searchBox.width
-      expect(gap).toBeCloseTo(8)
+      await expect
+        .poll(async () => {
+          const [addBox, searchBox] = await Promise.all([
+            addStudent.boundingBox(),
+            studentSearch.boundingBox(),
+          ])
+          if (!addBox || !searchBox) return null
+          const gap = ar
+            ? searchBox.x - addBox.x - addBox.width
+            : addBox.x - searchBox.x - searchBox.width
+          return [
+            addBox.width,
+            addBox.height,
+            Math.round(gap * 100) / 100,
+            Math.round((addBox.y + addBox.height - searchBox.y - searchBox.height) * 100) / 100,
+          ]
+        })
+        .toEqual([44, 44, 8, 0])
       for (const mode of ['all', 'groups', 'books']) {
         await page
           .locator('select')
@@ -1175,11 +1370,17 @@ test('grades, attendance, and withdrawal preserve course history', async ({ page
   await page.setViewportSize({ width: 1440, height: 900 })
   const compactGradeRow = page.getByRole('row').filter({ hasText: 'Synthetic' })
   const overrideButton = recordActions(compactGradeRow)
-  const saveBounds = await compactGradeRow
-    .getByRole('button', { name: 'Save grades' })
-    .boundingBox()
-  const overrideBounds = await overrideButton.boundingBox()
-  expect(overrideBounds?.y).toBe(saveBounds?.y)
+  await expect(overrideButton).toBeVisible()
+  await expect(page.getByText('Offline', { exact: true })).toHaveCount(0)
+  await expect
+    .poll(async () => {
+      const [saveBounds, overrideBounds] = await Promise.all([
+        compactGradeRow.getByRole('button', { name: 'Save grades' }).boundingBox(),
+        overrideButton.boundingBox(),
+      ])
+      return saveBounds && overrideBounds ? overrideBounds.y - saveBounds.y : null
+    })
+    .toBe(0)
   await clickRecordAction(compactGradeRow, 'Override result')
   const dialog = page.getByRole('dialog')
   await expect(dialog).toBeVisible()

@@ -100,7 +100,9 @@ test('authenticated notebook supports attendance, notes and corrections', async 
   }
   await page.keyboard.press('Escape')
   await page.getByRole('button', { name: 'Save attendance (1)' }).click()
-  await expect(page.getByRole('status')).toContainText('1 record saved.')
+  await expect(
+    page.getByRole('status').filter({ hasText: 'Changes accepted by Wartaq.' }),
+  ).toBeVisible()
   await page.getByRole('button', { name: 'Summary', exact: true }).click()
   const summaryRow = page.getByRole('row', { name: /ليلى/ })
   await expect(summaryRow.locator('td[data-label="absent"]')).toHaveText('1')

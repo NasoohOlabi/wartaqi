@@ -64,6 +64,10 @@ jobs:
       - name: Build standalone Telegram worker
         run: docker build -f telegram/Dockerfile .
       - run: bunx playwright install --with-deps chromium
+      - name: Verify offline writes and live delivery between independent browsers
+        env:
+          TEST_RAILWAY_DATABASE_URL: postgres://postgres@127.0.0.1:5432/notebook_test
+        run: bunx playwright test e2e/workspace-sync.spec.ts --project=chromium
       - run: bun run verify:ui
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()

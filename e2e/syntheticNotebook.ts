@@ -3,6 +3,7 @@ import { makeEvent } from '../shared/ledger'
 import { neonBatchSchema, neonSnapshotSchema } from '../shared/neon'
 import { today } from '../src/queryState'
 import { clickAccountAction } from './profileActions'
+import { acceptSyntheticSync } from './syntheticSync'
 
 const userId = '10000000-0000-4000-8000-000000000001'
 export const courseId = '40000000-0000-4000-8000-000000000001'
@@ -108,6 +109,15 @@ export async function mockSyntheticNotebook(
         return route.fulfill({ json: { ok: true } })
       case '/api/admin':
         return route.fulfill({ json: { accounts: [], teachers: [], students: [] } })
+      case '/api/attendance/sync':
+      case '/api/student/sync':
+        return route.fulfill({
+          json: acceptSyntheticSync(
+            new URL(route.request().url()).pathname,
+            route.request().postDataJSON(),
+            snapshot.events,
+          ),
+        })
       case '/api/events': {
         const { events } = neonBatchSchema.parse(route.request().postDataJSON())
         snapshot.events.push(...events)

@@ -4,7 +4,11 @@ import {
   offlineAttendanceSyncSchema,
 } from '../shared/offlineAttendance'
 import { z } from 'zod'
-import { offlineStudentSyncSchema } from '../shared/offlineStudent'
+import {
+  offlineStudentSyncSchema,
+  profileConflicts,
+  type EditableProfile,
+} from '../shared/offlineStudent'
 import type { LedgerEvent } from '../shared/ledger'
 
 const accountId = 'offline-teacher'
@@ -20,7 +24,7 @@ const conflictingId = '30000000-0000-4000-8000-000000000001'
 const date = '2026-11-18'
 const courseUrl = `/?page=app&tab=attendance&course=${courseId}&date=${date}`
 
-test('the full roster, attendance, notes and phone edits survive a cold offline restart and reconcile', async ({
+test('the full roster, attendance, notes and profile edits survive a cold offline restart and reconcile', async ({
   context,
   page,
 }, testInfo) => {
@@ -78,7 +82,18 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   const notes = new Map<string, LedgerEvent>()
   const contactReceipts = new Set<string>()
   const studentAttempts: string[] = []
-  let serverPhone = oldPhone
+  let holdProfileWrite = false
+  let releaseProfileWrite = () => {}
+  const profileWrite = new Promise<void>((resolve) => {
+    releaseProfileWrite = resolve
+  })
+  let serverProfile: EditableProfile = {
+    firstName: unenrolledName,
+    lastName: '',
+    whatsapp: oldPhone,
+    location: null,
+    birthYear: null,
+  }
   let lostReply = false
   let lostNoteReply = false
   let rejectFirstStudent = true
@@ -96,7 +111,13 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
         json: {
           ...snapshot,
           students: snapshot.students.map((student) =>
-            student.studentId === unenrolledId ? { ...student, whatsapp: serverPhone } : student,
+            student.studentId === unenrolledId
+              ? {
+                  ...student,
+                  ...serverProfile,
+                  name: [serverProfile.firstName, serverProfile.lastName].filter(Boolean).join(' '),
+                }
+              : student,
           ),
           events: [...accepted.values(), ...notes.values()],
         },
@@ -111,17 +132,37 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
           lostNoteReply = true
           return route.abort('connectionreset')
         }
-        return route.fulfill({ json: { id, kind: 'saved', currentWhatsapp: serverPhone } })
+        return route.fulfill({
+          json: { id, kind: 'saved', currentWhatsapp: serverProfile.whatsapp },
+        })
       }
-      const { id, expectedWhatsapp, whatsapp } = operation
+      expect(operation.kind).toBe('profile-v1')
+      if (operation.kind !== 'profile-v1') throw new Error('Expected queued profile edit')
+      if (holdProfileWrite) await profileWrite
+      const { id, changes } = operation
       if (!contactReceipts.has(id)) {
-        if (expectedWhatsapp !== serverPhone)
-          return route.fulfill({ json: { id, kind: 'conflict', currentWhatsapp: serverPhone } })
-        expect(whatsapp).toBe(updatedPhone)
-        serverPhone = updatedPhone
+        const conflicts = profileConflicts(serverProfile, operation)
+        if (conflicts.length)
+          return route.fulfill({
+            json: {
+              id,
+              kind: 'conflict',
+              currentWhatsapp: serverProfile.whatsapp,
+              profile: serverProfile,
+              profileConflicts: conflicts,
+            },
+          })
+        serverProfile = { ...serverProfile, ...changes }
         contactReceipts.add(id)
       }
-      return route.fulfill({ json: { id, kind: 'saved', currentWhatsapp: serverPhone } })
+      return route.fulfill({
+        json: {
+          id,
+          kind: 'saved',
+          currentWhatsapp: serverProfile.whatsapp,
+          profile: serverProfile,
+        },
+      })
     }
     expect(path).toBe('/api/attendance/sync')
     const body = offlineAttendanceSyncSchema.parse(route.request().postDataJSON())
@@ -275,6 +316,12 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   }
   await offlinePage.getByRole('button', { name: /^Edit (student|phone)$/ }).click()
   await expect(phone).toHaveValue(oldPhone)
+  await offlinePage.getByRole('textbox', { name: 'First name', exact: true }).fill('Updated')
+  await offlinePage.getByRole('textbox', { name: 'Last name', exact: true }).fill('Student')
+  await offlinePage
+    .getByRole('textbox', { name: 'Location', exact: true })
+    .fill('Synthetic location')
+  await offlinePage.getByRole('spinbutton', { name: 'Birth year' }).fill('2010')
   await phone.fill(updatedPhone)
   await offlinePage.getByRole('button', { name: 'Save', exact: true }).click()
   await expect(offlinePage.getByText(/5 pending changes/)).toBeVisible()
@@ -286,6 +333,13 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   await expect(savedNotes.getByText('Second offline note', { exact: true })).toHaveCount(1)
   await offlinePage.getByRole('button', { name: /^Edit (student|phone)$/ }).click()
   await expect(phone).toHaveValue(updatedPhone)
+  await expect(offlinePage.getByRole('textbox', { name: 'Last name', exact: true })).toHaveValue(
+    'Student',
+  )
+  await expect(offlinePage.getByRole('textbox', { name: 'Location', exact: true })).toHaveValue(
+    'Synthetic location',
+  )
+  await expect(offlinePage.getByRole('spinbutton', { name: 'Birth year' })).toHaveValue('2010')
   await offlinePage.goto(courseUrl)
   await expect(firstRow.getByRole('button', { name: /present/i })).toHaveAttribute(
     'aria-pressed',
@@ -298,7 +352,8 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   expect(attempts).toEqual([])
   expect(studentAttempts).toEqual([])
 
-  serverPhone = otherPhone
+  serverProfile.whatsapp = otherPhone
+  serverProfile.location = 'Other synthetic location'
   networkAvailable = true
   await context.setOffline(false)
   const changesMenuItem = offlinePage.getByRole('button', { name: 'My changes', exact: true })
@@ -324,6 +379,9 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   await offlinePage.keyboard.press('Escape')
   await expect(changesHeading).toBeVisible()
   await expect(offlinePage.getByRole('button', { name: 'Use my phone' })).toBeVisible()
+  await expect(offlinePage.getByRole('button', { name: 'Keep saved location' })).toBeVisible()
+  await expect(offlinePage.getByText(otherPhone, { exact: true })).toBeVisible()
+  await expect(offlinePage.getByText(updatedPhone, { exact: true })).toBeVisible()
   await expect(offlinePage.getByText('3 pending sync')).toBeVisible()
   expect(notes.size).toBe(2)
   expect(new Set(studentAttempts).size).toBe(2)
@@ -336,10 +394,20 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   expect(attempts.filter((id) => id === [...accepted.keys()][0]).length).toBeGreaterThanOrEqual(2)
   await offlinePage.getByRole('button', { name: 'Use my mark' }).click()
   await expect(offlinePage.getByText('1 pending sync')).toBeVisible()
+  await offlinePage.getByRole('button', { name: 'Keep saved location' }).click()
+  await expect(offlinePage.getByRole('button', { name: 'Keep saved location' })).toHaveCount(0)
+  await expect(offlinePage.getByRole('button', { name: 'Use my phone' })).toBeVisible()
+  expect(contactReceipts.size).toBe(0)
   await offlinePage.getByRole('button', { name: 'Use my phone' }).click()
   await expect(offlinePage.getByText('No changes waiting to sync.')).toBeVisible()
   expect([...accepted.values()].map(({ payload }) => payload.status)).toEqual(['present', 'absent'])
-  expect(serverPhone).toBe(updatedPhone)
+  expect(serverProfile).toEqual({
+    firstName: 'Updated',
+    lastName: 'Student',
+    whatsapp: updatedPhone,
+    location: 'Other synthetic location',
+    birthYear: 2010,
+  })
   expect(contactReceipts.size).toBe(1)
   await expect(offlinePage.getByRole('button', { name: 'Sync now' })).toHaveCount(0)
   await expect(navigation).toBeVisible()
@@ -349,10 +417,28 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
     'page',
   )
 
+  await test.step('closes the online profile form after local commit while the write is held', async () => {
+    await offlinePage.goto(`/?page=app&view=student&course=all&student=${unenrolledId}`)
+    await offlinePage.getByRole('button', { name: /^Edit (student|phone)$/ }).click()
+    const location = offlinePage.getByRole('textbox', { name: 'Location', exact: true })
+    await location.fill('Slow link location')
+    holdProfileWrite = true
+    try {
+      await offlinePage.getByRole('button', { name: 'Save', exact: true }).click()
+      await expect(location).toHaveCount(0)
+      await expect(offlinePage.getByText(/Slow link location/)).toBeVisible()
+      expect(serverProfile.location).toBe('Other synthetic location')
+    } finally {
+      holdProfileWrite = false
+      releaseProfileWrite()
+    }
+    await expect.poll(() => serverProfile.location).toBe('Slow link location')
+  })
+
   snapshot.students.shift()
   snapshot.enrollments.shift()
   await offlinePage.evaluate(() => localStorage.removeItem('halaqa-offline-access'))
-  await offlinePage.reload()
+  await offlinePage.goto(courseUrl)
   await expect(offlinePage.getByRole('heading', { name: 'Attendance & notes' })).toBeVisible()
   await expect
     .poll(() => offlinePage.evaluate(() => Boolean(localStorage.getItem('halaqa-offline-access'))))
@@ -367,7 +453,10 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   await offlinePage.goto(`/?page=app&view=student&course=all&student=${unenrolledId}`)
   await offlinePage.clock.runFor(500)
   await expect(offlinePage.getByText('First offline note', { exact: true })).toHaveCount(1)
-  await offlinePage.evaluate(() => localStorage.removeItem('halaqa-offline-access'))
+  await offlinePage.evaluate(() => {
+    localStorage.removeItem('halaqa-offline-access')
+    localStorage.removeItem('wartaq-local-grant')
+  })
   await offlinePage.clock.runFor(1_000)
   await expect(offlinePage.getByRole('alert')).toHaveText(
     'Offline access expired. Connect and sign in again.',

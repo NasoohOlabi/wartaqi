@@ -2467,3 +2467,9 @@ Synthetic browser checks cover Arabic and English at 320, 390 and 430px and wide
 The owner requested the same phone layout in Settings → Students and icon buttons for Edit and Add student. WhatsApp shares the number line, the pencil sits beside the name fields on phones, and the person-plus icon shares the heading toolbar.
 
 Synthetic browser checks cover English and Arabic on desktop and at 320, 390 and 430px. They check alignment, overflow, localized labels, 44px targets, form navigation and the existing student save flow. The PR records release checks and Railway verification. Native WhatsApp handoff remains unverified.
+
+## 2026-11-27 10:44 Asia/Damascus — Offline workspace and live delivery
+
+The owner requested durable, fast offline work and live updates across the site for a small teaching team. The design and verification matrix document role-scoped device storage, optimistic edits, explicit conflict review, and repair after missed signals. Transactional PostgreSQL notifications wake authenticated Socket.IO clients. Routine notebook, profile and grade edits survive reloads and replay with their original operation IDs. Access administration and external effects require a connection.
+
+Local verification exercised independent signed-in browsers against real Bun and disposable Postgres, denied sockets, missed notifications, rollback, conflicting and repeated mutations, same-account grade recovery and receipt backup/restore. Desktop and phone tests cover saved records during a stalled request, Settings queue delivery and identity isolation. The PR records final release and Railway checks. Browser storage eviction, physical devices and network latency in the field require separate measurement.

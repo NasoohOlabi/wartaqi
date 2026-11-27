@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLanguage } from './useLanguage'
+import type { ProfileField } from '../shared/offlineStudent'
 import {
   subscribeOfflineQueue,
   attendanceKey,
@@ -7,13 +8,29 @@ import {
   listPendingAttendance,
   listPendingStudent,
   resolveStudentConflict,
+  snapshotKey,
   studentOperationId,
   type PendingStudent,
   resolveAttendanceConflict,
   type PendingAttendance,
   type OfflineSnapshot,
 } from './offlineAttendanceStore'
-import { offlineAccess } from './offlineAccess'
+import { localGrant, offlineAccess } from './offlineAccess'
+
+const profileFieldLabels: Record<ProfileField, [string, string]> = {
+  firstName: ['first name', 'الاسم الأول'],
+  lastName: ['last name', 'اسم العائلة'],
+  whatsapp: ['phone', 'الهاتف'],
+  location: ['location', 'المنطقة'],
+  birthYear: ['birth year', 'سنة الميلاد'],
+}
+
+function mayReview(userId: string) {
+  const grant = localGrant(userId)
+  return grant
+    ? grant.account.role !== 'student' && grant.account.canWrite
+    : offlineAccess()?.userId === userId
+}
 
 export function OfflineAttendance({
   userId,
@@ -37,23 +54,42 @@ export function OfflineAttendance({
   const reviewHeading = useRef<HTMLHeadingElement>(null)
   const [leaseExpired, setLeaseExpired] = useState(false)
   const [loaded, setLoaded] = useState(false)
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      if (offlineAccess()?.userId !== userId) setLeaseExpired(true)
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [userId])
-  const refresh = async () => {
-    setSnapshot(await getOfflineSnapshot(userId))
-    setPending(await listPendingAttendance(userId))
-    setStudentPending(await listPendingStudent(userId))
+  const revision = useRef(0)
+  const refresh = useCallback(async () => {
+    if (!mayReview(userId)) {
+      setLeaseExpired(true)
+      return
+    }
+    const current = ++revision.current
+    const key = snapshotKey(userId)
+    const [snapshot, marks, students] = await Promise.all([
+      getOfflineSnapshot(userId, key),
+      listPendingAttendance(userId),
+      listPendingStudent(userId),
+    ])
+    if (current !== revision.current) return
+    if (!mayReview(userId) || snapshotKey(userId) !== key) {
+      setLeaseExpired(true)
+      return
+    }
+    setSnapshot(snapshot)
+    setPending(marks)
+    setStudentPending(students)
     setLoaded(true)
-  }
-  // The store is external and must be read when the account changes.
-  useEffect(() => {
-    void refresh().catch(() => setError('Offline storage is unavailable.'))
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
+  useEffect(() => {
+    const readQueue = () => void refresh().catch(() => setError('Offline storage is unavailable.'))
+    queueMicrotask(readQueue)
+    const unsubscribe = subscribeOfflineQueue(readQueue)
+    const timer = window.setInterval(() => {
+      if (!mayReview(userId)) setLeaseExpired(true)
+    }, 1000)
+    return () => {
+      revision.current += 1
+      unsubscribe()
+      window.clearInterval(timer)
+    }
+  }, [refresh, userId])
   useEffect(() => {
     reviewHeading.current?.focus({ preventScroll: true })
   }, [])
@@ -67,15 +103,6 @@ export function OfflineAttendance({
       setError(t('The request failed. Please try again.'))
     }
   }
-  useEffect(
-    () =>
-      subscribeOfflineQueue(() => {
-        void refresh().catch(() => setError('Offline storage is unavailable.'))
-      }),
-    // The subscription follows the account; refresh reads that account.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-    [userId],
-  )
   const pendingCount = pending.length + studentPending.length
   if (leaseExpired)
     return (
@@ -223,9 +250,65 @@ export function OfflineAttendance({
                   </bdi>
                 </p>
                 <p className="muted">
-                  {operation.kind === 'note' ? (ar ? 'ملاحظة' : 'Note') : ar ? 'هاتف' : 'Phone'} ·{' '}
-                  {changeStatus(item.outcome?.kind)}
+                  {operation.kind === 'note'
+                    ? ar
+                      ? 'ملاحظة'
+                      : 'Note'
+                    : operation.kind === 'contact'
+                      ? ar
+                        ? 'هاتف'
+                        : 'Phone'
+                      : ar
+                        ? 'معلومات الطالب'
+                        : 'Student information'}{' '}
+                  · {changeStatus(item.outcome?.kind)}
                 </p>
+                {operation.kind === 'profile-v1' &&
+                  item.outcome?.kind === 'conflict' &&
+                  item.outcome.profileConflicts?.map((field) => {
+                    const [en, arabic] = profileFieldLabels[field]
+                    const label = ar ? arabic : en
+                    return (
+                      <div key={field} className="flex flex-wrap gap-2">
+                        <p className="basis-full">
+                          {ar ? `${label} المحفوظ` : `Saved ${label}`}:{' '}
+                          <bdi>{item.outcome?.profile?.[field] ?? '—'}</bdi> ·{' '}
+                          {ar ? `${label} الذي أدخلته` : `Your ${label}`}:{' '}
+                          <bdi>{operation.changes[field] ?? '—'}</bdi>
+                        </p>
+                        <button
+                          className="secondary"
+                          onClick={() =>
+                            void resolveStudentConflict(userId, id, 'server', field)
+                              .then(async () => {
+                                await refresh()
+                                await sync()
+                              })
+                              .catch(() =>
+                                setError(ar ? 'تعذّر حل التعارض.' : 'Could not resolve conflict.'),
+                              )
+                          }
+                        >
+                          {ar ? `الاحتفاظ بالقيمة المحفوظة لحقل ${label}` : `Keep saved ${label}`}
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={() =>
+                            void resolveStudentConflict(userId, id, 'local', field)
+                              .then(async () => {
+                                await refresh()
+                                await sync()
+                              })
+                              .catch(() =>
+                                setError(ar ? 'تعذّر حل التعارض.' : 'Could not resolve conflict.'),
+                              )
+                          }
+                        >
+                          {ar ? `استخدام القيمة التي أدخلتها لحقل ${label}` : `Use my ${label}`}
+                        </button>
+                      </div>
+                    )
+                  })}
                 {item.outcome?.kind === 'conflict' && operation.kind === 'contact' && (
                   <div className="flex flex-wrap gap-2">
                     <p className="basis-full">

@@ -20,7 +20,11 @@ import type { Profile } from './ProfileMenu'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
 import { WorkspacePageHeader } from './WorkspacePageHeader'
 import { SettingsNavigation } from './SettingsNavigation'
-import { getNotebook, request } from './neon'
+import { request } from './neon'
+import type { CachedAccess } from './offlineAccess'
+import { useAdminBoardReplica } from './useRoleReplica'
+import { StaffPendingNotice } from './StaffReplica'
+import { openStaffChanges, useStaffReplica } from './staffReplicaContext'
 import { returnToParent, setQuery, useQueryState } from './queryState'
 
 type Board = z.infer<typeof neonAdminBoardSchema>
@@ -31,12 +35,14 @@ export function AdminConsole({
   userId,
   signOut,
   profile,
+  cached,
   initialCreateStudent = false,
   courseId = '',
 }: {
   userId: string
   signOut: () => void
   profile: Profile
+  cached?: CachedAccess
   initialCreateStudent?: boolean
   courseId?: string
 }) {
@@ -45,50 +51,22 @@ export function AdminConsole({
   const addStudentLabel = ar ? 'إضافة طالب' : 'Add student'
   const editLabel = ar ? 'تعديل' : 'Edit'
   const query = useQueryState()
-  const [board, setBoard] = useState<Board | null>(null)
+  const { data: board, error: boardError, refresh } = useAdminBoardReplica()
+  const ledger = useStaffReplica()
+  const hasChanges = ledger.offlinePendingCount > 0
+  const offline = Boolean(cached)
+  const connectionRequired = ar
+    ? 'اتصل بوارتق لحفظ تغييرات الإدارة.'
+    : 'Connect to Wartaq to save administration changes.'
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [inviting, setInviting] = useState(false)
   const [editing, setEditing] = useState<Student | null>(null)
   const [creating, setCreating] = useState(initialCreateStudent)
-  const [revision, setRevision] = useState(0)
-  const [courseName, setCourseName] = useState('')
+  const courseName = ledger.courses.find((course) => course.id === courseId)?.name ?? ''
+  const courseError = courseId && !courseName ? ledger.error : ''
   const [enrollmentId] = useState(() => crypto.randomUUID())
-  useEffect(() => {
-    if (!courseId) return
-    let cancelled = false
-    getNotebook(userId)
-      .then((snapshot) => {
-        if (!cancelled)
-          setCourseName(snapshot.courses.find((course) => course.id === courseId)?.name ?? '')
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : 'Load failed')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [courseId, userId])
-  useEffect(() => {
-    let cancelled = false
-    request('/api/admin', userId)
-      .then((value) => {
-        if (!cancelled) {
-          setBoard(neonAdminBoardSchema.parse(value))
-          setError('')
-        }
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) {
-          setBoard(null)
-          setError(cause instanceof Error ? cause.message : 'The request failed. Please try again.')
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [userId, revision])
   const editingStudentId = initialCreateStudent || query.account ? '' : query.student
   const linkedStudent = editingStudentId
     ? board?.students.find((student) => student.studentId === editingStudentId)
@@ -138,11 +116,13 @@ export function AdminConsole({
     },
   ])
   async function save(path: string, body: unknown) {
+    if (offline) return false
     setBusy(true)
     setError('')
     setMessage('')
     try {
-      setBoard(neonAdminBoardSchema.parse(await request(path, userId, body)))
+      await request(path, userId, body)
+      await refresh()
       setMessage(ar ? 'تم الحفظ.' : 'Saved.')
       return true
     } catch (cause) {
@@ -154,7 +134,12 @@ export function AdminConsole({
   }
   return (
     <div className="workspace">
-      <WorkspaceNavigation administrator profile={profile} leave={signOut} />
+      <WorkspaceNavigation
+        administrator
+        offline={offline}
+        profile={hasChanges ? { ...profile, openChanges: openStaffChanges } : profile}
+        leave={signOut}
+      />
       <main id="main-content" className="workspace-main" tabIndex={-1}>
         <WorkspacePageHeader
           title={
@@ -229,7 +214,10 @@ export function AdminConsole({
               className="icon-button"
               aria-label={t('Refresh')}
               title={t('Refresh')}
-              onClick={() => setRevision((n) => n + 1)}
+              onClick={() => {
+                cached?.reconnect()
+                void refresh()
+              }}
             >
               <RefreshCw size={20} strokeWidth={1.6} aria-hidden="true" focusable="false" />
             </button>
@@ -239,9 +227,15 @@ export function AdminConsole({
             <SettingsNavigation current={selectedSection} />
           )}
         </WorkspacePageHeader>
-        {error && <p role="alert">{errorMessage(error)}</p>}
+        {cached?.offline && <p role="status">{connectionRequired}</p>}
+        {hasChanges && <StaffPendingNotice needsReview={ledger.offlineNeedsReview} />}
+        {(error || boardError || courseError) && (
+          <p role="alert">{errorMessage(error || boardError || courseError)}</p>
+        )}
         {message && <p role="status">{message}</p>}
-        {!board && !error && <p role="status">{ar ? 'جارٍ التحميل…' : 'Loading…'}</p>}
+        {!board && !boardError && !cached?.offline && (
+          <p role="status">{ar ? 'جارٍ التحميل…' : 'Loading…'}</p>
+        )}
         {board && (
           <>
             {selectedSection === 'accounts' && !initialCreateStudent && (
@@ -250,14 +244,16 @@ export function AdminConsole({
                   <h2 className="title">{ar ? 'الحسابات' : 'Accounts'}</h2>
                 )}
                 {inviting ? (
-                  <InviteAccounts
-                    userId={userId}
-                    ar={ar}
-                    done={() => {
-                      setInviting(false)
-                      setRevision((n) => n + 1)
-                    }}
-                  />
+                  <fieldset disabled={offline} hidden={offline}>
+                    <InviteAccounts
+                      userId={userId}
+                      ar={ar}
+                      done={() => {
+                        setInviting(false)
+                        void refresh()
+                      }}
+                    />
+                  </fieldset>
                 ) : query.account ? (
                   <>
                     {(() => {
@@ -281,7 +277,8 @@ export function AdminConsole({
                           account={account}
                           userId={userId}
                           students={board.students}
-                          busy={busy}
+                          busy={busy || offline}
+                          offline={offline}
                           save={save}
                           ar={ar}
                           expanded
@@ -291,7 +288,11 @@ export function AdminConsole({
                   </>
                 ) : (
                   <>
-                    <button className="primary mb-4" onClick={() => setInviting(true)}>
+                    <button
+                      className="primary mb-4"
+                      disabled={offline}
+                      onClick={() => setInviting(true)}
+                    >
                       {ar ? 'إنشاء حسابات' : 'Create accounts'}
                     </button>
                     {board.accounts.filter((account) => account.authUserId !== userId).length ===
@@ -300,11 +301,12 @@ export function AdminConsole({
                       .filter((account) => account.authUserId !== userId)
                       .map((account) => (
                         <AccountForm
-                          key={`${account.authUserId}:${account.role}:${account.active}`}
+                          key={account.authUserId}
                           account={account}
                           userId={userId}
                           students={board.students}
-                          busy={busy}
+                          busy={busy || offline}
+                          offline={offline}
                           save={save}
                           ar={ar}
                         />
@@ -349,7 +351,7 @@ export function AdminConsole({
                     key={activeEditing?.studentId ?? 'new'}
                     student={activeEditing ?? null}
                     teachers={board.teachers}
-                    busy={busy || (!!courseId && !courseName)}
+                    busy={busy || offline || (!!courseId && !courseName)}
                     ar={ar}
                     courseName={courseId ? courseName : ''}
                     save={async (value) => {
@@ -468,6 +470,7 @@ function AccountForm({
   userId,
   students,
   busy,
+  offline,
   save,
   ar,
   expanded = false,
@@ -477,28 +480,37 @@ function AccountForm({
   expanded?: boolean
   students: Student[]
   busy: boolean
+  offline: boolean
   save: (path: string, body: unknown) => Promise<boolean>
   ar: boolean
 }) {
-  const [role, setRole] = useState<'administrator' | 'teacher' | 'student'>(
-    account.role ?? 'teacher',
-  )
-  const [name, setName] = useState(account.name)
-  const [verifiedPhone, setVerifiedPhone] = useState(account.verifiedPhone ?? '')
+  const [grantDraft, setGrantDraft] = useState<{
+    role?: NonNullable<Account['role']>
+    name?: string
+    studentId?: string
+    expires?: string
+  }>({})
+  const [phoneDraft, setPhoneDraft] = useState<string | null>(null)
+  const verifiedPhone = phoneDraft ?? account.verifiedPhone ?? ''
+  const role = grantDraft.role ?? account.role ?? 'teacher'
+  const name = grantDraft.name ?? account.name
+  const studentId = grantDraft.studentId ?? account.studentId ?? ''
   const [reset, setReset] = useState<
     | { kind: 'idle' | 'pending' | 'failed' }
     | { kind: 'done'; credentials: z.infer<typeof neonAdminGeneratedPasswordResetResponseSchema> }
   >({ kind: 'idle' })
   const resetButton = useRef<HTMLButtonElement>(null)
   const phoneId = useId()
-  const [studentId, setStudentId] = useState(account.studentId ?? '')
-  const [expires, setExpires] = useState(() => {
-    if (!account.expiresAt) return ''
-    const date = new Date(account.expiresAt)
-    return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
-  })
+  const expires =
+    grantDraft.expires ??
+    (() => {
+      if (!account.expiresAt) return ''
+      const date = new Date(account.expiresAt)
+      return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+    })()
   const saving = busy || reset.kind === 'pending'
   async function resetPassword() {
+    if (offline) return
     setReset({ kind: 'pending' })
     try {
       const credentials = neonAdminGeneratedPasswordResetResponseSchema.parse(
@@ -558,7 +570,10 @@ function AccountForm({
                   ? { role, authUserId: account.authUserId, name, expiresAt }
                   : { role, authUserId: account.authUserId, studentId, expiresAt }
             const parsed = neonAdminGrantSchema.safeParse(input)
-            if (parsed.success) void save('/api/admin/accounts/grant', parsed.data)
+            if (parsed.success)
+              void save('/api/admin/accounts/grant', parsed.data).then((saved) => {
+                if (saved) setGrantDraft((draft) => (draft === grantDraft ? {} : draft))
+              })
           }}
         >
           <label>
@@ -567,7 +582,7 @@ function AccountForm({
               value={role}
               onChange={(event) => {
                 const v = z.enum(['administrator', 'teacher', 'student']).parse(event.target.value)
-                setRole(v)
+                setGrantDraft((draft) => ({ ...draft, role: v }))
               }}
             >
               <option value="administrator">{ar ? 'مسؤول' : 'Administrator'}</option>
@@ -578,7 +593,13 @@ function AccountForm({
           {role === 'student' ? (
             <label>
               {ar ? 'الطالب' : 'Student'}
-              <select required value={studentId} onChange={(e) => setStudentId(e.target.value)}>
+              <select
+                required
+                value={studentId}
+                onChange={(e) =>
+                  setGrantDraft((draft) => ({ ...draft, studentId: e.target.value }))
+                }
+              >
                 <option value="">{ar ? 'اختر طالباً' : 'Choose a student'}</option>
                 {students.map((student) => (
                   <option key={student.studentId} value={student.studentId}>
@@ -595,7 +616,7 @@ function AccountForm({
                 maxLength={100}
                 dir="auto"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => setGrantDraft((draft) => ({ ...draft, name: e.target.value }))}
               />
             </label>
           )}
@@ -605,7 +626,7 @@ function AccountForm({
               <input
                 type="datetime-local"
                 value={expires}
-                onChange={(e) => setExpires(e.target.value)}
+                onChange={(e) => setGrantDraft((draft) => ({ ...draft, expires: e.target.value }))}
               />
             </label>
           )}
@@ -633,7 +654,7 @@ function AccountForm({
                 type="tel"
                 dir="ltr"
                 value={verifiedPhone}
-                onChange={(event) => setVerifiedPhone(event.target.value)}
+                onChange={(event) => setPhoneDraft(event.target.value)}
               />
               <button
                 type="button"
@@ -645,6 +666,8 @@ function AccountForm({
                     authUserId: account.authUserId,
                     phone: verifiedPhone,
                     phoneConfirmed: true,
+                  }).then((saved) => {
+                    if (saved) setPhoneDraft((draft) => (draft === phoneDraft ? null : draft))
                   })
                 }
               >
@@ -690,7 +713,7 @@ function AccountForm({
   return (
     <>
       {editor}
-      {reset.kind === 'done' && (
+      {!offline && reset.kind === 'done' && (
         <PasswordResetMessage
           ar={ar}
           name={account.name}

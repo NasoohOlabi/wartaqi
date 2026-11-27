@@ -25,7 +25,7 @@ for (const language of ['en', 'ar'] as const) {
     const appCalls: string[] = []
     page.on('request', (request) => {
       const path = new URL(request.url()).pathname
-      if (path === '/api/events' || path === '/api/notebook')
+      if (path === '/api/attendance/sync' || path === '/api/notebook')
         appCalls.push(`${request.method()} ${path}`)
     })
     await page.route('**/api/diagnostics/**', async (route) => {
@@ -113,7 +113,7 @@ for (const language of ['en', 'ar'] as const) {
     await expect(replayStatus).toHaveAttribute('aria-pressed', 'true')
     await expect(replayStatus).toBeDisabled()
     expect(appCalls).toHaveLength(callsBeforePlayback)
-    expect(appCalls.filter((call) => call === 'POST /api/events')).toHaveLength(1)
+    expect(appCalls.filter((call) => call === 'POST /api/attendance/sync')).toHaveLength(1)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     )

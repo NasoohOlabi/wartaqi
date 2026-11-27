@@ -962,6 +962,82 @@ integration(
         kind: 'contact_receipt',
         fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
       })
+      const originalProfile = neonSnapshotSchema
+        .parse(await (await call('/api/notebook', subjects.teacher)).json())
+        .students.find((student) => student.studentId === studentId)
+      if (!originalProfile) throw new Error('Expected the assigned student profile')
+      const profileEdit = {
+        kind: 'profile-v1',
+        id: crypto.randomUUID(),
+        studentId,
+        clientTime: new Date().toISOString(),
+        expected: { location: originalProfile.location ?? null },
+        changes: { location: 'Synthetic profile edit' },
+      } satisfies z.input<typeof offlineStudentOperationSchema>
+      // Commit through the real endpoint and discard its acknowledgement.
+      expect(
+        (
+          await call('/api/student/sync', subjects.teacher, {
+            accountId: subjects.teacher,
+            operation: profileEdit,
+          })
+        ).status,
+      ).toBe(200)
+      expect(
+        await syncStudent({
+          ...profileEdit,
+          id: crypto.randomUUID(),
+          expected: { location: profileEdit.changes.location },
+          changes: { location: 'Newer synthetic profile location' },
+        }),
+      ).toMatchObject({ kind: 'saved' })
+      expect(await syncStudent(profileEdit)).toMatchObject({
+        kind: 'saved',
+        profile: { location: 'Newer synthetic profile location', whatsapp: newerPhone },
+      })
+      expect(
+        await syncStudent({
+          ...profileEdit,
+          changes: { location: 'Different payload for the same ID' },
+        }),
+      ).toMatchObject({ kind: 'id_conflict' })
+      expect(
+        await syncStudent({
+          ...profileEdit,
+          id: crypto.randomUUID(),
+          expected: {
+            location: profileEdit.expected.location,
+            birthYear: originalProfile.birthYear ?? null,
+          },
+          changes: { location: 'Collision', birthYear: 2010 },
+        }),
+      ).toMatchObject({
+        kind: 'conflict',
+        profile: {
+          location: 'Newer synthetic profile location',
+          birthYear: originalProfile.birthYear ?? null,
+        },
+        profileConflicts: ['location'],
+      })
+      expect(
+        await syncStudent({
+          ...profileEdit,
+          id: crypto.randomUUID(),
+          changes: { location: 'Newer synthetic profile location' },
+        }),
+      ).toMatchObject({ kind: 'saved' })
+      expect(
+        await syncStudent({ ...profileEdit, id: crypto.randomUUID(), studentId: otherStudentId }),
+      ).toEqual({ id: expect.any(String), kind: 'forbidden', currentWhatsapp: null })
+      const profileReceipt = await pool.query('SELECT payload FROM events WHERE id = $1', [
+        profileEdit.id,
+      ])
+      expect(profileReceipt.rows.map(({ payload }) => payload)).toEqual([
+        {
+          kind: 'contact_receipt',
+          fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+        },
+      ])
       const offlineNote = makeEvent('Synthetic course teacher', {
         kind: 'note',
         studentId,
@@ -985,6 +1061,7 @@ integration(
       ).toBe(newerPhone)
       expect(syncedNotebook.events.filter((event) => event.id === offlineNote.id)).toHaveLength(1)
       expect(syncedNotebook.events.some((event) => event.id === contact.id)).toBe(false)
+      expect(syncedNotebook.events.some((event) => event.id === profileEdit.id)).toBe(false)
       const portal = await (await call('/api/student/attendance', subjects.student)).text()
       expect(portal).not.toContain(newerPhone)
       expect(portal).not.toContain('Synthetic offline note')

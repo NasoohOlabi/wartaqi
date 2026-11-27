@@ -119,6 +119,8 @@ const arabic = {
     'يجري الحفظ في علامة تبويب أخرى. انتظر ثم أعد المحاولة.',
   'The pending batch changed in another tab. Reload before retrying.':
     'تغيّرت الدفعة المعلّقة في علامة تبويب أخرى. أعد تحميل الصفحة قبل المحاولة مجدداً.',
+  'Could not save these changes on this device. Restore browser storage and try again.':
+    'تعذّر حفظ هذه التغييرات على هذا الجهاز. استعد إمكانية التخزين في المتصفح ثم حاول مجددًا.',
   'Could not persist the pending batch. No write was sent; restore browser storage before saving.':
     'تعذر حفظ الدفعة المعلّقة. لم تُرسل كتابة؛ أصلح تخزين المتصفح قبل الحفظ.',
   'A pending ID conflicts with a saved record. Ask the manager to inspect it before retrying.':

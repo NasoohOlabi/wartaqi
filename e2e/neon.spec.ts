@@ -2,7 +2,8 @@ import { clickAccountAction } from './profileActions'
 import { expect, test, type Page } from '@playwright/test'
 import { compactHeader } from './headerLayout'
 import { mkdir } from 'node:fs/promises'
-import { eventSchema, type LedgerEvent } from '../shared/ledger'
+import { makeEvent, type LedgerEvent } from '../shared/ledger'
+import { acceptSyntheticSync } from './syntheticSync'
 
 test.use({ trace: 'off' })
 
@@ -116,7 +117,7 @@ test('sign in, reload and switch teacher without mixing notebook data', async ({
 }) => {
   let current: (typeof users)[number] | undefined
   const events: Record<string, LedgerEvent[]> = {}
-  let writes = 0
+  const attempts = new Map<string, number>()
   let releaseApproval = () => {}
   const approvalHeld = new Promise<void>((resolve) => {
     releaseApproval = resolve
@@ -208,13 +209,19 @@ test('sign in, reload and switch teacher without mixing notebook data', async ({
       return route.fulfill({ json: { account: teacher, teacher }, headers })
     }
     if (request.method() === 'POST') {
-      writes++
-      events[selected.id] = [
-        ...(events[selected.id] ?? []),
-        ...eventSchema.array().parse(request.postDataJSON().events),
-      ]
-      if (writes <= 2)
+      const ledger = (events[selected.id] ??= [])
+      const lengthBefore = ledger.length
+      const receipt = acceptSyntheticSync(
+        new URL(request.url()).pathname,
+        request.postDataJSON(),
+        ledger,
+      )
+      const id = receipt?.outcomes?.[0]?.id ?? receipt?.id
+      if (!id) throw new Error('Expected a sync receipt')
+      attempts.set(id, (attempts.get(id) ?? 0) + 1)
+      if (ledger.length > lengthBefore)
         return route.fulfill({ status: 503, json: { error: 'Synthetic response loss' }, headers })
+      return route.fulfill({ json: receipt, headers })
     }
     return route.fulfill({
       json: {
@@ -257,13 +264,10 @@ test('sign in, reload and switch teacher without mixing notebook data', async ({
     .getByRole('button', { name: 'present', exact: true })
     .click()
   await page.getByRole('button', { name: 'Save attendance (1)' }).click()
-  await expect(page.getByRole('alert')).toContainText(
-    'The save may already have reached the server',
-  )
-  await expect(page.getByRole('button', { name: 'Retry pending batch' })).toBeVisible()
-  await page.getByRole('button', { name: 'Retry pending batch' }).click()
-  await expect(page.getByText('1 record saved.')).toBeVisible()
-  expect(writes).toBe(1)
+  await expect(page.getByText('Saved on this device. Waiting to sync.')).toBeVisible()
+  await expect(page.getByText('Changes accepted by Wartaq.')).toBeVisible()
+  expect(events[users[0].id]).toHaveLength(1)
+  expect(attempts.get(events[users[0].id][0].id)).toBe(2)
   const sessionDate = '2026-11-18'
   await page.goto(`${origin}/?page=app&tab=notes&course=${courseId}&date=${sessionDate}&tag=legacy`)
   await expect(page.getByLabel('Session date')).toHaveValue(sessionDate)
@@ -272,17 +276,10 @@ test('sign in, reload and switch teacher without mixing notebook data', async ({
   const dialog = page.getByRole('dialog', { name: 'Student note for Alpha Student' })
   await dialog.getByLabel('Note', { exact: true }).fill('Synthetic attendance note')
   await dialog.getByRole('button', { name: 'Save note' }).click()
-  await expect(dialog.getByRole('alert')).toContainText(
-    'The save may already have reached the server',
-  )
-  await expect(dialog.getByRole('textbox', { name: 'Note', exact: true })).toHaveValue(
-    'Synthetic attendance note',
-  )
-  await dialog.getByRole('button', { name: 'Cancel' }).click()
   await expect(dialog).toBeHidden()
-  await page.getByRole('button', { name: 'Retry pending batch' }).click()
-  await expect(page.getByText('1 record saved.')).toBeVisible()
-  expect(writes).toBe(2)
+  await expect(page.getByText('Changes accepted by Wartaq.')).toBeVisible()
+  expect(events[users[0].id]).toHaveLength(2)
+  expect(attempts.get(events[users[0].id][1].id)).toBe(2)
   expect(events[users[0].id].map(({ payload }) => payload).slice(1)).toEqual([
     {
       kind: 'note',
@@ -339,7 +336,7 @@ test('sign in, reload and switch teacher without mixing notebook data', async ({
   await expect(betaNote.getByLabel('Note', { exact: true })).toBeDisabled()
   await expect(betaNote.getByRole('button', { name: 'Save note' })).toBeDisabled()
   await expect(betaNote.getByText('Synthetic attendance note')).toHaveCount(0)
-  expect(writes).toBe(2)
+  expect(events[users[0].id]).toHaveLength(2)
   for (const route of ['view=history', 'tab=history']) {
     await page.goto(`${origin}/?page=app&${route}`)
     await expect(page.getByRole('button', { name: 'Take attendance' })).toBeVisible()
@@ -562,6 +559,7 @@ async function mockTeacher(page: Page, post: () => Promise<void>) {
     canWrite: true,
     expiresAt: null,
   }
+  const events: LedgerEvent[] = []
   await page.route(`${auth}/**`, (route) => route.fulfill({ json: session }))
   await page.route(`${api}/**`, async (route) => {
     if (new URL(route.request().url()).pathname.startsWith('/api/auth/')) return route.fallback()
@@ -569,7 +567,15 @@ async function mockTeacher(page: Page, post: () => Promise<void>) {
       return route.fulfill({ json: { account: teacher } })
     if (new URL(route.request().url()).pathname === '/api/diagnostics')
       return route.fulfill({ json: { ok: true } })
-    if (route.request().method() === 'POST') await post()
+    if (route.request().method() === 'POST') {
+      await post()
+      const receipt = acceptSyntheticSync(
+        new URL(route.request().url()).pathname,
+        route.request().postDataJSON(),
+        events,
+      )
+      if (receipt) return route.fulfill({ json: receipt })
+    }
     return route.fulfill({
       json: {
         teacher,
@@ -582,7 +588,7 @@ async function mockTeacher(page: Page, post: () => Promise<void>) {
             active: true,
           },
         ],
-        events: [],
+        events,
         courses,
         enrollments: [enrollmentFor(user.studentId)],
       },
@@ -594,6 +600,38 @@ async function mockTeacher(page: Page, post: () => Promise<void>) {
   await page.getByRole('button', { name: 'Synthetic course', exact: true }).click()
   await expect(page.getByLabel('Attendance for Alpha Student')).toBeVisible()
 }
+
+test('a warm notebook opens during a held read and coalesces a foreground burst', async ({
+  page,
+}) => {
+  await mockTeacher(page, async () => {})
+  await expect
+    .poll(() => page.evaluate(() => !!localStorage.getItem('halaqa-offline-access')))
+    .toBe(true)
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let reads = 0
+  await page.route(`${api}/notebook`, async (route) => {
+    reads += 1
+    if (reads === 1) await held
+    return route.fallback()
+  })
+  try {
+    await page.reload()
+    await expect.poll(() => reads).toBe(1)
+    await expect(page.getByLabel('Attendance for Alpha Student')).toBeVisible()
+    await page.evaluate(() => {
+      for (let i = 0; i < 5; i += 1) window.dispatchEvent(new Event('focus'))
+    })
+    expect(reads).toBe(1)
+    release()
+    await expect.poll(() => reads).toBe(2)
+  } finally {
+    release()
+  }
+})
 
 test('unconfirmed sign-out hides private records and offers a retry', async ({ page }) => {
   await mockTeacher(page, async () => {})
@@ -613,36 +651,56 @@ test('unconfirmed sign-out hides private records and offers a retry', async ({ p
   expect(attempts).toBe(2)
 })
 
-async function saveAttendance(page: Page) {
+async function saveAttendance(page: Page, mark = 'present') {
   await page
     .getByLabel('Attendance for Alpha Student')
-    .getByRole('button', { name: 'present', exact: true })
+    .getByRole('button', { name: mark, exact: true })
     .click()
   await page.getByRole('button', { name: 'Save attendance (1)' }).click()
 }
 
-async function saveAttendanceAndWaitForFailure(page: Page) {
-  await saveAttendance(page)
-  await expect(page.getByRole('alert')).toContainText(
-    'The save may already have reached the server',
+async function installLegacyBatch(page: Page) {
+  const { id, name, studentId } = users[0]
+  const event = makeEvent(name, {
+    kind: 'attendance',
+    studentId,
+    enrollmentId: studentId,
+    date: '2026-11-27',
+    status: 'present',
+  })
+  await page.addInitScript(
+    ({ id, event }) => {
+      if (sessionStorage.getItem('synthetic-legacy-batch')) return
+      sessionStorage.setItem('synthetic-legacy-batch', 'installed')
+      localStorage.setItem(`halaqa-pending-neon:${location.origin}:${id}`, JSON.stringify([event]))
+    },
+    { id, event },
   )
-  await expect(page.getByText('1 records awaiting confirmation')).toBeVisible()
 }
 
 test('storage write failure prevents authenticated writes', async ({ page }) => {
   let posts = 0
   await page.addInitScript(() => {
-    const original = Storage.prototype.setItem
-    Storage.prototype.setItem = function (key, value) {
-      if (key.startsWith('halaqa-pending-neon:')) throw new Error('Synthetic storage failure')
-      return original.call(this, key, value)
+    const original = IDBDatabase.prototype.transaction
+    IDBDatabase.prototype.transaction = function (stores, mode, options) {
+      const transaction = original.call(this, stores, mode, options)
+      if (
+        mode === 'readwrite' &&
+        typeof stores !== 'string' &&
+        Array.from(stores).includes('pending')
+      )
+        queueMicrotask(() => transaction.abort())
+      return transaction
     }
   })
   await mockTeacher(page, async () => {
     posts++
   })
   await saveAttendance(page)
-  await expect(page.getByRole('alert').first()).toContainText('Could not persist the pending batch')
+  await expect(page.getByRole('alert').first()).toContainText(
+    'Could not save these changes on this device',
+  )
+  await expect(page.getByRole('button', { name: 'Save attendance (1)' })).toBeEnabled()
   expect(posts).toBe(0)
 })
 
@@ -665,17 +723,18 @@ test('old pending batches block authenticated writes', async ({ page }) => {
 
 test('foreign pending storage also blocks retry of a restored batch', async ({ page }) => {
   let posts = 0
+  await installLegacyBatch(page)
   await mockTeacher(page, async () => {})
   await page.route(`${api}/events`, (route) => {
     posts++
     return route.fulfill({ status: 503, json: { error: 'Synthetic response loss' } })
   })
-  await saveAttendanceAndWaitForFailure(page)
+  await expect(page.getByText('1 records awaiting confirmation')).toBeVisible()
   await page.evaluate(() => localStorage.setItem('halaqa-pending-v1:old', 'pending'))
   await page.reload()
   await expect(page.getByRole('alert').first()).toContainText('Copy the pending batch')
   await expect(page.getByRole('button', { name: 'Retry pending batch' })).toBeDisabled()
-  expect(posts).toBe(1)
+  expect(posts).toBe(0)
 })
 
 test('a foreign batch appearing after load blocks a new save', async ({ page }) => {
@@ -702,7 +761,10 @@ test('corrupted pending storage blocks authenticated writes', async ({ page }) =
   expect(posts).toBe(0)
 })
 
-test('a second tab cannot send while a save is in flight', async ({ context, page }) => {
+test('a second tab can queue locally while the first tab holds network delivery', async ({
+  context,
+  page,
+}) => {
   let release = () => {}
   const gate = new Promise<void>((resolve) => {
     release = resolve
@@ -718,9 +780,11 @@ test('a second tab cannot send while a save is in flight', async ({ context, pag
     await mockTeacher(second, write)
     await saveAttendance(page)
     await expect.poll(() => posts).toBe(1)
-    await saveAttendance(second)
-    await expect(second.getByRole('alert')).toContainText('Another tab is saving')
+    await saveAttendance(second, 'absent')
+    await expect(second.getByText('Saved on this device. Waiting to sync.')).toBeVisible()
     expect(posts).toBe(1)
+    release()
+    await expect.poll(() => posts).toBe(2)
   } finally {
     release()
   }
@@ -755,19 +819,20 @@ test('a legacy account lock prevents a new client from sending', async ({ contex
 
 test('a stale retry cannot recreate a batch cleared in another tab', async ({ page }) => {
   let posts = 0
+  await installLegacyBatch(page)
   await mockTeacher(page, async () => {})
   await page.route(`${api}/events`, (route) => {
     posts++
     return route.fulfill({ status: 503, json: { error: 'Synthetic response loss' } })
   })
-  await saveAttendanceAndWaitForFailure(page)
+  await expect(page.getByText('1 records awaiting confirmation')).toBeVisible()
   await page.evaluate(
     (id) => localStorage.removeItem(`halaqa-pending-neon:${location.origin}:${id}`),
     users[0].id,
   )
   await page.getByRole('button', { name: 'Retry pending batch' }).click()
   await expect(page.getByRole('alert').first()).toContainText('Reload before retrying')
-  expect(posts).toBe(1)
+  expect(posts).toBe(0)
   expect(
     await page.evaluate(
       (id) => localStorage.getItem(`halaqa-pending-neon:${location.origin}:${id}`),
@@ -794,19 +859,24 @@ test('malformed notebook snapshots block saving', async ({ page }) => {
     .getByRole('navigation', { name: 'Main navigation' })
     .getByRole('button', { name: 'Attendance' })
     .click()
-  await saveAttendance(page)
+  await expect(
+    page
+      .getByLabel('Attendance for Alpha Student')
+      .getByRole('button', { name: 'present', exact: true }),
+  ).toBeDisabled()
   await expect(page.getByRole('alert')).toContainText('The request failed')
   expect(posts).toBe(0)
 })
 
 test('pending retry rejects a student removed from the current assignment', async ({ page }) => {
   let posts = 0
+  await installLegacyBatch(page)
   await mockTeacher(page, async () => {})
   await page.route(`${api}/events`, (route) => {
     posts++
     return route.fulfill({ status: 503, json: { error: 'Synthetic response loss' } })
   })
-  await saveAttendanceAndWaitForFailure(page)
+  await expect(page.getByText('1 records awaiting confirmation')).toBeVisible()
   const teacher = {
     role: 'teacher',
     id: users[0].id,
@@ -820,5 +890,5 @@ test('pending retry rejects a student removed from the current assignment', asyn
   )
   await page.getByRole('button', { name: 'Retry pending batch' }).click()
   await expect(page.getByRole('alert')).toContainText('outside your assigned active students')
-  expect(posts).toBe(1)
+  expect(posts).toBe(0)
 })
