@@ -164,6 +164,7 @@ async function setupCourses(page: Page) {
   const attemptedCourseIds: string[] = []
   const assignments: EnrollmentAssignment[] = []
   let assignmentGate: Promise<void> | undefined
+  let holdNotebook: (() => Promise<void>) | undefined
   let failAssignment = false
   let dropCourseResponse = true
   let identity: string | null = teacherId
@@ -350,15 +351,21 @@ async function setupCourses(page: Page) {
       return route.fulfill({
         json: acceptSyntheticSync(path, route.request().postDataJSON(), events),
       })
-    return route.fulfill({
-      json: {
-        teacher: { ...teacher, id: administratorId },
-        students,
-        courses,
-        enrollments,
-        events,
-      },
-    })
+    const snapshot = {
+      teacher: { ...teacher, id: administratorId },
+      students,
+      courses,
+      enrollments,
+      events,
+    }
+    if (path === '/api/notebook' && holdNotebook) {
+      const captured = structuredClone(snapshot)
+      const wait = holdNotebook
+      holdNotebook = undefined
+      await wait()
+      return route.fulfill({ json: captured })
+    }
+    return route.fulfill({ json: snapshot })
   })
   const savedToast = page.getByRole('status').filter({ hasText: /^(Saved|تم الحفظ)$/ })
   return {
@@ -375,6 +382,15 @@ async function setupCourses(page: Page) {
     signInAs: (userId: string, adminId: string) => {
       identity = userId
       administratorId = adminId
+    },
+    holdNextNotebook: () => {
+      const captured = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      holdNotebook = () => {
+        captured.resolve()
+        return release.promise
+      }
+      return { captured: captured.promise, release: release.resolve }
     },
     holdNextAssignment: () => {
       let release = () => {}
@@ -694,6 +710,51 @@ test('student profiles explain missing enrollment and open general information',
   await page.goto('/?page=app')
   await expect(page).toHaveURL(new RegExp(`course=${courseA}`))
   expect(events).toHaveLength(1)
+})
+
+test('threshold saves refresh after an older grade read', async ({ page }) => {
+  const { events, holdNextNotebook } = await setupCourses(page)
+  for (const [day, status] of [
+    ['01', 'present'],
+    ['02', 'absent'],
+  ] as const) {
+    events.push({
+      id: `50000000-0000-4000-8000-0000000000${day}`,
+      actor: 'Admin',
+      clientTime: '2026-01-01T12:00:00Z',
+      receivedAt: '',
+      payload: {
+        kind: 'attendance',
+        studentId,
+        enrollmentId: enrollA,
+        date: `2026-01-${day}`,
+        status,
+      },
+    })
+  }
+  await page.goto(`/?page=app&view=courses&courseView=grades&course=${courseA}`)
+  const row = page.getByRole('row').filter({ hasText: 'Synthetic' })
+  await page.getByLabel('Theory: Synthetic Student').fill('80')
+  await page.getByLabel('Practical: Synthetic Student').fill('80')
+  const oldRead = holdNextNotebook()
+  try {
+    await row.getByRole('button', { name: 'Save grades' }).click()
+    await oldRead.captured
+    await page.getByLabel('Minimum attendance %').fill('50')
+    const saved = page.waitForResponse('**/api/admin/courses/settings')
+    await page.getByRole('button', { name: 'Save thresholds' }).click()
+    expect(await (await saved).json()).toEqual({ saved: true })
+    // Let the client handle the write acknowledgement while the older snapshot is held.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    )
+  } finally {
+    oldRead.release()
+  }
+  await expect(row.locator('td[data-label="Result"] div > span').first()).toHaveText('Pass')
 })
 
 test('mobile course subpages put All courses in the app bar', async ({ page }, testInfo) => {

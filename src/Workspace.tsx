@@ -680,7 +680,7 @@ function Notebook({
               ),
             )}
             events={ledger.events}
-            refresh={ledger.refresh}
+            refreshAfterWrite={ledger.refreshAfterWrite}
             defaultCourse={preference.defaultCourse}
             chooseDefault={preference.chooseDefault}
           />

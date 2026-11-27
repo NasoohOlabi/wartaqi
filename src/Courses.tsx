@@ -184,7 +184,7 @@ export function Courses({
   enrollments,
   exportEnrollments,
   events,
-  refresh,
+  refreshAfterWrite,
   defaultCourse,
   chooseDefault,
   cached,
@@ -194,7 +194,7 @@ export function Courses({
   enrollments: Enrollment[]
   exportEnrollments: Enrollment[]
   events: LedgerEvent[]
-  refresh: () => Promise<boolean>
+  refreshAfterWrite: () => Promise<boolean>
   defaultCourse: string
   chooseDefault: (course: string) => void
   cached?: CachedAccess
@@ -253,7 +253,8 @@ export function Courses({
         if (path === '/api/admin/courses/status') {
           await refreshBoard()
         }
-        if (!(await refresh()) && saveKey) throw new Error('Could not refresh student changes')
+        if (!(await refreshAfterWrite()) && saveKey)
+          throw new Error('Could not refresh student changes')
         onSuccess?.()
         setSaved(true)
         return true
@@ -889,7 +890,7 @@ export function Courses({
             <GradePage
               key={course.id}
               userId={userId}
-              refresh={refresh}
+              refreshAfterWrite={refreshAfterWrite}
               course={course}
               entries={courseEntries}
               exportEntries={exportEnrollments.filter((item) => item.courseId === course.id)}
@@ -916,7 +917,7 @@ type GradeDraft = {
 
 function GradePage({
   userId,
-  refresh,
+  refreshAfterWrite,
   course,
   entries,
   exportEntries,
@@ -929,7 +930,7 @@ function GradePage({
   save,
 }: {
   userId: string
-  refresh: () => Promise<boolean>
+  refreshAfterWrite: () => Promise<boolean>
   course: Course
   entries: Enrollment[]
   exportEntries: Enrollment[]
@@ -948,11 +949,11 @@ function GradePage({
   useEffect(() => {
     function accepted(event: Event) {
       if (event instanceof CustomEvent && event.detail === gradeScope(userId)?.generation)
-        void refresh()
+        void refreshAfterWrite()
     }
     window.addEventListener(gradeAcceptedEvent, accepted)
     return () => window.removeEventListener(gradeAcceptedEvent, accepted)
-  }, [refresh, userId])
+  }, [refreshAfterWrite, userId])
   async function saveGrades(entry: Enrollment, label: string) {
     const scope = gradeScope(userId)
     if (!scope) {
