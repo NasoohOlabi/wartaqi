@@ -290,9 +290,10 @@ test('sign in, reload and switch teacher without mixing notebook data', async ({
     },
   ])
   await page.reload()
-  await addNote.click()
-  await expect(dialog.getByText('Synthetic attendance note')).toBeVisible()
-  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: 'Alpha Student', exact: true }).click()
+  await expect(
+    page.getByRole('list', { name: 'Student notes' }).getByText('Synthetic attendance note'),
+  ).toBeVisible()
   let releasePreviousRequest = () => {}
   const previousRequest = new Promise<void>((resolve) => {
     releasePreviousRequest = resolve

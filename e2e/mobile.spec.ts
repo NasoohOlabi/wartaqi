@@ -100,13 +100,15 @@ test('phone layouts keep every notebook view usable in English and Arabic', asyn
   await usableLayout(page)
   await page.getByRole('button', { name: 'حفظ الملاحظة', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeHidden()
-  await page
-    .getByRole('row')
-    .filter({ hasText: longName })
-    .getByRole('button', { name: /إضافة ملاحظة/ })
-    .click()
-  await expect(page.getByRole('dialog').getByText('مسودة مشتركة English draft')).toBeVisible()
-  await page.keyboard.press('Escape')
+  await expect(page.getByText('مسودة مشتركة English draft')).toHaveCount(0)
+  await row.getByRole('button', { name: longName, exact: true }).click()
+  await expect(
+    page.getByRole('list', { name: 'ملاحظات الطالب' }).getByText('مسودة مشتركة English draft'),
+  ).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'ملاحظات الطالب' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+    true,
+  )
   for (const name of ['الطلاب', 'الحضور', 'الملخص']) {
     await page.getByRole('button', { name, exact: true }).click()
     await usableLayout(page)

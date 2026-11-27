@@ -2572,6 +2572,12 @@ The browser regression exercises the middle and end of a long roster, a repeat t
 
 At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing before its confirmation delay while an earlier sync was still settling after reload. The hold now follows the result of the specific local save, and a focused row hands off focus before it is removed. The browser regression covers both keyboard and pointer focus through this path.
 
+## 2026-11-27 15:58 Asia/Damascus — Keep notes on the student profile
+
+The owner reported that a student note appeared in the attendance sidebar without context. Staff now read saved student notes on the student's profile with their dates, authors and tags. The attendance row still opens the form for adding a note to that student and date. The attendance sidebar shows the student and recorded-attendance counts. Day-level notes were deferred.
+
+Synthetic Chromium checks cover saving from Attendance, reading from the correct profile across dates, hiding a corrected note after reload, and English and Arabic desktop and phone layouts. `bun run verify:release` passed with 155 local tests and 256 browser cases. Optional provider suites were skipped locally. The browser checks use intercepted Auth and notebook routes. The PR records Railway verification.
+
 ## 2026-11-27 16:01 Asia/Damascus — Show course membership changes on the first tap
 
 The owner reported that a slow enrollment save left the switch looking off. A second tap after the save could undo the enrollment. The switch now displays the requested state during the save and accepts another tap after it settles. A failed confirmation restores the last confirmed state. Retry uses the original operation and displays its pending change.
