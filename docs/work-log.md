@@ -2418,6 +2418,12 @@ The owner asked for two rows per student on the course Students page. The first 
 
 The course roster browser scenario passed for All columns, Groups and Books in English and Arabic at 320, 390 and 430px and on desktop. It checks row geometry and overflow with synthetic names, including a long mixed-script name, and exercises saved teacher assignments across searches. The PR records release checks and Railway verification.
 
+## 2026-11-27 08:41 Asia/Damascus — Compact dashboard follow-up dates
+
+The owner asked to see which weekday each absence fell on and to fit each card into two lines. Follow-up cards show the localized weekday and numeric day/month on the first line and attendance status on the second.
+
+The dashboard browser scenario checked date order, two-line layout and overflow at 320, 390, 430 and 1280px in English and Arabic. It used synthetic attendance records. The PR records release checks and Railway verification.
+
 ## 2026-11-27 08:46 Asia/Damascus — Compact dashboard attendance controls
 
 The owner asked to tighten the attendance panel and replace the Add student text button with a person-plus icon. The date and attendance counts share a row. The attendance action and the icon share a second row on phones and fit alongside the date on desktop. The icon opens the existing Administrator creation form and uses a localized accessible label.
