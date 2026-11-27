@@ -1,15 +1,26 @@
 import { z } from 'zod'
 import { projectEvents, statusSchema } from '../shared/ledger'
-import type { NeonSnapshot } from '../shared/neon'
+import { neonSnapshotSchema, type NeonSnapshot } from '../shared/neon'
 import {
+  offlineProfileOperationSchema,
   offlineStudentOperationSchema,
   offlineStudentOutcomeSchema,
+  profileFields,
+  type EditableProfile,
+  type ProfileField,
 } from '../shared/offlineStudent'
 import {
   offlineAttendanceOutcomeSchema,
   offlineAttendanceRecordSchema,
   offlineAttendanceResponseSchema,
 } from '../shared/offlineAttendance'
+import { localGrant } from './offlineAccess'
+import { applyStudentProfile } from './offlineNotebookData'
+
+export function snapshotKey(userId: string) {
+  const grant = localGrant(userId)
+  return grant ? JSON.stringify([userId, grant.generation]) : userId
+}
 
 const revisionSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('unknown') }),
@@ -121,7 +132,11 @@ export function attendanceKey(item: PendingAttendance) {
   const payload = item.event.payload
   return JSON.stringify([payload.studentId, payload.enrollmentId, payload.date])
 }
-export async function recordAttendanceOutcome(userId: string, outcome: AttendanceOutcome) {
+export async function recordAttendanceOutcome(
+  userId: string,
+  outcome: AttendanceOutcome,
+  cacheKey = snapshotKey(userId),
+) {
   const db = await openDatabase()
   try {
     await new Promise<void>((resolve, reject) => {
@@ -133,7 +148,7 @@ export async function recordAttendanceOutcome(userId: string, outcome: Attendanc
         const item = queue.find((entry) => entry.event.id === outcome.id)
         if (!item) return
         if (outcome.kind === 'saved' || outcome.kind === 'unchanged') {
-          const snapshotRequest = tx.objectStore('snapshots').get(userId)
+          const snapshotRequest = tx.objectStore('snapshots').get(cacheKey)
           snapshotRequest.onsuccess = () => {
             if (snapshotRequest.result === undefined) return
             const snapshot = offlineSnapshotSchema.parse(snapshotRequest.result)
@@ -153,7 +168,14 @@ export async function recordAttendanceOutcome(userId: string, outcome: Attendanc
                 date: payload.date,
                 ...outcome.current,
               })
-            tx.objectStore('snapshots').put(snapshot, userId)
+            if (
+              snapshot.notebook &&
+              outcome.current?.eventId === item.event.id &&
+              !snapshot.notebook.events.some((event) => event.id === item.event.id)
+            ) {
+              snapshot.notebook.events.push(item.event)
+            }
+            tx.objectStore('snapshots').put(snapshot, cacheKey)
           }
           const cursorRequest = tx.objectStore('rosters').openCursor()
           cursorRequest.onsuccess = () => {
@@ -188,7 +210,13 @@ export async function recordAttendanceOutcome(userId: string, outcome: Attendanc
         pending.put(
           queue.flatMap((entry) =>
             entry.event.id !== outcome.id
-              ? [entry]
+              ? [
+                  outcome.kind === 'unchanged' &&
+                  attendanceKey(entry) === attendanceKey(item) &&
+                  entry.expectedEventId === outcome.id
+                    ? { ...entry, expectedEventId: outcome.current?.eventId ?? null }
+                    : entry,
+                ]
               : outcome.kind === 'saved' || outcome.kind === 'unchanged'
                 ? []
                 : [{ ...entry, outcome }],
@@ -255,7 +283,8 @@ export async function resolveAttendanceConflict(
             [...fresh.filter((item) => attendanceKey(item) !== key), ...replacement],
             queueKey(userId),
           )
-          const snapshotRequest = tx.objectStore('snapshots').get(userId)
+          const cacheKey = snapshotKey(userId)
+          const snapshotRequest = tx.objectStore('snapshots').get(cacheKey)
           snapshotRequest.onsuccess = () => {
             if (snapshotRequest.result === undefined) return
             const snapshot = offlineSnapshotSchema.parse(snapshotRequest.result)
@@ -275,7 +304,7 @@ export async function resolveAttendanceConflict(
                 date: payload.date,
                 ...current,
               })
-            tx.objectStore('snapshots').put(snapshot, userId)
+            tx.objectStore('snapshots').put(snapshot, cacheKey)
           }
           const cursorRequest = tx.objectStore('rosters').openCursor()
           cursorRequest.onsuccess = () => {
@@ -322,6 +351,7 @@ export async function resolveAttendanceConflict(
 }
 
 const offlineSnapshotSchema = z.object({
+  notebook: neonSnapshotSchema.optional(),
   students: z.array(
     z.object({
       id: z.uuid(),
@@ -367,23 +397,27 @@ const offlineSnapshotSchema = z.object({
 })
 export type OfflineSnapshot = z.infer<typeof offlineSnapshotSchema>
 
-export async function getOfflineSnapshot(userId: string): Promise<OfflineSnapshot | null> {
+export async function getOfflineSnapshot(
+  userId: string,
+  key = snapshotKey(userId),
+): Promise<OfflineSnapshot | null> {
   return transaction('snapshots', 'readonly', (store, done) => {
-    const request = store.get(userId)
-    request.onsuccess = () =>
-      done(request.result === undefined ? null : offlineSnapshotSchema.parse(request.result))
+    const request = store.get(key)
+    request.onsuccess = () => done(offlineSnapshotSchema.safeParse(request.result).data ?? null)
   })
 }
 
 export async function cacheOfflineRoster(
   userId: string,
-  input: Pick<NeonSnapshot, 'students' | 'courses' | 'enrollments' | 'events'>,
+  input: NeonSnapshot,
+  key = snapshotKey(userId),
 ) {
   const students = input.students.filter((student) => student.active)
   const studentIds = new Set(students.map((student) => student.studentId))
   const enrollments = input.enrollments.filter((item) => studentIds.has(item.studentId))
   const projected = projectEvents(input.events)
   const snapshot = offlineSnapshotSchema.parse({
+    notebook: { ...input, teacher: { ...input.teacher, invitationProfile: undefined } },
     students: students.map((student) => ({
       id: student.studentId,
       name: student.name,
@@ -417,7 +451,9 @@ export async function cacheOfflineRoster(
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(['snapshots', 'rosters'], 'readwrite')
-      tx.objectStore('snapshots').put(snapshot, userId)
+      const snapshots = tx.objectStore('snapshots')
+      snapshots.put(snapshot, key)
+      if (key !== userId) snapshots.delete(userId)
       const cursorRequest = tx.objectStore('rosters').openCursor()
       cursorRequest.onsuccess = () => {
         const cursor = cursorRequest.result
@@ -446,6 +482,28 @@ export type StudentOperation = z.infer<typeof offlineStudentOperationSchema>
 export type StudentOutcome = z.infer<typeof offlineStudentOutcomeSchema>
 export function studentOperationId(operation: StudentOperation) {
   return operation.kind === 'note' ? operation.event.id : operation.id
+}
+function updateSavedStudent(
+  snapshot: OfflineSnapshot,
+  studentId: string,
+  patch: Partial<EditableProfile>,
+) {
+  if (snapshot.notebook)
+    snapshot.notebook.students = snapshot.notebook.students.map((student) =>
+      student.studentId === studentId ? applyStudentProfile(student, patch) : student,
+    )
+  snapshot.students = snapshot.students.map((student) =>
+    student.id === studentId
+      ? {
+          ...student,
+          name:
+            patch.firstName === undefined
+              ? student.name
+              : [patch.firstName, patch.lastName].filter(Boolean).join(' '),
+          phone: patch.whatsapp === undefined ? student.phone : patch.whatsapp,
+        }
+      : student,
+  )
 }
 export async function listPendingStudent(userId: string): Promise<PendingStudent[]> {
   return transaction('studentPending', 'readonly', (store, done) => {
@@ -476,7 +534,11 @@ export async function queueStudentOperation(userId: string, operation: StudentOp
   })
   notifyQueueChanged()
 }
-export async function recordStudentOutcome(userId: string, outcome: StudentOutcome) {
+export async function recordStudentOutcome(
+  userId: string,
+  outcome: StudentOutcome,
+  cacheKey = snapshotKey(userId),
+) {
   const db = await openDatabase()
   try {
     await new Promise<void>((resolve, reject) => {
@@ -498,24 +560,27 @@ export async function recordStudentOutcome(userId: string, outcome: StudentOutco
           userId,
         )
         if (outcome.kind !== 'saved') return
-        const snapshotRequest = tx.objectStore('snapshots').get(userId)
+        const snapshotRequest = tx.objectStore('snapshots').get(cacheKey)
         snapshotRequest.onsuccess = () => {
           if (snapshotRequest.result === undefined) return
           const snapshot = offlineSnapshotSchema.parse(snapshotRequest.result)
           const operation = item.operation
           if (operation.kind === 'contact') {
-            snapshot.students = snapshot.students.map((student) =>
-              student.id === operation.studentId
-                ? { ...student, phone: outcome.currentWhatsapp }
-                : student,
-            )
+            updateSavedStudent(snapshot, operation.studentId, { whatsapp: outcome.currentWhatsapp })
+          } else if (operation.kind === 'profile-v1') {
+            if (outcome.profile) updateSavedStudent(snapshot, operation.studentId, outcome.profile)
           } else if (
             !snapshot.notes.some((note) => note.id === operation.event.id) &&
             snapshot.students.some((student) => student.id === operation.event.payload.studentId)
           ) {
             snapshot.notes.push({ ...operation.event.payload, id: operation.event.id })
+            if (
+              snapshot.notebook &&
+              !snapshot.notebook.events.some((event) => event.id === operation.event.id)
+            )
+              snapshot.notebook.events.push(operation.event)
           }
-          tx.objectStore('snapshots').put(snapshot, userId)
+          tx.objectStore('snapshots').put(snapshot, cacheKey)
         }
       }
       tx.oncomplete = () => resolve()
@@ -531,10 +596,13 @@ export async function resolveStudentConflict(
   userId: string,
   id: string,
   choice: 'server' | 'local',
+  field?: ProfileField,
 ) {
   if (!navigator.locks)
     throw new Error('This browser cannot safely coordinate offline sync between tabs.')
+  const cacheKey = snapshotKey(userId)
   return navigator.locks.request(`halaqa-offline-student-sync:${userId}`, async () => {
+    if (snapshotKey(userId) !== cacheKey) throw new Error('Your access changed.')
     const db = await openDatabase()
     try {
       await new Promise<void>((resolve, reject) => {
@@ -547,11 +615,58 @@ export async function resolveStudentConflict(
             (entry) =>
               studentOperationId(entry.operation) === id && entry.outcome?.kind === 'conflict',
           )
-          if (!item || item.operation.kind !== 'contact' || !item.outcome) {
+          if (!item || item.operation.kind === 'note' || !item.outcome) {
             tx.abort()
             return
           }
           const studentId = item.operation.studentId
+          const saveCurrent = (patch: Partial<EditableProfile>) => {
+            const snapshots = tx.objectStore('snapshots')
+            const request = snapshots.get(cacheKey)
+            request.onsuccess = () => {
+              if (request.result === undefined) return
+              const snapshot = offlineSnapshotSchema.parse(request.result)
+              updateSavedStudent(snapshot, studentId, patch)
+              snapshots.put(snapshot, cacheKey)
+            }
+          }
+          if (item.operation.kind === 'profile-v1') {
+            const current = item.outcome.profile
+            if (!field || !current || !item.outcome.profileConflicts?.includes(field)) {
+              tx.abort()
+              return
+            }
+            const expected = { ...item.operation.expected, [field]: current[field] }
+            const changes = { ...item.operation.changes }
+            if (choice === 'server') {
+              delete expected[field]
+              delete changes[field]
+            }
+            const replacementId = crypto.randomUUID()
+            const remainingConflicts = item.outcome.profileConflicts.filter((key) => key !== field)
+            const replacement = profileFields.some((key) => changes[key] !== undefined)
+              ? [
+                  {
+                    operation: offlineProfileOperationSchema.parse({
+                      ...item.operation,
+                      id: replacementId,
+                      clientTime: new Date().toISOString(),
+                      expected,
+                      changes,
+                    }),
+                    outcome: remainingConflicts.length
+                      ? { ...item.outcome, id: replacementId, profileConflicts: remainingConflicts }
+                      : null,
+                  },
+                ]
+              : []
+            pending.put(
+              queue.flatMap((entry) => (entry === item ? replacement : [entry])),
+              userId,
+            )
+            saveCurrent(current)
+            return
+          }
           const chain = queue.filter(
             (entry) =>
               entry.operation.kind === 'contact' && entry.operation.studentId === studentId,
@@ -586,15 +701,7 @@ export async function resolveStudentConflict(
             ],
             userId,
           )
-          const snapshotRequest = tx.objectStore('snapshots').get(userId)
-          snapshotRequest.onsuccess = () => {
-            if (snapshotRequest.result === undefined) return
-            const snapshot = offlineSnapshotSchema.parse(snapshotRequest.result)
-            snapshot.students = snapshot.students.map((student) =>
-              student.id === studentId ? { ...student, phone: current } : student,
-            )
-            tx.objectStore('snapshots').put(snapshot, userId)
-          }
+          saveCurrent({ whatsapp: current })
         }
         tx.oncomplete = () => resolve()
         tx.onerror = () => reject(tx.error)

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { neonAdminBoardSchema, neonSnapshotSchema } from '../shared/neon'
+import { applyGradeChanges, gradeOperationSchema } from '../shared/gradeSync'
 import { clickAccountAction } from './profileActions'
 import { mkdir } from 'node:fs/promises'
 
@@ -82,8 +83,12 @@ test('long grades remain navigable in both languages', async ({ page }, testInfo
     if (path === '/api/notebook') return route.fulfill({ json: snapshot })
     if (path === '/api/admin') return route.fulfill({ json: board })
     if (path === '/api/admin/enrollments/grades') {
+      const operation = gradeOperationSchema.parse(route.request().postDataJSON())
+      const enrollment = snapshot.enrollments.find(({ id }) => id === operation.id)
+      if (!enrollment) throw new Error('Unknown test enrollment')
+      Object.assign(enrollment, applyGradeChanges(enrollment, operation.fields))
       saved = true
-      return route.fulfill({ json: { ok: true } })
+      return route.fulfill({ json: { status: 'accepted' } })
     }
     return route.fulfill({ status: 501 })
   })
@@ -222,6 +227,10 @@ test('long grades remain navigable in both languages', async ({ page }, testInfo
       path: `.artifacts/verification/grades-scroll-${testInfo.project.name}-${ar ? 'ar' : 'en'}.png`,
     })
     const lastRow = region.getByRole('row').filter({ hasText: 'Student 30' })
+    await lastRow
+      .getByRole('spinbutton')
+      .first()
+      .fill(ar ? '81' : '80')
     await lastRow.getByRole('button', { name: ar ? 'حفظ الدرجات' : 'Save grades' }).click()
     await expect.poll(() => saved).toBe(true)
     saved = false

@@ -2,6 +2,7 @@
 import { z } from 'zod'
 import { accountFetch } from './accountRequest'
 import { recordDiagnosticAction } from './diagnostics'
+import { localGrant } from './offlineAccess'
 import type { DiagnosticsAction } from '../shared/diagnostics'
 import { neonAccountSchema, neonBatchSchema, neonSnapshotSchema } from '../shared/neon'
 import type { LedgerEvent } from '../shared/ledger'
@@ -82,15 +83,28 @@ export async function request(
   body?: unknown,
   reportDenial = true,
 ): Promise<unknown> {
+  const generation = localGrant(userId)?.generation
+  const deny = (status: 401 | 403) => {
+    if (reportDenial && localGrant(userId)?.generation === generation)
+      window.dispatchEvent(new AccessDeniedEvent(userId, status))
+  }
   const session = await authClient.getSession({
     fetchOptions: { signal: AbortSignal.timeout(15000) },
   })
   const signedInUserId = session.data?.user.id
   if (signedInUserId && signedInUserId !== userId) {
-    if (reportDenial) window.dispatchEvent(new AccessDeniedEvent(userId, 403))
+    deny(403)
     throw new NeonRequestError(403)
   }
-  if (!signedInUserId) throw new Error('Your session changed. Please sign in again.')
+  if (!signedInUserId) {
+    const status = session.error?.status
+    if (status === 401 || status === 403 || !session.error) {
+      const denial = status === 403 ? 403 : 401
+      deny(denial)
+      throw new NeonRequestError(denial)
+    }
+    throw new NeonRequestError(503)
+  }
   const action = body !== undefined ? diagnosticWrites[path] : undefined
   let response: Response
   try {
@@ -101,8 +115,7 @@ export async function request(
   }
   if (action) recordDiagnosticAction(userId, action, response.ok ? 'saved' : 'failed')
   if (!response.ok) {
-    if (reportDenial && (response.status === 401 || response.status === 403))
-      window.dispatchEvent(new AccessDeniedEvent(userId, response.status))
+    if (response.status === 401 || response.status === 403) deny(response.status)
     throw new NeonRequestError(response.status)
   }
   return response.json()

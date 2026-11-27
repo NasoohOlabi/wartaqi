@@ -2506,6 +2506,22 @@ The owner requested fixes for all return controls identified in the site audit. 
 
 Synthetic browser checks exercise the leading 48px target, accessible label, tooltip, arrow direction and return behavior on phone layouts, plus labelled desktop actions. They cover the account form before edits, the invitation receipt, course subpages and return to the existing list. The PR records release and Railway checks. Physical device behavior requires a separate check.
 
+## 2026-11-27 10:44 Asia/Damascus — Offline workspace and live delivery
+
+The owner requested durable, fast offline work and live updates across the site for a small teaching team. The design and verification matrix document role-scoped device storage, optimistic edits, explicit conflict review, and repair after missed signals. Transactional PostgreSQL notifications wake authenticated Socket.IO clients. Routine notebook, profile and grade edits survive reloads and replay with their original operation IDs. Access administration and external effects require a connection.
+
+Local verification exercised independent signed-in browsers against real Bun and disposable Postgres, denied sockets, missed notifications, rollback, conflicting and repeated mutations, same-account grade recovery and receipt backup/restore. Desktop and phone tests cover saved records during a stalled request, Settings queue delivery and identity isolation. The PR records final release and Railway checks. Browser storage eviction, physical devices and network latency in the field require separate measurement.
+
+At 10:55 Asia/Damascus, the integrated release gate passed with 167 unit and integration tests, 246 desktop and mobile browser cases, artifact checks, history scanning and dependency audit. One optional provider test and four project-specific browser cases skipped. The real two-device test completed in 3.3 seconds locally. Railway Postgres accepted migrations 019 and 020 in one transaction. Six enabled triggers and the receipt table were verified, and the existing service remained healthy before promotion.
+
+At 10:57 Asia/Damascus, integrated the new mobile app-bar return controls from main. My changes now uses the shared return destination from desktop or phone, including the previous Settings view. Invitation navigation retains connection checks. Typechecking passed after integration.
+
+At 11:06 Asia/Damascus, the mobile navigation integration passed its full release gate with 167 unit and integration tests, 247 browser passes and five project-specific browser skips. All eight PR checks passed. The next main update changed the dashboard layout and its tests; the work log was the only merge conflict.
+
+At 11:16 Asia/Damascus, hosted browser shard 1 caught the course preference test clicking a cached administrator menu while the synthetic account changed to Teacher. Holding the grant response reproduced the same missing menu item. The test now waits for the current role's navigation before opening the course chooser. The forced transition and the full course preference scenario each passed twice on desktop and twice on mobile. The dashboard integration's local release gate also passed with 167 unit and integration tests and 247 browser cases.
+
+At 11:23 Asia/Damascus, shard 2 exposed a single-status assumption in the Arabic mobile layout test. Holding the attendance request reproduced the two simultaneous messages. The test now checks the Arabic local-save confirmation and pending changes action before releasing the request, and the Arabic server acknowledgment afterward. The complete scenario passed twice on each Chromium project.
+
 ## 2026-11-27 10:48 Asia/Damascus — Fit six follow-up dates in one row
 
 The owner reported wasted space in the follow-up date cards at 662px. The dashboard sizes each card to its localized label and wraps cards when they no longer fit on a row.

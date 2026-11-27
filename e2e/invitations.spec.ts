@@ -204,6 +204,11 @@ for (const language of ['en', 'ar']) {
     const temporaryPassword = crypto.randomUUID()
     const otherPassword = crypto.randomUUID()
     let reveals = 0
+    const unrelatedReads: string[] = []
+    page.on('request', (request) => {
+      const path = new URL(request.url()).pathname
+      if (path === '/api/admin' || path === '/api/notebook') unrelatedReads.push(path)
+    })
     const account = {
       role: 'administrator',
       id: adminId,
@@ -298,6 +303,7 @@ for (const language of ['en', 'ar']) {
     await expect(message).toHaveCount(0)
     await reveal.click()
     await expect(page.getByRole('alert')).toBeVisible()
+    expect(unrelatedReads).toEqual([])
     expect(reveals).toBe(2)
     await expect(message).toHaveCount(0)
     await page

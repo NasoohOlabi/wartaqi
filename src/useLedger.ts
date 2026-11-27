@@ -1,5 +1,13 @@
 import { useLanguage } from './useLanguage'
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { z } from 'zod'
 import {
   eventSchema,
@@ -16,7 +24,14 @@ import {
   NeonRequestError,
   InvalidNotebookSnapshotError,
 } from './neon'
-import { allowOfflineAccess, clearOfflineAccess, offlineAccess } from './offlineAccess'
+import {
+  allowOfflineAccess,
+  authorizeLocalGrant,
+  clearLegacyOfflineAccess,
+  clearOfflineAccess,
+  localGrant,
+  offlineAccess,
+} from './offlineAccess'
 import {
   cacheOfflineRoster,
   getOfflineSnapshot,
@@ -25,20 +40,31 @@ import {
   queueNotebookOperations,
   queueStudentOperation,
   subscribeOfflineQueue,
+  snapshotKey,
 } from './offlineAttendanceStore'
 import { syncOfflineAttendance, syncOfflineStudent } from './offlineAttendanceSync'
 import { recordDiagnosticAction } from './diagnostics'
 import type { DiagnosticsOutcome } from '../shared/diagnostics'
-import { offlineNotebook } from './offlineNotebookData'
+import { offlineNotebook, overlayNotebook } from './offlineNotebookData'
 import { offlineAttendanceRecordSchema } from '../shared/offlineAttendance'
-import { offlineStudentOperationSchema } from '../shared/offlineStudent'
+import {
+  offlineProfileOperationSchema,
+  offlineStudentOperationSchema,
+  profileFields,
+} from '../shared/offlineStudent'
+import { subscribeWorkspaceChanges } from './syncStream'
 import type {
   Course,
   Enrollment,
   NeonTeacher,
   NeonRosterStudent,
   NeonSnapshot,
+  teacherStudentUpdateSchema,
 } from '../shared/neon'
+
+export type SaveStudentProfile = (
+  input: z.infer<typeof teacherStudentUpdateSchema>,
+) => Promise<boolean>
 
 const foreignPendingMessage =
   'A pending batch belongs to another account or an old link. Copy the pending batch from browser storage and contact your administrator to reconcile it before saving.'
@@ -70,8 +96,12 @@ async function withPendingLocks<T>(key: string, run: () => Promise<T> | T): Prom
   })
 }
 
-export function useLedger(neon: { userId: string; teacher: NeonTeacher }, startOffline = false) {
-  const { t } = useLanguage()
+export function useLedger(
+  neon: { userId: string; teacher: NeonTeacher },
+  startOffline = false,
+  enabled = true,
+) {
+  const { t, language } = useLanguage()
   const neonUserId = neon.userId
   const [snapshotTeacher, setSnapshotTeacher] = useState<NeonTeacher>()
   const key = `halaqa-pending-neon:${apiUrl}:${snapshotTeacher?.id ?? neon.teacher.id}`
@@ -87,12 +117,27 @@ export function useLedger(neon: { userId: string; teacher: NeonTeacher }, startO
   const [busy, setBusy] = useState(false)
   const locked = useRef(false)
   const [error, setError] = useState('')
+  const [readError, setReadError] = useState('')
   const [message, setMessage] = useState('')
   const [offline, setOffline] = useState(startOffline)
   const [offlineExpired, setOfflineExpired] = useState(false)
   const [offlinePrepared, setOfflinePrepared] = useState(false)
   const [offlinePendingCount, setOfflinePendingCount] = useState(0)
+  const [offlineNeedsReview, setOfflineNeedsReview] = useState(false)
+  const confirmed = useRef<NeonSnapshot | undefined>(undefined)
+  const persisted = useRef<NeonSnapshot | undefined>(undefined)
+  const visibleScope = useRef<string | null>(null)
+  const syncWriting = useRef(false)
+  const active = useRef<object | null>(null)
+  const connected = useRef(false)
+  const readInFlight = useRef<Promise<boolean> | null>(null)
+  const syncInFlight = useRef<Promise<boolean> | null>(null)
+  const readEpoch = useRef(0)
+  const pendingEpoch = useRef(0)
+  const writeEpoch = useRef(0)
+  const syncAgain = useRef(false)
   const offlineRef = useRef(startOffline)
+  const [invalidSnapshot, setInvalidSnapshot] = useState(false)
   const invalid = 0
   const applySnapshot = useCallback((snapshot: NeonSnapshot) => {
     setSnapshotTeacher(snapshot.teacher)
@@ -120,196 +165,340 @@ export function useLedger(neon: { userId: string; teacher: NeonTeacher }, startO
   }, [key])
 
   const loadOffline = useCallback(async () => {
-    const access = offlineAccess()
-    if (!access || access.userId !== neonUserId || !navigator.locks) {
-      setOfflinePrepared(false)
-      if (offlineRef.current) {
-        setOfflineExpired(true)
-        setLoaded(false)
-      }
-      return false
-    }
-    const [snapshot, attendance, students] = await Promise.all([
-      getOfflineSnapshot(neonUserId),
+    const session = active.current
+    const key = snapshotKey(neonUserId)
+    const lease = offlineAccess()
+    const grant = localGrant(neonUserId)
+    const epoch = ++pendingEpoch.current
+    const hasAccess = grant
+      ? grant.account.role !== 'student' && grant.account.canRead
+      : lease?.userId === neonUserId && lease.teacher?.id === neon.teacher.id
+    const [cached, attendance, students] = await Promise.all([
+      hasAccess
+        ? getOfflineSnapshot(neonUserId, key).then(
+            (value) =>
+              value ??
+              (grant &&
+              lease?.userId === neonUserId &&
+              lease.teacher?.id === grant.account.id &&
+              lease.teacher.role === grant.account.role &&
+              lease.teacher.canWrite === grant.account.canWrite
+                ? getOfflineSnapshot(neonUserId, neonUserId)
+                : null),
+          )
+        : Promise.resolve(null),
       listPendingAttendance(neonUserId),
       listPendingStudent(neonUserId),
     ])
-    // The lease may have expired or been withdrawn while IndexedDB was read.
-    if (JSON.stringify(offlineAccess()) !== JSON.stringify(access)) {
-      setOfflinePrepared(false)
-      if (offlineRef.current) {
-        setOfflineExpired(true)
-        setLoaded(false)
-      }
+    if (!session || active.current !== session || epoch !== pendingEpoch.current) return false
+    if (
+      snapshotKey(neonUserId) !== key ||
+      (!grant && JSON.stringify(offlineAccess()) !== JSON.stringify(lease))
+    )
       return false
-    }
     setOfflinePendingCount(attendance.length + students.length)
-    setOfflinePrepared(Boolean(snapshot || attendance.length || students.length))
-    if (!snapshot) {
-      if (offlineRef.current) setLoaded(false)
-      return false
+    setOfflineNeedsReview([...attendance, ...students].some(({ outcome }) => outcome !== null))
+    setOfflinePrepared(Boolean(cached))
+    const base = visibleScope.current === key ? confirmed.current : undefined
+    if (cached && (!base || persisted.current === base)) {
+      const local = offlineNotebook(cached, lease?.teacher ?? neon.teacher, attendance, students)
+      // Invitation profiles belong to the live response only.
+      visibleScope.current = key
+      applySnapshot(base ? { ...local, teacher: base.teacher } : local)
+    } else if (base && (!offlineRef.current || hasAccess) && visibleScope.current === key) {
+      applySnapshot(overlayNotebook(base, attendance, students))
     }
-    setOfflineExpired(false)
-    if (offlineRef.current)
-      applySnapshot(offlineNotebook(snapshot, access.teacher ?? neon.teacher, attendance, students))
-    return true
+    return Boolean(base || cached)
   }, [neonUserId, neon.teacher, applySnapshot])
 
-  const refresh = useCallback(
-    async (retryBlocked = false) => {
-      if (locked.current) return false
-      locked.current = true
-      setBusy(true)
-      const previousLease = JSON.stringify(offlineAccess())
-      let snapshot: NeonSnapshot
+  async function accept(snapshot: NeonSnapshot, session: object, cacheKey: string) {
+    const isCurrent = () => active.current === session && snapshotKey(neonUserId) === cacheKey
+    if (!isCurrent()) return false
+    if (
+      !snapshot.teacher.canRead ||
+      (snapshot.teacher.expiresAt && Date.parse(snapshot.teacher.expiresAt) <= Date.now())
+    ) {
+      clearOfflineAccess()
+      confirmed.current = undefined
+      connected.current = false
+      setLoaded(false)
+      setOfflinePrepared(false)
+      setOfflineExpired(true)
+      return false
+    }
+    const grant = localGrant(neonUserId)
+    if (
+      grant &&
+      (grant.account.id !== snapshot.teacher.id ||
+        grant.account.role !== snapshot.teacher.role ||
+        grant.account.canWrite !== snapshot.teacher.canWrite ||
+        grant.account.expiresAt !== snapshot.teacher.expiresAt)
+    ) {
+      authorizeLocalGrant(neonUserId, snapshot.teacher)
+      cacheKey = snapshotKey(neonUserId)
+    }
+    confirmed.current = snapshot
+    visibleScope.current = cacheKey
+    setInvalidSnapshot(false)
+    connected.current = true
+    offlineRef.current = false
+    setOffline(false)
+    setOfflineExpired(false)
+    setReadError('')
+    // Publish the authorized response even when browser storage is unavailable.
+    try {
+      const epoch = pendingEpoch.current
+      const [attendance, students] = await Promise.all([
+        listPendingAttendance(neonUserId),
+        listPendingStudent(neonUserId),
+      ])
+      if (!isCurrent()) return false
+      if (epoch === pendingEpoch.current)
+        applySnapshot(overlayNotebook(snapshot, attendance, students))
+    } catch {
+      if (isCurrent()) applySnapshot(snapshot)
+    }
+    if (!isCurrent()) return false
+    try {
+      await cacheOfflineRoster(neonUserId, snapshot, cacheKey)
+      if (!isCurrent()) return false
+      persisted.current = snapshot
+      if (snapshot.teacher.canWrite) {
+        allowOfflineAccess(
+          neonUserId,
+          snapshot.teacher.name,
+          snapshot.teacher.expiresAt ? Date.parse(snapshot.teacher.expiresAt) : null,
+          snapshot.teacher,
+        )
+      } else clearLegacyOfflineAccess()
+      await loadOffline()
+    } catch {
+      // Storage failure cannot hide a validated online response.
+    }
+    return isCurrent()
+  }
+
+  function readNotebook(): Promise<boolean> {
+    if (readInFlight.current) return readInFlight.current
+    const session = active.current
+    if (!session) return Promise.resolve(false)
+    const cacheKey = snapshotKey(neonUserId)
+    const epoch = readEpoch.current
+    const isCurrent = () => active.current === session && snapshotKey(neonUserId) === cacheKey
+    const task = (async () => {
       try {
-        snapshot = await getNotebook(neonUserId)
+        const snapshot = await getNotebook(neonUserId)
+        if (!isCurrent() || locked.current || syncWriting.current || epoch !== readEpoch.current)
+          return false
+        return await accept(snapshot, session, cacheKey)
       } catch (cause) {
+        if (!isCurrent()) return false
         if (cause instanceof NeonRequestError && (cause.status === 401 || cause.status === 403)) {
           if (cause.status === 403) clearOfflineAccess()
+          confirmed.current = undefined
+          connected.current = false
           setLoaded(false)
           setOfflinePrepared(false)
-          setError(errorText(cause))
-        } else if (cause instanceof InvalidNotebookSnapshotError) {
-          setError(errorText(cause))
+          setReadError(errorText(cause))
+        } else if (!(cause instanceof InvalidNotebookSnapshotError)) {
+          connected.current = false
+          offlineRef.current = true
+          setOffline(true)
+          if (await loadOffline().catch(() => false)) setReadError('')
+          else setReadError(errorText(cause))
         } else {
-          if (offlineAccess()?.userId === neonUserId || !navigator.onLine) {
-            offlineRef.current = true
-            setOffline(true)
-          }
-          try {
-            if (offlineRef.current && (await loadOffline())) setError('')
-            else setError(errorText(cause))
-          } catch {
-            setLoaded(false)
-            setError(errorText(cause))
-          }
+          connected.current = false
+          setInvalidSnapshot(true)
+          setReadError(errorText(cause))
         }
-        locked.current = false
-        setBusy(false)
         return false
       }
-      try {
-        if (snapshot.teacher.expiresAt && Date.parse(snapshot.teacher.expiresAt) <= Date.now()) {
-          clearOfflineAccess()
-          setOfflineExpired(true)
-          setLoaded(false)
-          return false
-        }
-        offlineRef.current = false
-        setOffline(false)
-        setOfflineExpired(false)
-        applySnapshot(snapshot)
-        setError('')
-        if (!snapshot.teacher.canRead || !snapshot.teacher.canWrite) {
-          clearOfflineAccess()
-          setOfflinePrepared(false)
-          return true
-        }
-        // Local cache and sync are optional: failures must not hide authorized online data.
-        try {
-          await cacheOfflineRoster(neonUserId, snapshot)
-          if (JSON.stringify(offlineAccess()) !== previousLease) return true
-          allowOfflineAccess(
-            neonUserId,
-            snapshot.teacher.name,
-            snapshot.teacher.expiresAt ? Date.parse(snapshot.teacher.expiresAt) : null,
-            snapshot.teacher,
+    })()
+    readInFlight.current = task
+    void task
+      .finally(() => {
+        if (readInFlight.current === task) readInFlight.current = null
+      })
+      .catch(() => {})
+    return task
+  }
+
+  function drain(retryBlocked = false): Promise<boolean> {
+    if (syncInFlight.current) {
+      syncAgain.current = true
+      return syncInFlight.current
+    }
+    const session = active.current
+    if (!session || !connected.current || !navigator.locks || storageBlocked)
+      return Promise.resolve(false)
+    const cacheKey = snapshotKey(neonUserId)
+    const isCurrent = () => active.current === session && snapshotKey(neonUserId) === cacheKey
+    const task = (async () => {
+      if (hasForeignPending(key) || localStorage.getItem(key)) return false
+      const [attendance, students] = await Promise.all([
+        listPendingAttendance(neonUserId),
+        listPendingStudent(neonUserId),
+      ])
+      if (!isCurrent() || !connected.current || !confirmed.current?.teacher.canWrite) return false
+      if (!attendance.length && !students.length) return true
+      syncWriting.current = true
+      readEpoch.current += 1
+      const outcomes = await Promise.allSettled([
+        syncOfflineAttendance(neonUserId, retryBlocked, cacheKey),
+        syncOfflineStudent(neonUserId, retryBlocked, cacheKey),
+      ])
+      if (!isCurrent()) return false
+      syncWriting.current = false
+      const uploaded = outcomes.some(
+        (result) =>
+          result.status === 'fulfilled' &&
+          result.value.some((outcome) => outcome.kind === 'saved' || outcome.kind === 'unchanged'),
+      )
+      const conflicted = outcomes.some(
+        (result) =>
+          result.status === 'fulfilled' && result.value.some(({ kind }) => kind === 'conflict'),
+      )
+      if (uploaded) {
+        const savedWriteEpoch = writeEpoch.current
+        const [remainingMarks, remainingStudents] = await Promise.all([
+          listPendingAttendance(neonUserId),
+          listPendingStudent(neonUserId),
+        ])
+        if (
+          isCurrent() &&
+          writeEpoch.current === savedWriteEpoch &&
+          !remainingMarks.length &&
+          !remainingStudents.length
+        )
+          setMessage(
+            language === 'ar'
+              ? '\u0642\u0628\u0644\u062a \u0648\u0627\u0631\u062a\u0642\u0650 \u0627\u0644\u062a\u063a\u064a\u064a\u0631\u0627\u062a.'
+              : 'Changes accepted by Wartaq.',
           )
-          setOfflinePrepared(true)
-          const [attendance, students] = await Promise.all([
-            listPendingAttendance(neonUserId),
-            listPendingStudent(neonUserId),
-          ])
-          setOfflinePendingCount(attendance.length + students.length)
-          if (
-            (attendance.length || students.length) &&
-            navigator.locks &&
-            !pending.length &&
-            !storageBlocked
-          ) {
-            const sync = await withPendingLocks(key, async () => {
-              if (hasForeignPending(key) || localStorage.getItem(key))
-                return { uploaded: false, failed: true }
-              const outcomes = await Promise.allSettled([
-                syncOfflineAttendance(neonUserId, retryBlocked),
-                syncOfflineStudent(neonUserId, retryBlocked),
-              ])
-              return {
-                uploaded: outcomes.some(
-                  (result) =>
-                    result.status === 'fulfilled' &&
-                    result.value.some((item) => item.kind === 'saved' || item.kind === 'unchanged'),
-                ),
-                failed: outcomes.some((result) => result.status === 'rejected'),
-              }
-            })
-            if (sync.uploaded) {
-              snapshot = await getNotebook(neonUserId)
-              applySnapshot(snapshot)
-              await cacheOfflineRoster(neonUserId, snapshot)
-            }
-            if (retryBlocked && sync.failed) return false
-          }
-        } catch {
-          if (retryBlocked) return false
-          /* Keep the live snapshot and pending work for later. */
-        }
-        return true
-      } finally {
-        locked.current = false
-        setBusy(false)
       }
-    },
-    [neonUserId, applySnapshot, loadOffline, pending.length, storageBlocked, key],
-  )
+      const denied = outcomes.some(
+        (result) =>
+          result.status === 'rejected' &&
+          result.reason instanceof NeonRequestError &&
+          (result.reason.status === 401 || result.reason.status === 403),
+      )
+      if (uploaded || conflicted || denied) {
+        // A concurrent GET may have started before the commit. Follow it with a fresh read.
+        const inFlight = readInFlight.current
+        if (inFlight) await inFlight
+        if (!isCurrent()) return false
+        await readNotebook()
+      }
+      return outcomes.every((result) => result.status === 'fulfilled')
+    })().catch(() => false)
+    syncInFlight.current = task
+    void task.finally(() => {
+      if (syncInFlight.current !== task) return
+      syncInFlight.current = null
+      syncWriting.current = false
+      if (syncAgain.current && isCurrent()) {
+        syncAgain.current = false
+        void drain()
+      }
+    })
+    return task
+  }
+
+  async function requestRefresh(retryBlocked = false) {
+    if (!enabled) return false
+    if (retryBlocked && syncInFlight.current) await syncInFlight.current
+    if (!(await readNotebook())) return false
+    const synced = await drain(retryBlocked)
+    return !retryBlocked || synced
+  }
+
+  const refreshRef = useRef(requestRefresh)
+  useLayoutEffect(() => {
+    refreshRef.current = requestRefresh
+  })
+  const refresh = useCallback((retryBlocked = false) => refreshRef.current(retryBlocked), [])
 
   const onQueueChange = useEffectEvent(() => {
-    void loadOffline().catch(() => {
-      if (offlineRef.current) setLoaded(false)
-    })
+    void loadOffline()
+      .then((prepared) => {
+        if (!prepared && !navigator.onLine && active.current)
+          setReadError('Offline access expired. Connect and sign in again.')
+      })
+      .catch(() => {})
   })
-  const onProbe = useEffectEvent(() => {
-    void refresh()
+  const onProbe = useEffectEvent(async () => {
+    await refresh()
+  })
+  const probeOfflineConnection = useEffectEvent(() => {
+    if (offlineRef.current && document.visibilityState === 'visible') void refresh()
   })
   const onDisconnect = useEffectEvent(() => {
+    connected.current = false
     offlineRef.current = true
     setOffline(true)
-    void loadOffline().catch(() => setLoaded(false))
+    void loadOffline().catch(() => {})
   })
   const checkOfflineAccess = useEffectEvent(() => {
-    if (!offlineRef.current || offlineAccess()?.userId === neonUserId) return
+    if (visibleScope.current && visibleScope.current !== snapshotKey(neonUserId)) {
+      visibleScope.current = null
+      confirmed.current = undefined
+      persisted.current = undefined
+      connected.current = false
+      setLoaded(false)
+      setOfflinePrepared(false)
+      if (enabled && localGrant(neonUserId)) void refresh()
+    }
+    if (!offlineRef.current || localGrant(neonUserId) || offlineAccess()?.userId === neonUserId)
+      return
+    confirmed.current = undefined
     setOfflinePrepared(false)
     setOfflineExpired(true)
     setLoaded(false)
   })
-  const retryOfflineConnection = useEffectEvent(() => {
-    if (offlineRef.current) void refresh()
-  })
   useEffect(() => {
+    const session = {}
+    active.current = session
     const unsubscribe = subscribeOfflineQueue(onQueueChange)
-    if (startOffline) queueMicrotask(onDisconnect)
-    queueMicrotask(onProbe)
-    window.addEventListener('online', onProbe)
+    queueMicrotask(() => {
+      if (active.current === session) onQueueChange()
+    })
     window.addEventListener('offline', onDisconnect)
-    window.addEventListener('focus', onProbe)
-    window.addEventListener('storage', onQueueChange)
+    window.addEventListener('storage', checkOfflineAccess)
     const accessTimer = window.setInterval(checkOfflineAccess, 1000)
-    const retryTimer = window.setInterval(retryOfflineConnection, 5000)
+    return () => {
+      active.current = null
+      confirmed.current = undefined
+      visibleScope.current = null
+      readInFlight.current = null
+      persisted.current = undefined
+      connected.current = false
+      syncAgain.current = false
+      syncInFlight.current = null
+      syncWriting.current = false
+      unsubscribe()
+      window.removeEventListener('offline', onDisconnect)
+      window.removeEventListener('storage', checkOfflineAccess)
+      window.clearInterval(accessTimer)
+    }
+  }, [neonUserId])
+  useEffect(() => {
+    if (!enabled) return
+    const unsubscribe = subscribeWorkspaceChanges(neonUserId, onProbe)
+    const retryTimer = window.setInterval(probeOfflineConnection, 5000)
     return () => {
       unsubscribe()
-      window.removeEventListener('online', onProbe)
-      window.removeEventListener('offline', onDisconnect)
-      window.removeEventListener('focus', onProbe)
-      window.removeEventListener('storage', onQueueChange)
-      window.clearInterval(accessTimer)
       window.clearInterval(retryTimer)
     }
-  }, [startOffline])
+  }, [enabled, neonUserId])
 
   async function send(batch: LedgerEvent[], retry = false): Promise<boolean> {
-    if (locked.current || !batch.length) return false
+    if (locked.current || invalidSnapshot || !batch.length) return false
+    const session = active.current
+    const cacheKey = snapshotKey(neonUserId)
+    const isCurrent = () => active.current === session && snapshotKey(neonUserId) === cacheKey
+    if (!session) return false
     locked.current = true
+    readEpoch.current += 1
     setBusy(true)
     setError('')
     setMessage('')
@@ -322,6 +511,7 @@ export function useLedger(neon: { userId: string; teacher: NeonTeacher }, startO
         return false
       }
       const saved = await withPendingLocks(key, async () => {
+        if (!isCurrent()) return false
         let foreign: boolean
         let existing: string | null
         try {
@@ -362,6 +552,7 @@ export function useLedger(neon: { userId: string; teacher: NeonTeacher }, startO
         setPending(batch)
         if (!neon.teacher.canWrite) throw new Error('Your account has read-only access.')
         const current = await getNotebook(neon.userId)
+        if (!isCurrent()) return false
         applySnapshot(current)
         if (
           projectEvents([...current.events, ...batch]).conflicts >
@@ -384,9 +575,16 @@ export function useLedger(neon: { userId: string; teacher: NeonTeacher }, startO
           writeStarted = true
           snapshot = await postEvents(neon.userId, remaining)
         }
+        if (!isCurrent()) return false
+        confirmed.current = snapshot
         applySnapshot(snapshot)
-        if (offlineAccess()?.userId === neonUserId)
-          await cacheOfflineRoster(neonUserId, snapshot).catch(() => {})
+        if (localGrant(neonUserId) || offlineAccess()?.userId === neonUserId)
+          await cacheOfflineRoster(neonUserId, snapshot, cacheKey)
+            .then(() => {
+              if (isCurrent()) persisted.current = snapshot
+            })
+            .catch(() => {})
+        if (!isCurrent()) return false
         localStorage.removeItem(key)
         return true
       })
@@ -400,6 +598,7 @@ export function useLedger(neon: { userId: string; teacher: NeonTeacher }, startO
       )
       return true
     } catch (cause) {
+      if (!isCurrent()) return false
       recordLedgerActions(
         neonUserId,
         batch.map(({ payload }) => payload),
@@ -415,74 +614,87 @@ export function useLedger(neon: { userId: string; teacher: NeonTeacher }, startO
     }
   }
 
-  async function save(payloads: Payload[]): Promise<boolean> {
-    if (storageBlocked || pending.length || !loaded || !payloads.length) return false
-    if (offline) {
-      try {
-        if (hasForeignPending(key) || localStorage.getItem(key))
-          throw new Error('Resolve the pending online batch before saving offline.')
-        const snapshot = await getOfflineSnapshot(neonUserId)
-        if (!snapshot || offlineAccess()?.userId !== neonUserId || !neon.teacher.canWrite)
-          return false
-        const marks: z.infer<typeof offlineAttendanceRecordSchema>[] = []
-        const notes: z.infer<typeof offlineStudentOperationSchema>[] = []
-        for (const payload of payloads) {
-          if (payload.kind === 'attendance') {
-            const enrollment = snapshot.courses
-              .filter((course) => course.open)
-              .flatMap((course) => course.enrollments.filter((entry) => entry.active))
-              .find(
-                (entry) =>
-                  entry.id === payload.enrollmentId && entry.studentId === payload.studentId,
-              )
-            if (!enrollment) throw new Error('This student is not enrolled in an open course.')
-            const current = snapshot.attendance.find(
-              (entry) =>
-                entry.studentId === payload.studentId &&
-                entry.enrollmentId === payload.enrollmentId &&
-                entry.date === payload.date,
-            )
-            marks.push(
-              offlineAttendanceRecordSchema.parse({
-                event: makeEvent(neon.teacher.name, payload),
-                expectedEventId: current?.eventId ?? null,
-              }),
-            )
-          } else if (
-            payload.kind === 'note' &&
-            snapshot.students.some((student) => student.id === payload.studentId)
-          ) {
-            notes.push(
-              offlineStudentOperationSchema.parse({
-                kind: 'note',
-                event: makeEvent(neon.teacher.name, payload),
-              }),
-            )
-          } else throw new Error('This action is unavailable offline.')
-        }
-        await withPendingLocks(key, async () => {
-          if (offlineAccess()?.userId !== neonUserId)
-            throw new Error('Offline access has expired or been withdrawn.')
-          if (hasForeignPending(key) || localStorage.getItem(key))
-            throw new Error('Resolve the pending online batch before saving offline.')
-          await queueNotebookOperations(neonUserId, marks, notes)
-          recordLedgerActions(neonUserId, payloads, 'queued')
-        })
-        await loadOffline()
-        return true
-      } catch (cause) {
-        setError(errorText(cause))
-        return false
-      }
-    }
-    if (offlinePendingCount) {
-      setError('Review pending offline changes before saving online.')
+  async function save(
+    payloads: Payload[],
+    observedAttendance?: ReadonlyMap<string, string | null>,
+  ): Promise<boolean> {
+    if (storageBlocked || pending.length || !loaded || !payloads.length || locked.current)
       return false
-    }
+    const session = active.current
+    const cacheKey = snapshotKey(neonUserId)
+    const access = snapshotTeacher ?? neon.teacher
+    const isCurrent = () => active.current === session && snapshotKey(neonUserId) === cacheKey
+    if (!session || !access.canWrite || visibleScope.current !== cacheKey) return false
+    const queueable = payloads.every(
+      (payload) =>
+        payload.kind === 'note' || (payload.kind === 'attendance' && !!payload.enrollmentId),
+    )
     try {
-      return await send(payloads.map((payload) => makeEvent(neon.teacher.name, payload)))
+      if (!queueable) {
+        if (offline) throw new Error('This action is unavailable offline.')
+        return await send(payloads.map((payload) => makeEvent(neon.teacher.name, payload)))
+      }
+      const marks: z.infer<typeof offlineAttendanceRecordSchema>[] = []
+      const notes: z.infer<typeof offlineStudentOperationSchema>[] = []
+      const projection = projectEvents(events)
+      validateAssignedPayloads(payloads, roster, events, enrollments, courses)
+      for (const payload of payloads) {
+        if (payload.kind === 'attendance') {
+          const current = projection.attendance.find(
+            ({ value }) =>
+              value.studentId === payload.studentId &&
+              value.enrollmentId === payload.enrollmentId &&
+              value.date === payload.date,
+          )
+          marks.push(
+            offlineAttendanceRecordSchema.parse({
+              event: makeEvent(neon.teacher.name, payload),
+              expectedEventId:
+                observedAttendance?.get(payload.studentId) === undefined
+                  ? (current?.event.id ?? null)
+                  : observedAttendance.get(payload.studentId),
+            }),
+          )
+        } else {
+          notes.push(
+            offlineStudentOperationSchema.parse({
+              kind: 'note',
+              event: makeEvent(neon.teacher.name, payload),
+            }),
+          )
+        }
+      }
+      setError('')
+      await withPendingLocks(key, async () => {
+        if (!isCurrent() || (!localGrant(neonUserId) && offlineAccess()?.userId !== neonUserId))
+          throw new Error('Offline access has expired or been withdrawn.')
+        if (hasForeignPending(key)) {
+          setStorageBlocked(foreignPendingMessage)
+          throw new Error(foreignPendingMessage)
+        }
+        if (localStorage.getItem(key))
+          throw new Error('Resolve the pending online batch before saving offline.')
+        try {
+          await queueNotebookOperations(neonUserId, marks, notes)
+        } catch {
+          throw new Error(
+            'Could not save these changes on this device. Restore browser storage and try again.',
+          )
+        }
+      })
+      if (!isCurrent()) return true
+      writeEpoch.current += 1
+      setMessage(
+        language === 'ar'
+          ? '\u062d\u064f\u0641\u0638\u062a \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062c\u0647\u0627\u0632. \u0628\u0627\u0646\u062a\u0638\u0627\u0631 \u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629.'
+          : 'Saved on this device. Waiting to sync.',
+      )
+      recordLedgerActions(neonUserId, payloads, 'queued')
+      await loadOffline().catch(() => false)
+      void drain()
+      return true
     } catch (cause) {
-      setError(errorText(cause))
+      if (isCurrent()) setError(errorText(cause))
       return false
     }
   }
@@ -514,6 +726,64 @@ export function useLedger(neon: { userId: string; teacher: NeonTeacher }, startO
     }
   }
 
+  const saveStudentProfile: SaveStudentProfile = async (input) => {
+    const session = active.current
+    const cacheKey = snapshotKey(neonUserId)
+    const isCurrent = () => active.current === session && snapshotKey(neonUserId) === cacheKey
+    if (
+      !session ||
+      visibleScope.current !== cacheKey ||
+      !(snapshotTeacher ?? neon.teacher).canWrite ||
+      storageBlocked ||
+      invalidSnapshot ||
+      pending.length ||
+      !roster.some((student) => student.studentId === input.studentId && student.active)
+    )
+      return false
+    const changed = profileFields.filter((field) => input[field] !== input.expected[field])
+    if (!changed.length) return true
+    const operation = offlineProfileOperationSchema.parse({
+      kind: 'profile-v1',
+      id: crypto.randomUUID(),
+      studentId: input.studentId,
+      clientTime: new Date().toISOString(),
+      expected: Object.fromEntries(changed.map((field) => [field, input.expected[field]])),
+      changes: Object.fromEntries(changed.map((field) => [field, input[field]])),
+    })
+    try {
+      if (
+        offline &&
+        changed.some((field) => field !== 'whatsapp') &&
+        !(await getOfflineSnapshot(neonUserId, cacheKey))?.notebook
+      )
+        throw new Error(
+          'Connect to Wartaq once to prepare this student profile for offline editing.',
+        )
+      await withPendingLocks(key, async () => {
+        if (!isCurrent() || (!localGrant(neonUserId) && offlineAccess()?.userId !== neonUserId))
+          throw new Error('Offline access has expired or been withdrawn.')
+        if (hasForeignPending(key) || localStorage.getItem(key))
+          throw new Error(foreignPendingMessage)
+        await queueStudentOperation(neonUserId, operation)
+      })
+      if (!isCurrent()) return true
+      writeEpoch.current += 1
+      setError('')
+      setMessage(
+        language === 'ar'
+          ? '\u062d\u064f\u0641\u0638\u062a \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062c\u0647\u0627\u0632. \u0628\u0627\u0646\u062a\u0638\u0627\u0631 \u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629.'
+          : 'Saved on this device. Waiting to sync.',
+      )
+      recordDiagnosticAction(neonUserId, 'student', 'queued')
+      await loadOffline().catch(() => false)
+      void drain()
+      return true
+    } catch (cause) {
+      if (isCurrent()) setError(errorText(cause))
+      return false
+    }
+  }
+
   const scopedEvents = useMemo(() => assignedEvents(events, roster), [events, roster])
   return {
     events: scopedEvents,
@@ -525,51 +795,16 @@ export function useLedger(neon: { userId: string; teacher: NeonTeacher }, startO
     storageBlocked,
     loaded,
     busy,
-    error,
+    error: readError || error,
     message,
     invalid,
+    invalidSnapshot,
     offline,
     offlineExpired,
     offlinePrepared,
     offlinePendingCount,
-    saveOfflinePhone: async (
-      studentId: string,
-      expectedWhatsapp: string | null,
-      whatsapp: string | null,
-    ) => {
-      if (
-        !offline ||
-        storageBlocked ||
-        pending.length ||
-        offlineAccess()?.userId !== neonUserId ||
-        !roster.some((student) => student.studentId === studentId)
-      )
-        return false
-      try {
-        if (hasForeignPending(key) || localStorage.getItem(key))
-          throw new Error('Resolve the pending online batch before saving offline.')
-        await withPendingLocks(key, async () => {
-          if (offlineAccess()?.userId !== neonUserId)
-            throw new Error('Offline access has expired or been withdrawn.')
-          if (hasForeignPending(key) || localStorage.getItem(key))
-            throw new Error('Resolve the pending online batch before saving offline.')
-          await queueStudentOperation(neonUserId, {
-            kind: 'contact',
-            id: crypto.randomUUID(),
-            studentId,
-            clientTime: new Date().toISOString(),
-            expectedWhatsapp,
-            whatsapp,
-          })
-          recordDiagnosticAction(neonUserId, 'student', 'queued')
-        })
-        await loadOffline()
-        return true
-      } catch (cause) {
-        setError(errorText(cause))
-        return false
-      }
-    },
+    offlineNeedsReview,
+    saveStudentProfile,
     refresh,
     save,
     retry: () => (storageBlocked ? Promise.resolve(false) : send(pending, true)),
