@@ -334,7 +334,7 @@
 }
 .workspace-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 18px;
 }
@@ -348,14 +348,9 @@
   font-size: 22px;
   color: #004d57;
 }
-.workspace-metrics span,
-.workspace-recent small {
+.workspace-metrics span {
   color: #58787d;
   font-size: 12px;
-}
-.workspace-recent p {
-  margin-top: 8px;
-  overflow-wrap: anywhere;
 }
 @media (max-width: 1050px) {
   .workspace-content {

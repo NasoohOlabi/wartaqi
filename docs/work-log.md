@@ -2572,11 +2572,23 @@ The browser regression exercises the middle and end of a long roster, a repeat t
 
 At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing before its confirmation delay while an earlier sync was still settling after reload. The hold now follows the result of the specific local save, and a focused row hands off focus before it is removed. The browser regression covers both keyboard and pointer focus through this path.
 
+## 2026-11-27 15:58 Asia/Damascus — Keep notes on the student profile
+
+The owner reported that a student note appeared in the attendance sidebar without context. Staff now read saved student notes on the student's profile with their dates, authors and tags. The attendance row still opens the form for adding a note to that student and date. The attendance sidebar shows the student and recorded-attendance counts. Day-level notes were deferred.
+
+Synthetic Chromium checks cover saving from Attendance, reading from the correct profile across dates, hiding a corrected note after reload, and English and Arabic desktop and phone layouts. `bun run verify:release` passed with 155 local tests and 256 browser cases. Optional provider suites were skipped locally. The browser checks use intercepted Auth and notebook routes. The PR records Railway verification.
+
 ## 2026-11-27 16:00 Asia/Damascus — Manage course groups by teacher
 
 The owner asked for a course-row menu action that opens teacher groups and lets administrators move individual students. **Manage groups** opens a course page with teacher accordions and an **Unassigned** group. Each move updates only the selected enrollment's teacher using the existing assignment endpoint. A failed save leaves the member in their last confirmed group and offers a retry.
 
 Synthetic Chromium checks cover the course menu, move, failed save, retry, reload and independent enrollment data on desktop and an Arabic phone. The course integration test passed against disposable PostgreSQL 17 and checked authorization, course scope, withdrawal and preservation of other enrollment fields. The PR records release and Railway checks. Production sign-in and physical-device behavior require separate verification.
+
+At 16:12 Asia/Damascus, PR #222 incorporated the enrollment switch from PR #221 and retained both course documentation changes. `bun run verify` and all eight focused Chromium checks passed across desktop and mobile, including group moves and membership retries.
+
+At 16:38 Asia/Damascus, PR #222 incorporated the MCP enrollment update from PR #223. `bun run verify` and the disposable PostgreSQL course test passed. Group moves continue to use the course assignment endpoint.
+
+At 16:47 Asia/Damascus, PR #222 incorporated the student notes update from PR #220. `bun run verify` and six focused Chromium cases passed across desktop and mobile, covering group moves, membership and student notes.
 
 ## 2026-11-27 16:01 Asia/Damascus — Show course membership changes on the first tap
 
@@ -2584,11 +2596,7 @@ The owner reported that a slow enrollment save left the switch looking off. A se
 
 Four focused Chromium checks passed on desktop English and mobile Arabic. They cover a held enrollment write and refresh, a blocked second tap, later withdrawal, failed rejoin and retry with the original enrollment ID, and the earlier inactive roster regression. The course suite passed against disposable PostgreSQL. The PR records the release checks and Railway verification.
 
-At 16:12 Asia/Damascus, PR #222 incorporated the enrollment switch from PR #221 and retained both course documentation changes. `bun run verify` and all eight focused Chromium checks passed across desktop and mobile, including group moves and membership retries.
-
 ## 2026-11-27 16:24 Asia/Damascus ? MCP enrollment levels
 
 - Investigated repeated successful saves followed by old levels in the notebook. The membership handler ignored the supplied level and returned success. PR #219 addresses client readback scheduling.
 - Route explicit MCP levels through the administrator enrollment write and keep legacy membership payloads from replacing them. The disposable PostgreSQL regression covers write, readback and stale membership replay. Local bun run verify passed with 155 tests and 14 opt-in skips. Production readback requires deployment and authorized access.
-
-At 16:38 Asia/Damascus, PR #222 incorporated the MCP enrollment update from PR #223. `bun run verify` and the disposable PostgreSQL course test passed. Group moves continue to use the course assignment endpoint.
