@@ -1,0 +1,15 @@
+# Rejecting stale edits
+
+Previously, direct saves could replace a newer edit whenever an older request reached PostgreSQL last. Some offline queues also checked whether the server still held the original value, so a newer edit could require manual conflict resolution after an older one synced first.
+
+Timestamp-aware saves compare the time the user made the edit with the last applied edit on the same record. The comparison and write run in one transaction. An older edit leaves the stored values intact. Equal timestamps are ordered by operation ID, with the larger UUID winning. The comparison uses the whole record, so a delayed edit can be rejected even if it touches a different field.
+
+Capture the UTC edit time when the user saves or queues a change. Persist the timestamp and operation ID with the operation and resend the original pair on retry. Capture a new pair for a new edit. Direct roster, enrollment and course HTTP writes send `X-Edit-Time` as an ISO 8601 UTC timestamp, such as `2026-11-27T14:05:00.000Z`, and `X-Edit-Id` as a UUID. Queued attendance records, student profile operations and grade operations carry `editTime` in the JSON body alongside the existing event, operation or request ID. Raw ledger appends send `editTime` on each event. MCP write tools accept an `edit` object with `time` and `id`, while the ledger and sync tools use the same `editTime` fields as HTTP.
+
+One enrollment version covers course teacher, level, membership, handbook and grade changes. Student records and courses each have their own version. Attendance marks use a student, enrollment and date as their record and retain append-only history. Independent notes can still be appended. Account security actions use the server's existing authorization and session checks.
+
+With older clients that omit the timestamp, the server uses its own clock and retains the existing expected-value checks where applicable. An old client can therefore replace a timestamped edit if its request arrives later and qualifies under the legacy rules. Existing records without edit versions acquire one on their next write. Historical attendance uses each event's stored receive time.
+
+Device clocks can disagree. Close edits can be ordered differently from when the users actually made them, and equal timestamps use the UUID rule. A time more than five minutes ahead of the server is rejected. Even a smaller fast-clock offset can temporarily cause a subsequent edit from a slower device or legacy client to be rejected. A direct stale save returns HTTP 409. Queued edits surface conflicts with the saved values so users can review them before making a new edit.
+
+The database migration, notebook handler and grade sync enforce the rule. The browser request and offline queue modules capture the edit time. The MCP adapter forwards it, and the Railway transfer tool preserves it through backup and restore. Regression tests cover both arrival orders for enrollment and attendance, MCP teacher and level changes, stale corrections, browser retry identity and backup round-trips.

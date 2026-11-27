@@ -55,7 +55,7 @@ const gradeReceiptTable = {
   name: 'public.grade_sync_receipts',
   columns: ['request_id', 'fingerprint'],
 } as const
-type Version = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14
+type Version = Backup['version']
 function tablesFor(version: Version) {
   if (version < 3) return [...baseTables]
   return [
@@ -69,6 +69,7 @@ function columnsFor(
   table: ReturnType<typeof tablesFor>[number],
   version: Version,
 ): readonly string[] {
+  const editColumns = version >= 15 ? ['edit_time', 'edit_id'] : []
   if (table.name === 'public.app_accounts' && version >= 12)
     return [...table.columns, ...invitationColumns, ...(version >= 13 ? ['verified_phone'] : [])]
   if (table.name === 'public.students' && version >= 2)
@@ -77,12 +78,14 @@ function columnsFor(
       'first_name',
       'last_name',
       ...(version >= 6 ? ['whatsapp', 'location', 'birth_year'] : []),
+      ...editColumns,
     ]
   if (table.name === 'public.courses' && version >= 5)
     return [
       ...table.columns,
       'open',
       ...(version >= 7 ? ['attendance_minimum', 'practical_minimum', 'theory_minimum'] : []),
+      ...editColumns,
     ]
   if (table.name === 'public.course_enrollments' && version >= 4)
     return [
@@ -92,8 +95,10 @@ function columnsFor(
       ...(version >= 9 ? ['notes'] : []),
       ...(version >= 10 ? ['grade_decisions'] : []),
       ...(version >= 11 ? ['teacher_id'] : []),
+      ...editColumns,
     ]
-  if (table.name === 'public.events' && version >= 3) return [...table.columns, 'enrollment_id']
+  if (table.name === 'public.events' && version >= 3)
+    return [...table.columns, 'enrollment_id', ...(version >= 15 ? ['edit_time'] : [])]
   return table.columns
 }
 const rowSchema = z.record(z.string(), z.json())
@@ -113,6 +118,7 @@ const backupSchema = z.strictObject({
     z.literal(12),
     z.literal(13),
     z.literal(14),
+    z.literal(15),
   ]),
   createdAt: z.iso.datetime(),
   tables: z.array(z.strictObject({ name: z.string(), rows: z.array(rowSchema) })),
@@ -214,6 +220,14 @@ function validateBackup(backup: Backup) {
     throw new Error('Unsupported credential provider or hash; migration stopped')
 }
 async function schemaVersion(db: PoolClient): Promise<Version> {
+  const editSchema = await db.query(
+    `SELECT count(*)::int AS count FROM information_schema.columns WHERE table_schema = 'public'
+     AND ((table_name IN ('students', 'courses', 'course_enrollments') AND column_name IN ('edit_time', 'edit_id', 'edit_xid'))
+       OR (table_name = 'events' AND column_name = 'edit_time'))`,
+  )
+  const editColumnCount = z
+    .object({ count: z.union([z.literal(0), z.literal(10)]) })
+    .parse(editSchema.rows[0]).count
   const result = await db.query(
     `SELECT
     to_regclass('public.grade_sync_receipts') IS NOT NULL AS grade_receipts,
@@ -349,7 +363,7 @@ async function schemaVersion(db: PoolClient): Promise<Version> {
   if (invitation_columns > 0) {
     if (!enrollment_teacher || invitation_fields !== invitationColumns.length)
       throw new Error('Incomplete account invitation migration')
-    return grade_receipts ? 14 : verified_phone ? 13 : 12
+    return grade_receipts ? (editColumnCount ? 15 : 14) : verified_phone ? 13 : 12
   }
   if (enrollment_teacher) return 11
   return courses === 2
@@ -427,6 +441,10 @@ async function main() {
           if (!z.object({ count: z.literal(0) }).safeParse(result.rows[0]).success)
             throw new Error('Target must be empty; existing records were preserved')
         }
+        const versionedTables = ['students', 'courses', 'course_enrollments']
+        if (targetVersion >= 15)
+          for (const table of versionedTables)
+            await db.query(`ALTER TABLE public.${quote(table)} DISABLE TRIGGER wartaq_edit_version`)
         for (const table of backup.tables) {
           for (const row of table.rows) {
             const columns = Object.keys(row)
@@ -438,6 +456,9 @@ async function main() {
             )
           }
         }
+        if (targetVersion >= 15)
+          for (const table of versionedTables)
+            await db.query(`ALTER TABLE public.${quote(table)} ENABLE TRIGGER wartaq_edit_version`)
       }
       if (backup.version < 3 && targetVersion >= 3) {
         for (const table of courseTables) {
@@ -506,6 +527,15 @@ async function main() {
       if (backup.version < 14 && targetVersion >= 14) {
         const receipts = await db.query('SELECT 1 FROM public.grade_sync_receipts LIMIT 1')
         if (receipts.rowCount) throw new Error('Legacy backup cannot represent grade receipts')
+      }
+      if (backup.version < 15 && targetVersion >= 15) {
+        const versions = await db.query(
+          `SELECT 1 FROM students WHERE edit_time IS NOT NULL
+           UNION ALL SELECT 1 FROM courses WHERE edit_time IS NOT NULL
+           UNION ALL SELECT 1 FROM course_enrollments WHERE edit_time IS NOT NULL
+           UNION ALL SELECT 1 FROM events WHERE edit_time IS NOT NULL LIMIT 1`,
+        )
+        if (versions.rowCount) throw new Error('Legacy backup cannot represent edit versions')
       }
       const actual = await snapshot(db, backup.version)
       for (const [index, table] of backup.tables.entries()) {

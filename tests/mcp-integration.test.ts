@@ -416,6 +416,30 @@ integration(
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       )
 
+      const editTime = Date.now()
+      const saveEnrollment = (time: number, level: string, assignedTeacher: string | null) =>
+        client.callTool({
+          name: 'save_enrollment',
+          arguments: {
+            input: {
+              id: enrollmentId,
+              courseId,
+              studentId,
+              active: true,
+              level,
+              teacherId: assignedTeacher,
+            },
+            edit: { time: new Date(time).toISOString(), id: crypto.randomUUID() },
+          },
+        })
+      expect((await saveEnrollment(editTime, '3', teacherId)).isError).not.toBe(true)
+      expect((await saveEnrollment(editTime - 100, '1', null)).isError).toBe(true)
+      const savedEnrollment = await pool.query(
+        'SELECT level, teacher_id FROM course_enrollments WHERE id = $1',
+        [enrollmentId],
+      )
+      expect(savedEnrollment.rows[0]).toEqual({ level: '3', teacher_id: teacherId })
+
       const inviteTool = (await client.listTools()).tools.find(
         ({ name }) => name === 'invite_accounts',
       )

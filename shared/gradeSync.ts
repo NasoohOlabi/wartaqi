@@ -23,6 +23,7 @@ const noteChange = z.strictObject({
 export const gradeOperationSchema = z.strictObject({
   kind: z.literal('grade-edit'),
   requestId: z.uuid(),
+  editTime: z.iso.datetime().optional(),
   id: z.uuid(),
   grant: neonTeacherSchema.pick({ id: true, expiresAt: true }).strict(),
   fields: z

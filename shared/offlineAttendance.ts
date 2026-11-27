@@ -11,6 +11,7 @@ export const offlineAttendanceRecordSchema = z.object({
       status: statusSchema.nullable(),
     }),
   }),
+  editTime: z.iso.datetime().optional(),
   expectedEventId: z.uuid().nullable(),
   expectedRevision: z.literal('unknown').optional(),
 })
