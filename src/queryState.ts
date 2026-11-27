@@ -146,6 +146,23 @@ export function returnToParent(fallback: Record<string, string>) {
   else setQuery(fallback)
 }
 
+export function courseListBack(ar: boolean, { clearStudentFilters = false } = {}) {
+  return {
+    label: ar ? 'كل الدورات' : 'All courses',
+    onClick: () =>
+      setQuery(
+        {
+          view: 'courses',
+          courseView: '',
+          course: '',
+          q: '',
+          ...(clearStudentFilters ? { group: '', student: '' } : {}),
+        },
+        true,
+      ),
+  }
+}
+
 export function navigatePage(page: 'home' | 'app') {
   window.history.pushState(null, '', window.location.pathname + (page === 'app' ? '?page=app' : ''))
   window.dispatchEvent(new PopStateEvent('popstate'))

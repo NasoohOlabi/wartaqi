@@ -1,5 +1,6 @@
 import { clickRecordAction, recordActions } from './recordActions'
 import { clickAccountAction } from './profileActions'
+import { expectMobileBack } from './headerLayout'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 import {
@@ -403,6 +404,33 @@ test('course sections and Settings keep their place in the workspace', async ({
   const settingsFrame = await main.boundingBox()
   expect(settingsFrame?.x).toBe(frame?.x)
   expect(settingsFrame?.width).toBe(frame?.width)
+})
+
+test('mobile course subpages put All courses in the app bar', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile')
+  await page.setViewportSize({ width: 360, height: 800 })
+  await setupCourses(page)
+  const list = '/?page=app&view=courses'
+  await page.goto(list)
+  for (const ar of [false, true]) {
+    if (ar) await clickAccountAction(page, 'العربية')
+    for (const section of ['create', 'edit', 'students', 'grades', 'history', 'unavailable']) {
+      await page.goto(
+        section === 'unavailable'
+          ? `${list}&courseView=edit`
+          : `${list}&course=${courseA}&courseView=${section}`,
+      )
+      const back = await expectMobileBack(page, ar ? 'كل الدورات' : 'All courses')
+      await back.click()
+      await expect(page).toHaveURL(
+        (url) =>
+          url.searchParams.get('view') === 'courses' &&
+          !url.searchParams.has('courseView') &&
+          !url.searchParams.has('course'),
+      )
+      await expect(back).toHaveCount(0)
+    }
+  }
 })
 
 test('course creation keeps retry and navigation identities separate', async ({ page }) => {
