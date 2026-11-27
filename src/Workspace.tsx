@@ -680,7 +680,7 @@ function Notebook({
               ),
             )}
             events={ledger.events}
-            refresh={ledger.refresh}
+            refreshAfterWrite={ledger.refreshAfterWrite}
             defaultCourse={preference.defaultCourse}
             chooseDefault={preference.chooseDefault}
           />
@@ -1009,14 +1009,13 @@ function StudentDetails({
   const notes = projected.notes.filter(({ value }) => value.studentId === student.studentId)
   const memberships = enrollments.filter((entry) => entry.studentId === student.studentId)
   const courseMembership = memberships.find((entry) => entry.courseId === courseId)
+  const selectedCourse = courses.find((course) => course.id === courseId)
   const activeCourses = courses.filter((course) =>
     memberships.some((entry) => entry.courseId === course.id && entry.active),
   )
   const eligible =
     student.active &&
-    (!courseId
-      ? !memberships.length
-      : courseMembership?.active && courses.some((course) => course.id === courseId && course.open))
+    (!courseId ? !memberships.length : courseMembership?.active && selectedCourse?.open)
   const editInSettings = administrator && !offline
   const editLabel = ar ? 'تعديل الطالب' : 'Edit student'
   const historyLabel = ar ? 'سجل الحضور' : 'Attendance history'
@@ -1074,6 +1073,12 @@ function StudentDetails({
             </>
           }
         />
+        {selectedCourse && !courseMembership?.active && (
+          <p className="student-course-warning" role="status">
+            {ar ? 'الطالب غير مسجل في الدورة' : 'Student is not enrolled in'}{' '}
+            <bdi>{selectedCourse.name}</bdi>
+          </p>
+        )}
         {userId && editing && (
           <TeacherStudentForm
             key={student.studentId}
@@ -1347,10 +1352,7 @@ function StudentDetails({
           )}
         </section>
         <section className="panel student-details-history">
-          <details
-            key={courseId}
-            open={Boolean(courseId && courses.find((course) => course.id === courseId)?.open)}
-          >
+          <details key={courseId} open={selectedCourse?.open === true}>
             <summary>{historyLabel}</summary>
             {detailRecords.length ? (
               <>
