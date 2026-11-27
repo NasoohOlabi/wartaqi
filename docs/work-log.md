@@ -2590,11 +2590,19 @@ At 16:38 Asia/Damascus, PR #222 incorporated the MCP enrollment update from PR #
 
 At 16:47 Asia/Damascus, PR #222 incorporated the student notes update from PR #220. `bun run verify` and six focused Chromium cases passed across desktop and mobile, covering group moves, membership and student notes.
 
+At 17:08 Asia/Damascus, PR #222 incorporated the session replay removal from PR #224. `bun run verify` and six desktop and mobile browser cases passed across group moves, notebook notes and attendance.
+
 ## 2026-11-27 16:01 Asia/Damascus — Show course membership changes on the first tap
 
 The owner reported that a slow enrollment save left the switch looking off. A second tap after the save could undo the enrollment. The switch now displays the requested state during the save and accepts another tap after it settles. A failed confirmation restores the last confirmed state. Retry uses the original operation and displays its pending change.
 
 Four focused Chromium checks passed on desktop English and mobile Arabic. They cover a held enrollment write and refresh, a blocked second tap, later withdrawal, failed rejoin and retry with the original enrollment ID, and the earlier inactive roster regression. The course suite passed against disposable PostgreSQL. The PR records the release checks and Railway verification.
+
+## 2026-11-27 16:06 Asia/Damascus — Retire session recordings
+
+The owner requested removal of session replay while preserving notebook sync. Removed browser capture, attendance snapshots, the administrator player and frame ingestion. Older clients receive a terminal response to uploads, and the hourly cleanup still expires historical recordings after three days. Website journey diagnostics and Web Vitals continue. Attendance row focus now uses the mark control's own class.
+
+Two signed-in synthetic Chromium sessions against a disposable Postgres verified offline attendance, reload, reconnection, propagation to the student and clearing the mark. Neither browser requested the replay endpoint. A separate database integration test verified rejection of legacy uploads, retirement of playback and independent three-day recording and 30-day diagnostics retention. Production verification is tracked on the PR.
 
 ## 2026-11-27 16:24 Asia/Damascus ? MCP enrollment levels
 

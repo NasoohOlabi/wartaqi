@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { onCLS, onINP, onLCP } from 'web-vitals'
 import {
   diagnosticsActionSchema,
@@ -12,7 +12,6 @@ import type {
   DiagnosticsScreen,
 } from '../shared/diagnostics'
 import { accountFetch } from './accountRequest'
-import { startSessionReplay } from './sessionReplay'
 
 let actor: string | undefined
 let journeyId = ''
@@ -84,7 +83,6 @@ export function useDiagnostics(
   currentScreen: DiagnosticsScreen | null,
   isOffline: boolean,
 ): void {
-  const replay = useRef<ReturnType<typeof startSessionReplay> | null>(null)
   useEffect(() => {
     const capturing = ++capture
     if (actor !== userId) {
@@ -94,7 +92,6 @@ export function useDiagnostics(
       queue = []
       recordedScreen = null
     }
-    replay.current = startSessionReplay(userId, journeyId)
     const error = () => add({ kind: 'error', code: 'runtime' })
     const rejection = () => add({ kind: 'error', code: 'promise' })
     const online = () => {
@@ -121,8 +118,6 @@ export function useDiagnostics(
     document.addEventListener('change', activation, true)
     const timer = window.setInterval(() => void flush(), 15000)
     return () => {
-      replay.current?.stop()
-      replay.current = null
       window.clearInterval(timer)
       window.removeEventListener('error', error)
       window.removeEventListener('unhandledrejection', rejection)
@@ -141,7 +136,6 @@ export function useDiagnostics(
   }, [userId])
   useEffect(() => {
     screen = currentScreen
-    replay.current?.setScreen(currentScreen)
     if (currentScreen && recordedScreen !== currentScreen) add({ kind: 'screen' })
     recordedScreen = currentScreen
     if (!currentScreen) void flush()

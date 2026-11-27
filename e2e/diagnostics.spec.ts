@@ -75,6 +75,11 @@ for (const language of ['en', 'ar'] as const) {
       .getByRole('button', { name: language === 'ar' ? 'عرض التسلسل' : 'View timeline' })
       .click()
     await expect(page.getByText(/LCP (123|١٢٣) ms/)).toBeVisible()
+    await expect(
+      page.getByRole('button', {
+        name: language === 'ar' ? 'إعادة تشغيل الجلسة' : 'Replay session',
+      }),
+    ).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
       true,
     )
