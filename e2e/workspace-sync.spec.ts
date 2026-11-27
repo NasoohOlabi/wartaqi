@@ -115,11 +115,12 @@ test('offline teacher edits reach a second signed-in student over live sync', as
     ])
     const teacher = await staff.newPage()
     const student = await learner.newPage()
-    const replayRequests: string[] = []
+    const telemetryRequests: string[] = []
     for (const context of [staff, learner]) {
       context.on('request', (request) => {
-        if (new URL(request.url()).pathname === '/api/diagnostics/replay')
-          replayRequests.push(request.method())
+        const path = new URL(request.url()).pathname
+        if (path === '/api/diagnostics' || path === '/api/diagnostics/replay')
+          telemetryRequests.push(path)
       })
     }
     const attendanceUrl = '/?page=app&tab=attendance&course=' + courseId + '&date=2026-11-18'
@@ -193,7 +194,7 @@ test('offline teacher edits reach a second signed-in student over live sync', as
     await expect(student.getByRole('cell', { name: 'present', exact: true })).toBeVisible({
       timeout: 12000,
     })
-    expect(replayRequests).toEqual([])
+    expect(telemetryRequests).toEqual([])
     await Promise.all([staff.close(), learner.close()])
   } finally {
     await server.close()

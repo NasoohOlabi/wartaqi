@@ -185,12 +185,6 @@ integration(
       } finally {
         writer.release()
       }
-      await pool.query(
-        "INSERT INTO website_diagnostics (actor_id, event_id, journey_id, role, event) VALUES ($1, gen_random_uuid(), gen_random_uuid(), 'teacher', '{}')",
-        [userId],
-      )
-      await Bun.sleep(150)
-      expect(hints).toEqual([])
       await pool.query("UPDATE teachers SET name = 'Committed sync name' WHERE id = $1", [
         teacherId,
       ])

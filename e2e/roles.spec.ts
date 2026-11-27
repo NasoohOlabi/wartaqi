@@ -129,7 +129,6 @@ test('student sees only their attendance and loses it after access is denied', a
     const headers = cors(req.headers()['access-control-request-headers'])
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
     const path = new URL(req.url()).pathname
-    if (path === '/api/diagnostics') return route.fulfill({ json: { ok: true }, headers })
     paths.push(path)
     if (path === '/api/device-accounts')
       return route.fulfill({
@@ -323,7 +322,6 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     const headers = cors(req.headers()['access-control-request-headers'])
     if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers })
     const path = new URL(req.url()).pathname
-    if (path === '/api/diagnostics') return route.fulfill({ json: { ok: true }, headers })
     if (path === '/api/notebook') {
       notebookReads++
       return route.fulfill({

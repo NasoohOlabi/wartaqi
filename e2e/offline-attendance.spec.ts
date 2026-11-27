@@ -105,7 +105,6 @@ test('the full roster, attendance, notes and profile edits survive a cold offlin
     if (path === '/api/auth/get-session') return route.fulfill({ json: session })
     if (path === '/api/device-accounts') return route.fulfill({ json: { accounts: [] } })
     expect(route.request().headers()['x-user-id']).toBe(accountId)
-    if (path === '/api/diagnostics') return route.fulfill({ json: { ok: true } })
     if (path === '/api/me') return route.fulfill({ json: { account: teacher, teacher } })
     if (path === '/api/notebook')
       return route.fulfill({

@@ -23,7 +23,6 @@ import { WorkspaceLoading } from './WorkspaceLoading'
 import type { Profile } from './ProfileMenu'
 import { WartaqLogo } from './brand/components'
 import { AccountChoices } from './AccountChoices'
-import { flushDiagnostics, recordDiagnosticAction } from './diagnostics'
 import {
   authorizeLocalGrant,
   clearOfflineAccess,
@@ -292,10 +291,6 @@ export function NeonAuth({
     }
   }, [expiresAt, offlineSession?.userId, userId])
   const signOut = async () => {
-    if (userId) {
-      recordDiagnosticAction(userId, 'sign-out', 'activated')
-      flushDiagnostics(userId)
-    }
     clearOfflineAccess()
     setOfflineSession(null)
     setLogout('pending')
@@ -467,7 +462,6 @@ export function NeonAuth({
           { name, ...(image === undefined ? {} : { image }) },
           { headers: { 'X-User-Id': userId } },
         )
-        recordDiagnosticAction(userId, 'profile', result.error ? 'failed' : 'saved')
         if (result.error) throw new Error('Could not save profile')
         await session.refetch()
       },
@@ -592,11 +586,6 @@ export function NeonAuth({
           {language === 'ar'
             ? 'تواصل مع المسؤول لإعادة تعيين كلمة المرور.'
             : 'Contact your administrator to reset your password.'}
-        </p>
-        <p className="muted">
-          {language === 'ar'
-            ? 'يحتفظ وارتق بتشخيصات الاستخدام لمدة 30 يومًا.'
-            : 'Wartaq keeps usage diagnostics for 30 days.'}
         </p>
       </form>
     </main>

@@ -2,12 +2,15 @@ import type { Socket } from 'socket.io-client'
 
 const coalesceMs = 40
 const repairMs = 30_000
+const connectedRepairMs = 120_000
 
 function startStream(userId: string) {
   const listeners = new Set<() => void>()
   let socket: Socket | undefined
   let stopped = false
+  let lastRefreshRequested = 0
   const notify = () => {
+    lastRefreshRequested = performance.now()
     for (const listener of listeners) listener()
   }
   const foreground = () => {
@@ -22,7 +25,10 @@ function startStream(userId: string) {
   window.addEventListener('focus', foreground)
   window.addEventListener('online', online)
   document.addEventListener('visibilitychange', foreground)
-  const timer = window.setInterval(foreground, repairMs)
+  const timer = window.setInterval(() => {
+    if (socket?.connected && performance.now() - lastRefreshRequested < connectedRepairMs) return
+    foreground()
+  }, repairMs)
   void import('socket.io-client')
     .then(({ io }) => {
       if (stopped) return

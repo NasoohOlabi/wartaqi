@@ -19,7 +19,6 @@ export function TableFilters<T>({
       <button
         type="button"
         className="table-control-trigger"
-        data-diagnostic-action="filter"
         popoverTarget={popupId}
         aria-label={ar ? 'خيارات التصفية' : 'Filter options'}
         title={ar ? 'خيارات التصفية' : 'Filter options'}

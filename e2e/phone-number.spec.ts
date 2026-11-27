@@ -63,7 +63,6 @@ test('staff phone links remain usable in both languages', async ({ page }) => {
   })
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname
-    if (path.startsWith('/api/diagnostics')) return route.fulfill({ json: { ok: true } })
     if (route.request().method() !== 'GET') writes.push(path)
     if (path.startsWith('/api/auth/')) return route.fallback()
     if (path === '/api/me') return route.fulfill({ json: { account: teacher } })
