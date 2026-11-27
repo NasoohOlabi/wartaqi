@@ -2467,3 +2467,9 @@ Synthetic browser checks cover Arabic and English at 320, 390 and 430px and wide
 The owner requested the same phone layout in Settings → Students and icon buttons for Edit and Add student. WhatsApp shares the number line, the pencil sits beside the name fields on phones, and the person-plus icon shares the heading toolbar.
 
 Synthetic browser checks cover English and Arabic on desktop and at 320, 390 and 430px. They check alignment, overflow, localized labels, 44px targets, form navigation and the existing student save flow. The PR records release checks and Railway verification. Native WhatsApp handoff remains unverified.
+
+## 2026-11-27 10:07 Asia/Damascus — Shorten GitHub Actions validation
+
+The owner asked for faster CI on GitHub Free. A sampled PR took 7m 52s and a main run took 8m 1s. Playwright used more than six minutes in both runs. The core checks and three Playwright shards now run on standard Linux runners in parallel. `Verify` requires all jobs to pass, and new commits cancel older runs of the same PR. Each main commit gets its own run for Railway's Wait for CI. Each shard publishes an HTML report with traces retained for failed tests.
+
+Playwright discovery found 78, 81 and 73 cases in the shards. The combined cases exactly matched all 232 cases in the unsharded desktop and mobile suite. Actionlint and `bun run verify` passed. The required check's shell condition passed only when both prerequisites succeeded across all 16 combinations of success, failure, cancellation and skip. GitHub run timings and exact-commit Railway verification are recorded in the PR.
