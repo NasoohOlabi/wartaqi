@@ -2569,3 +2569,5 @@ The owner reported that marking a student in **Show unmarked** made the list jum
 After a local save, the selected mark now stays visible for 650 ms, then the card fades and collapses over 260 ms. Tapping the same status during the hold clears it. Reduced motion skips the animation, and keyboard focus continues in the roster. Routine confirmation is announced without shifting the list, and actionable sync notices remain available.
 
 The browser regression exercises the middle and end of a long roster, a repeat tap, reload, and reduced-motion focus on desktop and mobile Chromium. Before and after recordings use synthetic records in a 390 px phone viewport. The PR records release and Railway checks. Physical-device and authenticated production behavior require separate verification.
+
+At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing before its confirmation delay while an earlier sync was still settling after reload. The hold now follows the result of the specific local save, and a focused row hands off focus before it is removed. The browser regression covers both keyboard and pointer focus through this path.

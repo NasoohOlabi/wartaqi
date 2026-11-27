@@ -104,7 +104,13 @@ test('Show unmarked confirms the mark and removes rows without a scroll jump', a
   const neighbor = attendance(15).getByRole('button', { name: ar ? 'حاضر' : 'present' })
   await reduced.focus()
   await page.keyboard.press('Space')
+  // After reload, a previous sync may still be reconciling while this mark is saved.
+  await page.waitForTimeout(250)
   await expect(reduced).toHaveAttribute('aria-pressed', 'true')
   await expect(attendance(14)).toHaveCount(0)
   await expect(neighbor).toBeFocused()
+
+  await neighbor.click()
+  await expect(attendance(15)).toHaveCount(0)
+  await expect(attendance(16).getByRole('button', { name: ar ? 'حاضر' : 'present' })).toBeFocused()
 })

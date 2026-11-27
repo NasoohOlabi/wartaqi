@@ -25,7 +25,7 @@ function AttendanceRow({
     const row = element.current
     if (!exiting || !row) return
     const focused = document.activeElement
-    if (focused?.matches(':focus-visible') && row.contains(focused)) {
+    if (row.contains(focused)) {
       const neighbor = [row.nextElementSibling, row.previousElementSibling].find(
         (sibling) => sibling && !sibling.hasAttribute('data-attendance-exiting'),
       )
