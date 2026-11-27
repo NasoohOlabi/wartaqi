@@ -56,6 +56,8 @@ At 320, 360, 390 and 430px and on desktop, check that the pencil and Refresh ico
 
 On desktop, Back remains in the profile header. At 700px and narrower, the mobile top app bar has a single Back arrow at its leading edge. It points left in English and right in Arabic, has a localized destination label and a 48px touch target. Activate it to return to the same roster and restore focus to the student name. Check the course and profile menu still fit at narrow widths.
 
+Open a student profile while viewing a course where the student never enrolled or withdrew. Check the prominent warning names that course and any historical attendance still appears. An active enrollment shows the profile without a warning. Use **General info** in the app bar to clear the course and keep the same student open, with their roster level and attendance across accessible courses. Verify reload, the saved course default, and the return path from Manage students. Check the button fits with both long course names and numbered badges at 320px in English and Arabic.
+
 Whole-number decimal levels display without the zero-only fraction in roster, filters, profile, history and student portal. Editing a different field preserves the original stored level. Fractional and named levels remain unchanged.
 
 In notebook Students, verify the localized Birth year column shows the saved numeric year or an em dash when blank. Sort numerically and filter by literal digits; check the level, year and expandable courses share the bottom row at 320/390/430px in English and Arabic without overflow.

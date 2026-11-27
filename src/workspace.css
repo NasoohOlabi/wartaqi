@@ -27,7 +27,7 @@
   color: #b8d9dd;
   font-size: 13px;
 }
-.workspace-brand:where(:has(.workspace-course-switcher[data-numbered='true'])) {
+.workspace-brand:where(:has(.workspace-course-controls[data-numbered='true'])) {
   margin-inline: 4px;
 }
 .wartaq-site .workspace-brand .wartaq-logo {
@@ -836,6 +836,22 @@
 :root[data-theme='dark'] .student-details {
   --student-divider: var(--dark-border);
 }
+.student-course-warning {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid #d97706;
+  border-radius: 0.5rem;
+  background: #fef3c7;
+  color: #78350f;
+  font-size: 1.125rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+:root[data-theme='dark'] .student-course-warning {
+  border-color: #b97d32;
+  background: #413021;
+  color: #ffe2a3;
+}
 .student-details-section-heading {
   display: flex;
   flex-wrap: wrap;
@@ -1042,14 +1058,47 @@
   font-weight: 700;
 }
 
-.workspace-course-switcher {
+.workspace-course-controls {
   grid-column: 1 / -1;
   justify-self: start;
   max-width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
 }
-.workspace-course-switcher[data-numbered='true'] {
+.workspace-course-controls[data-numbered='true'] {
   grid-column: 2;
   grid-row: 1;
+}
+.workspace-course-switcher {
+  max-width: 100%;
+}
+.workspace-course-clear {
+  min-height: 44px;
+  padding: 0 8px;
+  border-radius: 0.5rem;
+  color: white;
+  font-weight: 650;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+.workspace-course-clear:hover {
+  background: #ffffff1a;
+}
+@media (width < 380px) or (width > 700px) {
+  .workspace-course-controls[data-numbered='true'] {
+    display: contents;
+  }
+  .workspace-course-switcher[data-numbered='true'] {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: start;
+  }
+  .workspace-course-controls[data-numbered='true'] > .workspace-course-clear {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: start;
+  }
 }
 .workspace-course-switcher summary {
   cursor: pointer;

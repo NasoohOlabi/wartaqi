@@ -927,6 +927,7 @@ function StudentDetails({
   const notes = projected.notes.filter(({ value }) => value.studentId === student.studentId)
   const memberships = enrollments.filter((entry) => entry.studentId === student.studentId)
   const courseMembership = memberships.find((entry) => entry.courseId === courseId)
+  const selectedCourse = courses.find((course) => course.id === courseId)
   const activeCourses = courses.filter((course) =>
     memberships.some((entry) => entry.courseId === course.id && entry.active),
   )
@@ -991,6 +992,12 @@ function StudentDetails({
             </>
           }
         />
+        {selectedCourse && !courseMembership?.active && (
+          <p className="student-course-warning" role="status">
+            {ar ? 'الطالب غير مسجل في الدورة' : 'Student is not enrolled in'}{' '}
+            <bdi>{selectedCourse.name}</bdi>
+          </p>
+        )}
         {userId && editing && (
           <TeacherStudentForm
             key={student.studentId}

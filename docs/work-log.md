@@ -2511,3 +2511,9 @@ Synthetic browser checks exercise the leading 48px target, accessible label, too
 The owner reported wasted space in the follow-up date cards at 662px. The dashboard sizes each card to its localized label and wraps cards when they no longer fit on a row.
 
 Synthetic Chromium checks cover six recorded dates, one Arabic row at 662px, one row in both languages at 1280px, and wrapping without overflow on narrow phones. The PR records release and Railway verification.
+
+## 2026-11-27 11:30 Asia/Damascus — Clarify course enrollment on student profiles
+
+The owner asked for a prominent explanation when a student has no enrollment in the selected course and a direct way to open their general information. The profile shows a bilingual warning for missing or withdrawn membership. **General info** clears the profile's course selection, keeping the student open and showing their roster level and attendance across accessible courses.
+
+Synthetic Chromium checks exercise the warning, preserved withdrawal history, course clearing, reload, the saved default and the return path from Manage students. English and Arabic layouts cover long names and numbered badges at 320px and on desktop. The PR records release and Railway checks. Physical-device and authenticated production behavior require separate verification.
