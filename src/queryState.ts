@@ -29,7 +29,6 @@ export function useQueryState() {
         'student',
         'profile',
         'history',
-        'diagnostics',
         'telegram',
         'changes',
       ])
@@ -88,6 +87,10 @@ const allowedKeys = new Set([
 export function sanitizedSearch(search: string) {
   const query = new URLSearchParams(search)
   for (const key of [...query.keys()]) if (!allowedKeys.has(key)) query.delete(key)
+  if (query.get('view') === 'diagnostics') {
+    query.set('view', 'settings')
+    query.delete('account')
+  }
   if (!['username', 'phone'].includes(query.get('login') ?? '')) query.delete('login')
   if (query.get('tab') === 'notes') {
     query.set('tab', 'attendance')

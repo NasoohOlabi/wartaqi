@@ -72,6 +72,12 @@ pub(crate) fn serve(root: &Path, method: &Method, path: &str) -> Response {
         return (StatusCode::NOT_FOUND, "Not found").into_response();
     };
     let length = bytes.len();
+    // Vite puts content-hashed build output in assets/.
+    let cache = if relative.starts_with("assets/") {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
     let body = if method == Method::HEAD {
         Body::empty()
     } else {
@@ -81,7 +87,7 @@ pub(crate) fn serve(root: &Path, method: &Method, path: &str) -> Response {
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, content_type(&file))
         .header(header::CONTENT_LENGTH, length)
-        .header(header::CACHE_CONTROL, "no-cache")
+        .header(header::CACHE_CONTROL, cache)
         .header("x-content-type-options", "nosniff")
         .body(body)
         .expect("static response headers are valid")
@@ -131,6 +137,13 @@ mod tests {
         assert_eq!(response.headers()[header::CONTENT_LENGTH], "5");
         assert_eq!(response.headers()[header::CACHE_CONTROL], "no-cache");
         assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+        std::fs::create_dir_all(root.join("assets")).unwrap();
+        std::fs::write(root.join("assets/app-abcdef12.js"), "export {}").unwrap();
+        let asset = serve(&root, &Method::GET, "/assets/app-abcdef12.js");
+        assert_eq!(
+            asset.headers()[header::CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
         assert_eq!(
             serve(&root, &Method::POST, "/").status(),
             StatusCode::METHOD_NOT_ALLOWED

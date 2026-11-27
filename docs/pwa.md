@@ -20,7 +20,7 @@ Production/verification builds generate a versioned `sw.js` from the exact built
 
 The worker does not cache Auth/API responses, cross-origin traffic, non-GET requests, authorization-bearing requests, query URLs or notebook data. Allowlisted clean navigation uses the network first, falling back to the canonical cached HTML after one second or when offline. Each worker keeps its precached HTML and assets together for offline use. It never saves the incoming navigation URL or capability query into the cache.
 
-The Bun server sends `Cache-Control: no-cache` on static responses, so ordinary browser loads revalidate HTML and worker files instead of reusing an unchecked HTTP-cache copy.
+The Railway web server sends `Cache-Control: no-cache` for the HTML shell, service worker and other unversioned files. Vite’s content-hashed assets use a one-year immutable cache so browsers can reuse identical files across visits and worker upgrades. The Rust static server sends gzip to clients that advertise support.
 
 The sign-in form appears after the session check. The growing bookmark appears during session and account loading. A failed session check, or one still pending after ten seconds, offers **Try again** without clearing typed input. Retry cancels the previous session fetch through the SDK. Private notebook content uses server approval. Prepared attendance uses a limited account-scoped local roster, separate from the authenticated notebook and its session.
 

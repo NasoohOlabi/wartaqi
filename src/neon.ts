@@ -1,9 +1,7 @@
 ﻿import { createAuthClient } from 'better-auth/react'
 import { z } from 'zod'
 import { accountFetch, newEditVersion } from './accountRequest'
-import { recordDiagnosticAction } from './diagnostics'
 import { localGrant } from './offlineAccess'
-import type { DiagnosticsAction } from '../shared/diagnostics'
 import { neonAccountSchema, neonBatchSchema, neonSnapshotSchema } from '../shared/neon'
 import type { LedgerEvent } from '../shared/ledger'
 
@@ -56,27 +54,6 @@ export class AccessDeniedEvent extends Event {
   }
 }
 
-const diagnosticWrites: Readonly<Partial<Record<string, DiagnosticsAction>>> = {
-  '/api/admin/accounts/disable': 'account',
-  '/api/admin/accounts/grant': 'account',
-  '/api/admin/accounts/invite': 'account',
-  '/api/admin/accounts/invite-message': 'account',
-  '/api/admin/accounts/reset-password-generated': 'account',
-  '/api/admin/accounts/verify-phone': 'account',
-  '/api/admin/courses': 'course',
-  '/api/admin/courses/settings': 'course',
-  '/api/admin/courses/status': 'course',
-  '/api/admin/enrollments/assignment': 'enrollment',
-  '/api/admin/enrollments/decision': 'grade',
-  '/api/admin/enrollments/grades': 'grade',
-  '/api/admin/enrollments/handbook': 'enrollment',
-  '/api/admin/enrollments/membership': 'enrollment',
-  '/api/admin/students': 'student',
-  '/api/admin/students/enroll': 'enrollment',
-  '/api/me/invitation-profile': 'profile',
-  '/api/student/update': 'student',
-}
-
 export async function request(
   path: string,
   userId: string,
@@ -106,15 +83,7 @@ export async function request(
     }
     throw new NeonRequestError(503)
   }
-  const action = body !== undefined ? diagnosticWrites[path] : undefined
-  let response: Response
-  try {
-    response = await accountFetch(path, userId, body, false, edit)
-  } catch (error) {
-    if (action) recordDiagnosticAction(userId, action, 'failed')
-    throw error
-  }
-  if (action) recordDiagnosticAction(userId, action, response.ok ? 'saved' : 'failed')
+  const response = await accountFetch(path, userId, body, edit)
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) deny(response.status)
     throw new NeonRequestError(response.status)

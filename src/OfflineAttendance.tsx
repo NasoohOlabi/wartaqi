@@ -154,7 +154,6 @@ export function OfflineAttendance({
             <button
               className="primary"
               disabled={syncing || offline}
-              data-diagnostic-action="sync"
               onClick={() => void sync(true)}
             >
               {ar ? '\u0645\u0632\u0627\u0645\u0646\u0629 \u0627\u0644\u0622\u0646' : 'Sync now'}

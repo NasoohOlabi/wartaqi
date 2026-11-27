@@ -1429,7 +1429,6 @@ function GradePage({
             <button
               className="secondary flex items-center gap-2"
               aria-label={ar ? 'تصدير Excel' : 'Export Excel'}
-              data-diagnostic-action="export"
               title={ar ? 'تصدير Excel' : 'Export Excel'}
               disabled={busy || offline || settingsDirty || !!gradeDirty}
               onClick={() => setExportOpen(true)}

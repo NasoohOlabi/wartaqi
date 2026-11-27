@@ -1,6 +1,5 @@
 import { offlineStudentOutcomeSchema } from '../shared/offlineStudent'
 import { NeonRequestError, request } from './neon'
-import { recordDiagnosticAction } from './diagnostics'
 import {
   attendanceKey,
   listPendingAttendance,
@@ -57,11 +56,6 @@ export async function syncOfflineAttendance(
         throw new Error('The attendance sync response did not match the queued record.')
       const outcome = response.outcomes[0]
       await recordAttendanceOutcome(userId, outcome, cacheKey)
-      recordDiagnosticAction(
-        userId,
-        'attendance',
-        outcome.kind === 'saved' || outcome.kind === 'unchanged' ? 'synced' : 'failed',
-      )
       outcomes.push(outcome)
       if (
         outcome.kind !== 'saved' &&
@@ -115,11 +109,6 @@ export async function syncOfflineStudent(
       )
         throw new Error('The profile sync response did not include the saved values.')
       await recordStudentOutcome(userId, outcome, cacheKey)
-      recordDiagnosticAction(
-        userId,
-        operation.kind === 'note' ? 'note' : 'student',
-        outcome.kind === 'saved' ? 'synced' : 'failed',
-      )
       outcomes.push(outcome)
       if (
         outcome.kind !== 'saved' &&
