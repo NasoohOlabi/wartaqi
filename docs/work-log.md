@@ -2587,3 +2587,10 @@ Holding a post-save notebook read reproduced a second write stalling in attendan
 The sync design records the next phases: compare reliable user edit times for the same field, retain field history, and show automatic and manual conflict resolutions from the last seven days in Settings.
 
 At 16:30 Asia/Damascus, merged main `4b687e0` into PR #219. The course switch shows the pending membership during save and retry alongside the separate write and readback queues. All 10 focused desktop and emulated-phone cases passed, including the switch, course assignments and attendance under delayed readback. `bun run verify` passed. Fresh CI and Railway verification remain pending.
+
+At 16:37 Asia/Damascus, merged main `3c8e1ee` into PR #219 and kept both work-log entries. The browser code matches the earlier verified branch, and the MCP enrollment changes match main. `bun run verify` passed with 155 tests and 14 opt-in skips. The new branch requires fresh CI before release.
+
+## 2026-11-27 16:24 Asia/Damascus ? MCP enrollment levels
+
+- Investigated repeated successful saves followed by old levels in the notebook. The membership handler ignored the supplied level and returned success. PR #219 addresses client readback scheduling.
+- Route explicit MCP levels through the administrator enrollment write and keep legacy membership payloads from replacing them. The disposable PostgreSQL regression covers write, readback and stale membership replay. Local bun run verify passed with 155 tests and 14 opt-in skips. Production readback requires deployment and authorized access.
