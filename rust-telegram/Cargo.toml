@@ -1,0 +1,17 @@
+﻿[package]
+name = "wartaq-telegram"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+base64 = "0.22"
+ring = "0.17"
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde_json = "1"
+teloxide-core = { version = "0.13", default-features = false, features = ["rustls"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+url = "2"
+
+[dev-dependencies]
+axum = "0.8"

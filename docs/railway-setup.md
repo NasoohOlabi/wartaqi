@@ -1,6 +1,6 @@
 # Railway setup and migration
 
-Railway replaces Neon hosting, managed Auth and Postgres. A Bun server serves React, Better Auth at `/api/auth`, and the notebook API on one HTTPS origin. The six application tables retain all role/assignment restrictions and store courses and student enrollments. See [courses](courses.md) for enrollment fields and attendance scope. Better Auth uses separate tables in the retained `neon_auth` schema; the name preserves queries without contacting Neon. Source filenames containing `neon` remain for compatibility.
+Railway replaces Neon hosting, managed Auth and Postgres. The web container serves React, Better Auth at `/api/auth`, the notebook API and Socket.IO on one HTTPS origin. The six application tables retain all role/assignment restrictions and store courses and student enrollments. See [courses](courses.md) for enrollment fields and attendance scope. Better Auth uses separate tables in the retained `neon_auth` schema; the name preserves queries without contacting Neon. Source filenames containing `neon` remain for compatibility.
 
 ## Deployment
 
@@ -18,7 +18,13 @@ Standard releases use the existing GitHub connection and deployment records. Thi
 
 During the v0.1.0 development release, all changes deploy from `main`. Nightly builds and deployments remain disabled until the owner explicitly requests them. The production project contains the web application, Postgres and the independently deployed [Telegram worker](telegram.md).
 
-`Dockerfile` builds the frontend and installs frozen production dependencies. Its allowlisted context excludes private inputs and Git history. Configure Docker builds, health path `/health`, and port 3000 on the Railway service. Health verifies database tables. Set server-only `DATABASE_URL` to the private Railway Postgres connection, `BETTER_AUTH_SECRET` to a random value of at least 32 characters, `BETTER_AUTH_URL` to the public HTTPS origin, and `PORT=3000`. No browser endpoint variables are needed. Deploy verified `main` only. Legacy Pages publishing is retired.
+`Dockerfile` builds the React assets, the Rust web executable and the frozen Bun production dependencies. Its allowlisted context excludes private inputs and Git history. Configure Docker builds, health path `/health`, and port 3000 on the Railway service. Health verifies database tables. Set server-only `DATABASE_URL` to the private Railway Postgres connection, `BETTER_AUTH_SECRET` to a random value of at least 32 characters, `BETTER_AUTH_URL` to the public HTTPS origin, and `PORT=3000`. No browser endpoint variables are needed. Deploy verified `main` only. Legacy Pages publishing is retired.
+
+### Web runtime and rollback
+
+Use the Dockerfile start command on the existing web service. Rust serves assets, database readiness, Socket.IO and the GET routes for sessions, current accounts, staff notebooks, administration and student attendance. Other API requests, including grade saves, authentication changes and MCP, start a Bun process on loopback inside the same container. It exits after 90 seconds without an active request. Postgres, the public origin and the independently deployed Bun Telegram worker keep their existing configuration.
+
+Record the successful production web deployment ID before switching. To roll back, use Railway's rollback action on that web deployment. Keep the existing database, signing secrets and Telegram volume. Verify the deployed SHA in GitHub, open the homepage, check `/health`, the anonymous session and OAuth resource metadata. Compare per-service Railway memory and CPU over equivalent quiet windows and account for the 90-second worker lifetime. The local container benchmark in [the migration plan](rust-backend-pilot.md) covers a different workload.
 
 Apply the ordered `railway/*.sql` authentication migrations, then ordered `neon/*.sql` application migrations to the new database. These are repeatable; preserve the Neon source data and record any access pause separately. Run `bun run verify:release` before stable promotion. The service's main deployment trigger has **Wait for CI** enabled.
 

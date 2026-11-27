@@ -785,6 +785,12 @@ export async function handle(request: Request): Promise<Response> {
   })
 }
 
+export const publicOrigin = origin
+
+export async function closeHttpResources() {
+  await Promise.all([pool.end(), authPool.end()])
+}
+
 export function workspaceServer() {
   return createWorkspaceSync({
     databaseUrl: config.DATABASE_URL,
@@ -825,7 +831,7 @@ if (import.meta.main) {
     shuttingDown = true
     clearInterval(cleanupTimer)
     await Promise.all([server.stop(true), workspace.close()])
-    await Promise.all([pool.end(), authPool.end()])
+    await closeHttpResources()
   }
   process.once('SIGINT', () => void shutdown())
   process.once('SIGTERM', () => void shutdown())

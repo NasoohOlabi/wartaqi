@@ -2572,6 +2572,36 @@ The browser regression exercises the middle and end of a long roster, a repeat t
 
 At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing before its confirmation delay while an earlier sync was still settling after reload. The hold now follows the result of the specific local save, and a focused row hands off focus before it is removed. The browser regression covers both keyboard and pointer focus through this path.
 
+## 2026-11-27 16:32 Asia/Damascus - Draft Rust workspace relay
+
+The owner asked whether Rust could reduce Railway runtime costs while keeping React and matching existing backend behavior. The experimental service relays the existing Postgres change hints over Socket.IO and delegates the handshake access decision to Bun. The migration draft covers a same-origin trial, cost and latency measurement, and the parity requirements for moving reads or writes.
+
+`bun run verify` passed on disposable Postgres with 168 tests passed and one live-provider test skipped. The opt-in transport suite passed 58 assertions across Bun and Rust, including polling, WebSocket upgrade, role revocation, rollback, committed writes and listener recovery. The Windows Rust build, formatting and Clippy passed. The Linux release compiled with cached crates after the Docker builder encountered crates.io timeouts. Raw malformed Engine.IO request handling has a documented difference. The draft remains local, with browser ingress, Railway deployment and comparative cost measurement pending.
+
+## 2026-11-27 17:28 Asia/Damascus - Port role-scoped reads to Rust
+
+The owner asked to complete the Rust backend locally before measuring performance. The Rust candidate now resolves application grants and serves the account, notebook, student attendance and admin directory reads through Postgres transactions. It uses Bun to verify the existing signed session during the port. The candidate retains the React response shapes, server-owned scope and ledger projection rules.
+
+The opt-in tests ran the Bun and Rust processes against the same disposable database and compared statuses, JSON and cache/CORS headers using signed sessions for all three roles. Invalid stored records fail closed and the socket test still passes against both transports. `bun run verify` passed with 168 tests and three environment-dependent skips. Cargo build and Clippy passed. The project stays local. Writes, independent session handling, integrations and browser parity are still in progress.
+
+## 2026-11-27 18:20 Asia/Damascus - Port notebook writes and profile the local containers
+
+The Rust candidate now handles event batches, offline attendance and student operations, selected course and enrollment writes, diagnostic ingestion and reads, and replay. Existing Better Auth cookies can authenticate directly against the local Postgres session table. HTTP parity exercises the same signed sessions, status codes, JSON, headers, deduplication and rollback in Bun and Rust. The real Chromium attendance scenario passed through both backends with Bun issuing sessions.
+
+At the owner's request, profiled the supported routes in two isolated Docker app containers with cloned synthetic Postgres databases, 1 vCPU and 12 active sockets. At 20 requests per second, both completed 600 requests. Bun and Rust used 17.74 and 2.93 app CPU milliseconds per request, 196.1 and 9.6 MiB sampled app RSS, and recorded average p95s of 43.7 and 103.4 ms. At 75 requests per second, one Rust trial had 201 failed or timed-out requests and the second completed. Bun completed both trials. The raw measurements and driver are under `.artifacts/local-profile/`. Both profiled apps and Postgres remain on the internal Docker network. The full Rust port remains in progress and deployment stays local.
+
+Final local checks passed with 170 Bun tests, one live-provider skip, seven Rust tests, and Clippy. The light-load database copies each gained exactly 30 attendance events and all sockets received their trial's 15 hints. Native login and device-session drafts remain in `.artifacts/rust-port-drafts/` for continuation.
+
+## 2026-11-27 18:47 Asia/Damascus - Extend the Rust port and plan migration
+
+The owner asked for the full Rust port and a migration plan, suggested a Telegram library, and kept verification local. Recovered the sign-in and device-session drafts from `.artifacts/rust-port-drafts/` and wired them into the candidate. Added profile and password changes, invitation setup, roster and remaining catalog writes, React asset serving, Telegram student access and transcript diagnostics. The Telegram crate uses Teloxide Core for Bot API transport and reads the same encrypted SQLite state and offset as Bun. MCP discovery, selected tools and teacher access checks are covered by Rust tests while native transport and OAuth remain open.
+
+Local HTTP parity used synthetic Postgres data and checked sign-in and revocation, password interoperability, invitation setup, Telegram grants and diagnostic retries. A concurrent diagnostics check found a Postgres lock inversion between the grant check and the diagnostic foreign key. Releasing the grant lock before inserting a diagnostic aligns with Bun and passed the parity rerun. A local Rust process served the built React HTML and JavaScript byte-for-byte without a Bun upstream. Fake-provider tests checked Telegram polling, protected delivery, restart deduplication and cross-runtime SQLite reads.
+
+`bun run verify` passed with 170 tests and one live-provider skip. The Rust app passed 25 tests, the Telegram crate passed four, and Clippy passed for both. Chromium signed in through Rust and passed the offline teacher edit and live student sync scenario against the disposable database. The Chromium fixture served static assets through Bun.
+
+The cutover plan is in [Draft Rust backend migration](rust-backend-pilot.md). Account administration, complete Telegram paths, native MCP transport and OAuth, and standalone parity are still in progress. The Teloxide port still needs parity for update IDs outside its signed 32-bit offset and HTTP 5xx timing. This increment stays local. No Railway traffic or benchmark rerun.
+
 ## 2026-11-27 15:58 Asia/Damascus — Keep notes on the student profile
 
 The owner reported that a student note appeared in the attendance sidebar without context. Staff now read saved student notes on the student's profile with their dates, authors and tags. The attendance row still opens the form for adding a note to that student and date. The attendance sidebar shows the student and recorded-attendance counts. Day-level notes were deferred.
@@ -2622,3 +2652,15 @@ All 12 relative links resolved. Both diagrams rendered in Chromium at 375 px and
 The owner requested that later-made edits survive reordered arrival across devices. Added PostgreSQL record versions for students, courses and enrollments, plus edit times on append-only attendance events. HTTP, browser queues and MCP can preserve edit time through delivery. Legacy clients retain their expected-value checks and use server time. Equal times use the operation UUID. See [stale edits](stale-writes.md).
 
 Disposable PostgreSQL tests exercised both arrival orders, enrollment teacher and level, grades, a stale correction and backup round-trips. Chromium verified offline delivery between signed-in browsers and stable membership retry headers on desktop English and mobile Arabic. On Windows the real-server browser case required launching Playwright with Node and placing the real Bun binary first on PATH. Production release and provider verification are tracked on the PR.
+
+## 2026-11-27 19:06 Asia/Damascus - Run Rust in the existing web service
+
+The owner requested a production measurement within the existing Railway budget. Merged the current frontend and its timestamped grade protocol into the Rust branch. The web Dockerfile runs Rust for the React assets, selected reads, database health and Socket.IO. The existing Bun HTTP handler starts on demand in the same container for writes, account actions and MCP. The Telegram worker still uses Bun. The web-only rollback target is deployment `be8017dd-c082-497a-98bc-2e2d3a974a7e` at `e904a1a`.
+
+Local Postgres parity covered timestamped grade saves and stale writes. Chromium verified that a teacher could mark and clear attendance offline and the student saw the changes after reconnection. The test caught a Rust polling-session bug and now exercises one shared Socket.IO service across requests. Two seeded functional runs signed in a teacher, saved notes and verified both Rust reads and Postgres records. The private Bun process exited after 91 idle seconds and restarted on demand. Railway's pre-rollout snapshot showed 166.711 MB for the web service, 62.365 MB for Telegram and 64.991 MB for Postgres. Deployment status, public checks and subsequent measurements are tracked on the release PR.
+
+GitGuardian flagged an offline Bun Web Crypto test vector in the branch history. The test now keeps the raw bytes of that synthetic signature and constructs the fixture cookie at runtime. The public fixture key, the wrong-key rejection and duplicate-cookie checks remain covered.
+
+The Linux image revealed a shutdown hang after a Socket.IO polling client disconnected. Releasing pending socket GETs on SIGTERM allowed the unchanged listener-recovery test to pass twice. The combined Linux parity and socket suite passed all 573 assertions. Local release verification passed 171 tests and 255 browser cases, with one optional unit integration and five browser cases skipped.
+
+A local quiet-traffic comparison started two 1-vCPU, 512-MiB containers from the same production image against disposable Postgres. Both received the same six GETs, including OAuth discovery. Linux cgroup anonymous memory measured 125.63 MiB for Bun and 126.82 MiB for the hybrid immediately after the requests. After 100 idle seconds it measured 113.40 MiB and 1.02 MiB respectively. These figures exclude file-backed memory and differ from Railway's service memory metric.
