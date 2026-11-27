@@ -2549,3 +2549,9 @@ The owner asked for each attendance tap to save without a separate button or bat
 Verification covers individual requests, rapid updates with sync delayed, offline reload, corrections and English and Arabic layouts. The PR records release and Railway verification. Authenticated browser verification uses synthetic fixtures.
 
 The local verification gate passed against disposable Postgres. The real-server browser test confirmed that a single offline tap survives reload, creates one attendance event and reaches a separate signed-in student. The updated phone layout and profile tests passed in both Chromium projects.
+
+## 2026-11-27 12:24 Asia/Damascus — Clear attendance by tapping the selected status
+
+The owner asked to clear an accidental attendance mark directly from the session. Tapping the selected status again makes the session unmarked for that student and course. Clear events use the existing offline queue and retain their revision for subsequent edits. History preserves the original marks and can reverse the clear.
+
+Verification covers touch, keyboard, taps during delayed delivery, reload, conflict detection and the Student view against disposable Postgres. This release adds a nullable status to raw attendance events. Reload older open tabs to pick up the updated client. Deploy compatible readers before rolling back any write behavior. The PR records the release gate and Railway rollout.

@@ -35,6 +35,14 @@ export const historyRoutes = [
 export async function historyWorkflow(ctx: BotContext, snapshot: NeonSnapshot): Promise<Screen> {
   const { route, args } = ctx
   const L = (en: string, ar: string) => t(ctx, en, ar)
+  const attendanceDescription = ({
+    date,
+    status,
+  }: Extract<z.infer<typeof payloadSchema>, { kind: 'attendance' }>) => {
+    if (status === null) return `${date} · ${L('Attendance cleared', 'تم إلغاء علامة الحضور')}`
+    const mark = normalizeStatus(status)
+    return `${date} · ${L(mark, { present: 'حاضر', absent: 'غائب', excused: 'معذور' }[mark])}`
+  }
   const projection = projectEvents(snapshot.events)
   const student = snapshot.students.find((s) => s.studentId === args.studentId)
   const studentArgs = { studentId: args.studentId ?? '' }
@@ -112,7 +120,7 @@ export async function historyWorkflow(ctx: BotContext, snapshot: NeonSnapshot): 
       const value = e.payload
       const description =
         value.kind === 'attendance'
-          ? `${value.date} · ${L(normalizeStatus(value.status), { present: 'حاضر', absent: 'غائب', excused: 'معذور' }[normalizeStatus(value.status)])}`
+          ? attendanceDescription(value)
           : value.kind === 'note'
             ? `${value.date} · ${short(value.text, 70)}`
             : ''
@@ -148,7 +156,7 @@ export async function historyWorkflow(ctx: BotContext, snapshot: NeonSnapshot): 
         payload.kind === 'note'
           ? `${payload.date}\n${payload.tags.map((tag) => `#${tag}`).join(' ')}\n${payload.text.slice(notePage * 2000, (notePage + 1) * 2000)}`
           : payload.kind === 'attendance'
-            ? `${payload.date} · ${L(normalizeStatus(payload.status), { present: 'حاضر', absent: 'غائب', excused: 'معذور' }[normalizeStatus(payload.status)])}`
+            ? attendanceDescription(payload)
             : ''
       return {
         text: `${details}${projection.reversed.has(target.id) ? `\n${L('Corrected', 'تم التصحيح')}` : ''}`,

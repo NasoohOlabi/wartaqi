@@ -43,6 +43,33 @@ describe('append-only projection', () => {
     expect(result.attendance[0].value.status).toBe('present')
     expect(result.events).toHaveLength(4)
   })
+  test('clear hides all earlier marks until replaced, and reversal restores the prior mark', () => {
+    const clear = makeEvent('teacher', {
+      kind: 'attendance',
+      studentId,
+      date: '2026-11-13',
+      status: null,
+    })
+    const replacement = makeEvent('teacher', {
+      kind: 'attendance',
+      studentId,
+      date: '2026-11-13',
+      status: 'excused',
+    })
+    const cleared = projectEvents([attendance, clear, clear])
+    expect(cleared.attendance).toHaveLength(0)
+    expect([...cleared.attendanceVersions.values()][0]?.event.id).toBe(clear.id)
+    expect(cleared.duplicates).toBe(1)
+    expect(projectEvents([attendance, clear, replacement]).attendance[0]?.value.status).toBe(
+      'excused',
+    )
+    const reversal = makeEvent('teacher', {
+      kind: 'reversal',
+      targetId: clear.id,
+      reason: 'Correction',
+    })
+    expect(projectEvents([attendance, clear, reversal]).attendance[0]?.value.status).toBe('present')
+  })
   test('undoing a note preserves audit history; undoing roster snapshot restores prior group', () => {
     const note = makeEvent('teacher', {
       kind: 'note',

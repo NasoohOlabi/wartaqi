@@ -3,7 +3,7 @@ import {
   neonStudentAttendanceSchema,
   type NeonSnapshot,
 } from '../../shared/neon'
-import { projectEvents, statusSchema } from '../../shared/ledger'
+import { attendanceScopeKey, projectEvents, statusSchema } from '../../shared/ledger'
 import { offlineAttendanceResponseSchema } from '../../shared/offlineAttendance'
 import type { BotContext, Screen, Button } from '../types'
 import {
@@ -172,12 +172,17 @@ export async function attendanceWorkflow(ctx: BotContext, snapshot: NeonSnapshot
       index * pageSize,
       (index + 1) * pageSize,
     )) {
-      const current = projection.attendance.find(
-        (a) => a.value.enrollmentId === enrollment.id && a.value.date === courseArgs.date,
+      const current = projection.attendanceVersions.get(
+        attendanceScopeKey({
+          studentId: s.studentId,
+          enrollmentId: enrollment.id,
+          date: courseArgs.date,
+        }),
       )
+      const status = current?.value?.status
       rows.push([
         button(
-          `${s.name} · ${current ? L(current.value.status, { present: 'حاضر', absent: 'غائب', excused: 'معذور' }[current.value.status]) : '—'}`,
+          `${s.name} · ${status ? L(status, { present: 'حاضر', absent: 'غائب', excused: 'معذور' }[status]) : '—'}`,
           'nb.student',
           { studentId: s.studentId },
         ),

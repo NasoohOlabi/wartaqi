@@ -917,6 +917,44 @@ integration(
       expect(projectedStudent.attendance.filter(({ date }) => date === offlineDate)).toEqual([
         expect.objectContaining({ status: winningStatus, enrollmentId: enrollmentIds[0] }),
       ])
+      const winner = race.find((outcome) => outcome?.kind === 'saved')
+      const clear = makeEvent('Synthetic course teacher', {
+        kind: 'attendance',
+        studentId,
+        enrollmentId: enrollmentIds[0],
+        date: offlineDate,
+        status: null,
+      })
+      const syncClear = async (event: typeof clear, expectedEventId: string | null) => {
+        const response = await call('/api/attendance/sync', subjects.teacher, {
+          accountId: subjects.teacher,
+          records: [{ event, expectedEventId }],
+        })
+        expect(response.status).toBe(200)
+        return offlineAttendanceResponseSchema.parse(await response.json()).outcomes[0]
+      }
+      expect(await syncClear(clear, winner?.current?.eventId ?? null)).toMatchObject({
+        kind: 'saved',
+        current: { eventId: clear.id, status: null },
+      })
+      expect(await syncClear(clear, winner?.current?.eventId ?? null)).toMatchObject({
+        kind: 'saved',
+      })
+      const afterClear = neonStudentAttendanceSchema.parse(
+        await (await call('/api/student/attendance', subjects.student)).json(),
+      )
+      expect(afterClear.attendance.filter(({ date }) => date === offlineDate)).toHaveLength(0)
+      const replacement = makeEvent('Synthetic course teacher', {
+        kind: 'attendance',
+        studentId,
+        enrollmentId: enrollmentIds[0],
+        date: offlineDate,
+        status: 'excused',
+      })
+      expect(await syncClear(replacement, winner?.current?.eventId ?? null)).toMatchObject({
+        kind: 'conflict',
+      })
+      expect(await syncClear(replacement, clear.id)).toMatchObject({ kind: 'saved' })
       const syncStudent = async (operation: z.input<typeof offlineStudentOperationSchema>) => {
         const response = await call('/api/student/sync', subjects.teacher, {
           accountId: subjects.teacher,

@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { z } from 'zod'
 import {
+  attendanceScopeKey,
   eventSchema,
   makeEvent,
   projectEvents,
@@ -645,12 +646,7 @@ export function useLedger(
       validateAssignedPayloads(payloads, roster, events, enrollments, courses)
       for (const payload of payloads) {
         if (payload.kind === 'attendance') {
-          const current = projection.attendance.find(
-            ({ value }) =>
-              value.studentId === payload.studentId &&
-              value.enrollmentId === payload.enrollmentId &&
-              value.date === payload.date,
-          )
+          const current = projection.attendanceVersions.get(attendanceScopeKey(payload))
           marks.push(
             offlineAttendanceRecordSchema.parse({
               event: makeEvent(neon.teacher.name, payload),

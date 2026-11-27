@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { projectEvents, statusSchema } from '../shared/ledger'
+import { attendanceScopeKey, projectEvents, statusSchema } from '../shared/ledger'
 import { neonSnapshotSchema, type NeonSnapshot } from '../shared/neon'
 import {
   offlineProfileOperationSchema,
@@ -161,12 +161,13 @@ export async function recordAttendanceOutcome(
                   entry.date === payload.date
                 ),
             )
-            if (outcome.current)
+            if (outcome.current?.status)
               snapshot.attendance.push({
                 studentId: payload.studentId,
                 enrollmentId: payload.enrollmentId,
                 date: payload.date,
-                ...outcome.current,
+                eventId: outcome.current.eventId,
+                status: outcome.current.status,
               })
             if (
               snapshot.notebook &&
@@ -297,12 +298,13 @@ export async function resolveAttendanceConflict(
                   entry.date === payload.date
                 ),
             )
-            if (current)
+            if (current?.status)
               snapshot.attendance.push({
                 studentId: payload.studentId,
                 enrollmentId: payload.enrollmentId,
                 date: payload.date,
-                ...current,
+                eventId: current.eventId,
+                status: current.status,
               })
             tx.objectStore('snapshots').put(snapshot, cacheKey)
           }
@@ -738,20 +740,20 @@ export async function queueNotebookOperations(
         const markRequest = markStore.get(userId)
         markRequest.onsuccess = () => {
           const queue = z.array(pendingSchema).parse(markRequest.result ?? [])
+          const versions = snapshot?.notebook
+            ? projectEvents(snapshot.notebook.events).attendanceVersions
+            : undefined
           for (const item of marks) {
             const previous = queue.findLast((entry) => attendanceKey(entry) === attendanceKey(item))
             const payload = item.event.payload
-            const current = snapshot?.attendance.find(
-              (entry) =>
-                entry.studentId === payload.studentId &&
-                entry.enrollmentId === payload.enrollmentId &&
-                entry.date === payload.date,
-            )
+            const scope = attendanceScopeKey(payload)
+            const currentId = versions
+              ? versions.get(scope)?.event.id
+              : snapshot?.attendance.find((entry) => attendanceScopeKey(entry) === scope)?.eventId
             queue.push({
               ...item,
               expectedEventId:
-                previous?.event.id ??
-                (snapshot ? (current?.eventId ?? null) : item.expectedEventId),
+                previous?.event.id ?? (snapshot ? (currentId ?? null) : item.expectedEventId),
               ...(previous ? { expectedRevision: undefined } : {}),
             })
           }

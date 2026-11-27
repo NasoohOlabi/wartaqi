@@ -135,6 +135,30 @@ test('offline teacher edits reach a second signed-in student over live sync', as
     } finally {
       held.resolve()
     }
+    await student.unroute('**/api/student/attendance')
+    await staff.setOffline(true)
+    await teacher.reload()
+    await expect(mark).toHaveAttribute('aria-pressed', 'true')
+    await mark.click()
+    await expect(teacher.getByText('Saved on this device. Waiting to sync.')).toBeVisible()
+    await teacher.reload()
+    await expect(mark).toHaveAttribute('aria-pressed', 'false')
+    await staff.setOffline(false)
+    await expect(student.getByRole('cell', { name: 'present', exact: true })).toHaveCount(0, {
+      timeout: 12000,
+    })
+    const cleared = await db.query(
+      "SELECT payload->'status' AS status FROM events WHERE student_id=$1 AND payload->>'kind'='attendance'",
+      [studentId],
+    )
+    expect(cleared.rows).toEqual(expect.arrayContaining([{ status: 'present' }, { status: null }]))
+    expect(cleared.rowCount).toBe(2)
+    await teacher.reload()
+    await expect(mark).toHaveAttribute('aria-pressed', 'false')
+    await mark.click()
+    await expect(student.getByRole('cell', { name: 'present', exact: true })).toBeVisible({
+      timeout: 12000,
+    })
     await Promise.all([staff.close(), learner.close()])
   } finally {
     server.kill()

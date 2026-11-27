@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { projectEvents } from '../shared/ledger'
+import { attendanceScopeKey, projectEvents } from '../shared/ledger'
 import { attendanceChartRows, labelChartRows } from '../shared/attendanceChart'
 import { rankAbsenceSessions } from '../shared/attendanceInsights'
 import { neonSnapshotSchema } from '../shared/neon'
@@ -94,7 +94,9 @@ export function registerNotebookWorkflows(
       }
       const session = active.map((student) => {
         const enrollment = enrollmentByStudent.get(student.studentId)
-        const record = records.get(`${student.studentId}:${date}`)
+        const record = projection.attendanceVersions.get(
+          attendanceScopeKey({ studentId: student.studentId, enrollmentId: enrollment?.id, date }),
+        )
         return {
           studentId: student.studentId,
           name: student.name,
@@ -102,7 +104,7 @@ export function registerNotebookWorkflows(
           level: enrollment?.level ?? student.group,
           teacherId: enrollment?.teacherId ?? null,
           teacherName: enrollment?.teacherName ?? null,
-          status: record?.value.status ?? 'unmarked',
+          status: record?.value?.status ?? 'unmarked',
           eventId: record?.event.id ?? null,
         }
       })
