@@ -2417,3 +2417,9 @@ The navigation scenario exercises the course tabs, student return with a saved s
 The owner asked for two rows per student on the course Students page. The first row holds the name fields and course level when shown. The second holds the teacher, enrollment and handbook controls available in the selected view. In Groups, the teacher selector uses the space available alongside the enrollment switch.
 
 The course roster browser scenario passed for All columns, Groups and Books in English and Arabic at 320, 390 and 430px and on desktop. It checks row geometry and overflow with synthetic names, including a long mixed-script name, and exercises saved teacher assignments across searches. The PR records release checks and Railway verification.
+
+## 2026-11-27 08:41 Asia/Damascus — Compact dashboard follow-up dates
+
+The owner asked to see which weekday each absence fell on and to fit each card into two lines. Follow-up cards show the localized weekday and numeric day/month on the first line and attendance status on the second.
+
+The dashboard browser scenario checked date order, two-line layout and overflow at 320, 390, 430 and 1280px in English and Arabic. It used synthetic attendance records. The PR records release checks and Railway verification.
