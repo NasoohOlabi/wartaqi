@@ -32,6 +32,7 @@ import { applyGradeChanges, type GradeValues } from '../shared/gradeSync'
 import { gradeAcceptedEvent, gradeScope, queueGradeEdit, useGradeQueue } from './gradeSync'
 import type { CachedAccess } from './offlineAccess'
 import { CourseExportDialog } from './CourseExportDialog'
+import { newEditVersion } from './accountRequest'
 import { request } from './neon'
 import { useLanguage } from './useLanguage'
 import { courseListBack, openChildView, setQuery, useQueryState } from './queryState'
@@ -331,17 +332,22 @@ export function Courses({
     body: unknown,
     onSuccess?: () => void,
     saveKey?: string,
-    options?: { refreshOnly?: boolean; membership?: { key: string; active: boolean } },
+    options?: {
+      refreshOnly?: boolean
+      membership?: { key: string; active: boolean }
+      edit?: ReturnType<typeof newEditVersion>
+    },
   ) {
     const { refreshOnly = false, membership } = options ?? {}
     if (offline) return Promise.resolve(false)
+    const edit = options?.edit ?? newEditVersion()
     if (membership)
       setPendingMembership((current) => ({ ...current, [membership.key]: membership.active }))
     pendingSaves.current += 1
     setBusy(true)
     const write = writeQueue.current.then(async () => {
       if (offlineRef.current) throw new Error('Connect to Wartaq to save course changes.')
-      if (!refreshOnly) await request(path, userId, body)
+      if (!refreshOnly) await request(path, userId, body, true, edit)
     })
     writeQueue.current = write.catch(() => undefined)
     const operation = readbackQueue.current.then(async () => {
@@ -373,6 +379,7 @@ export function Courses({
               void submit(path, body, onSuccess, saveKey, {
                 refreshOnly: writeSucceeded,
                 membership,
+                edit,
               }),
           }))
         else setError(cause instanceof Error ? cause.message : 'Save failed')

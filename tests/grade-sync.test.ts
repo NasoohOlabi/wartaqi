@@ -22,7 +22,7 @@ integration(
     const origin = 'https://grade-sync.example'
     const handler = createHandler(pool, async (token) => token, [origin])
 
-    function operation(fields: unknown) {
+    function operation(fields: unknown, editTime?: string) {
       const requestId = crypto.randomUUID()
       receiptIds.push(requestId)
       return gradeOperationSchema.parse({
@@ -31,6 +31,7 @@ integration(
         id: enrollment,
         grant: { id: adminId, expiresAt: null },
         fields,
+        editTime,
       })
     }
     function post(body: unknown, subject = admin) {
@@ -119,6 +120,23 @@ integration(
         [enrollment],
       )
       expect(closedGrade.rows).toEqual([{ practical: 82, open: false }])
+      const gradeTime = Date.now() + 100
+      const earlierTimed = operation(
+        { notes: { previous: 'later', next: 'earlier device' } },
+        new Date(gradeTime).toISOString(),
+      )
+      const laterTimed = operation(
+        { notes: { previous: 'later', next: 'later device' } },
+        new Date(gradeTime + 1).toISOString(),
+      )
+      expect(await outcome(earlierTimed)).toEqual({ status: 'accepted' })
+      expect(await outcome(laterTimed)).toEqual({ status: 'accepted' })
+      expect(await outcome(operation(earlierTimed.fields, earlierTimed.editTime))).toEqual({
+        status: 'conflict',
+        current: { practical: 82, theory: 70, notes: 'later device' },
+      })
+      expect(await outcome(earlierTimed)).toEqual({ status: 'accepted' })
+      await Bun.sleep(110)
       const expiresAt = new Date(Date.now() + 86400000).toISOString()
       await pool.query('UPDATE app_accounts SET expires_at = $2 WHERE auth_user_id = $1', [
         admin,

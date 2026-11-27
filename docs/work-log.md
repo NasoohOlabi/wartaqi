@@ -2594,6 +2594,8 @@ At 17:08 Asia/Damascus, PR #222 incorporated the session replay removal from PR 
 
 At 17:19 Asia/Damascus, PR #222 incorporated the notebook write and readback update from PR #219. `bun run verify` and eight desktop and mobile browser cases passed across group moves, retries, membership and grade threshold saves.
 
+At 17:33 Asia/Damascus, browser shard 2 timed out waiting for the legacy service worker to become redundant. Verify failed because it depends on that shard. The same PWA scenario passed 24 local runs on the reported head. After incorporating PR #226, core verification, eight focused browser cases and the disposable PostgreSQL course test passed. The PWA timeout remains specific to the observed CI run.
+
 ## 2026-11-27 16:01 Asia/Damascus — Show course membership changes on the first tap
 
 The owner reported that a slow enrollment save left the switch looking off. A second tap after the save could undo the enrollment. The switch now displays the requested state during the save and accepts another tap after it settles. A failed confirmation restores the last confirmed state. Retry uses the original operation and displays its pending change.
@@ -2632,3 +2634,9 @@ Two signed-in synthetic Chromium sessions against a disposable Postgres verified
 The owner asked for a fuller description of Wartaq and diagrams. The README explains the public Qur’an course homepage, role permissions, attendance and follow-up, offline sync, and Telegram and MCP access. Two Mermaid diagrams show the session workflow and the path from a local mark to the notebook and student portal.
 
 All 12 relative links resolved. Both diagrams rendered in Chromium at 375 px and 920 px with accessible titles and descriptions. `bun run verify` passed on the updated base. `bun run verify:release` passed before the base update, with 155 unit tests and 258 browser tests passing. Fourteen database-dependent unit-suite cases and six browser cases were skipped locally. The PR records CI and the public checks after Railway deploys the merged commit.
+
+## 2026-11-27 17:22 Asia/Damascus — Reject stale edits by client timestamp
+
+The owner requested that later-made edits survive reordered arrival across devices. Added PostgreSQL record versions for students, courses and enrollments, plus edit times on append-only attendance events. HTTP, browser queues and MCP can preserve edit time through delivery. Legacy clients retain their expected-value checks and use server time. Equal times use the operation UUID. See [stale edits](stale-writes.md).
+
+Disposable PostgreSQL tests exercised both arrival orders, enrollment teacher and level, grades, a stale correction and backup round-trips. Chromium verified offline delivery between signed-in browsers and stable membership retry headers on desktop English and mobile Arabic. On Windows the real-server browser case required launching Playwright with Node and placing the real Bun binary first on PATH. Production release and provider verification are tracked on the PR.

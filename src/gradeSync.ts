@@ -177,6 +177,7 @@ export async function queueGradeEdit({
     operation: {
       kind: 'grade-edit',
       requestId: crypto.randomUUID(),
+      editTime: new Date().toISOString(),
       id,
       grant: { id: scope.account.id, expiresAt: scope.account.expiresAt },
       fields,
@@ -278,6 +279,7 @@ export async function resolveGradeEdit(scope: Scope, item: QueuedGrade, keepMine
       const operation = gradeOperationSchema.parse({
         ...item.operation,
         requestId: crypto.randomUUID(),
+        editTime: new Date().toISOString(),
         fields,
       })
       const next: PendingGrade = { ...item, operation, outcome: null }

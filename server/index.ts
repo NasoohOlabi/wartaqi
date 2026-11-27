@@ -236,7 +236,12 @@ function notebookAsUser(
   )(
     new Request(new URL(operation.path, origin), {
       method: operation.method,
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(operation.edit
+          ? { 'X-Edit-Time': operation.edit.time, 'X-Edit-Id': operation.edit.id }
+          : {}),
+      },
       ...(operation.body === undefined ? {} : { body: JSON.stringify(operation.body) }),
     }),
   )
@@ -546,6 +551,14 @@ export async function handle(request: Request): Promise<Response> {
            AND to_regclass('public.grade_sync_receipts') IS NOT NULL`,
       )
       if (sync.rows[0]?.triggers !== 6) throw new Error('Workspace sync migrations required')
+      const versions = await pool.query(
+        `SELECT count(*)::int AS triggers
+         FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+         WHERE c.relnamespace = 'public'::regnamespace AND t.tgname = 'wartaq_edit_version'
+           AND t.tgenabled IN ('O','A') AND c.relname IN ('students','courses','course_enrollments')`,
+      )
+      if (versions.rows[0]?.triggers !== 3) throw new Error('Edit version migration required')
+      await pool.query('SELECT edit_time FROM public.events LIMIT 0')
       return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } })
     } catch {
       return Response.json({ ok: false }, { status: 503, headers: { 'Cache-Control': 'no-store' } })

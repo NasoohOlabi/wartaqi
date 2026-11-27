@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { attendanceScopeKey, projectEvents, statusSchema } from '../shared/ledger'
+import { attendanceScopeKey, makeEvent, projectEvents, statusSchema } from '../shared/ledger'
 import { neonSnapshotSchema, type NeonSnapshot } from '../shared/neon'
 import {
   offlineProfileOperationSchema,
@@ -264,22 +264,20 @@ export async function resolveAttendanceConflict(
             tx.abort()
             return
           }
-          const replacement =
-            choice === 'local'
-              ? [
-                  {
-                    ...latest,
-                    event: {
-                      ...latest.event,
-                      id: crypto.randomUUID(),
-                      clientTime: new Date().toISOString(),
-                    },
-                    expectedEventId: current?.eventId ?? null,
-                    expectedRevision: undefined,
-                    outcome: null,
-                  },
-                ]
-              : []
+          const event =
+            choice === 'local' ? makeEvent(latest.event.actor, latest.event.payload) : null
+          const replacement = event
+            ? [
+                {
+                  ...latest,
+                  event,
+                  editTime: event.editTime,
+                  expectedEventId: current?.eventId ?? null,
+                  expectedRevision: undefined,
+                  outcome: null,
+                },
+              ]
+            : []
           pending.put(
             [...fresh.filter((item) => attendanceKey(item) !== key), ...replacement],
             queueKey(userId),
@@ -653,6 +651,7 @@ export async function resolveStudentConflict(
                       ...item.operation,
                       id: replacementId,
                       clientTime: new Date().toISOString(),
+                      editTime: new Date().toISOString(),
                       expected,
                       changes,
                     }),
