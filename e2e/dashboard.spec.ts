@@ -4,6 +4,56 @@ import { clickAccountAction } from './profileActions'
 import { expect, test } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 
+test('dashboard fits the session controls and add-student icon in both directions', async ({
+  page,
+}, testInfo) => {
+  await mockSyntheticNotebook(page)
+  await page.goto('/?page=app')
+  await mkdir('.artifacts/verification', { recursive: true })
+  for (const language of ['en', 'ar']) {
+    const ar = language === 'ar'
+    if (ar) await clickAccountAction(page, 'العربية')
+    const controls = page.locator('.dashboard-actions')
+    const dateInput = controls.locator('input[type="date"]')
+    const status = controls.locator('.dashboard-status')
+    const attendance = controls.getByRole('button', {
+      name: ar ? /متابعة الحضور/ : /Continue attendance/,
+    })
+    const add = controls.getByRole('button', {
+      name: ar ? 'إضافة طالب' : 'Add student',
+      exact: true,
+    })
+    await expect(add).toHaveText('')
+    await expect(add.locator('svg')).toBeVisible()
+    for (const width of testInfo.project.name === 'mobile' ? [320, 360] : [1280]) {
+      await page.setViewportSize({ width, height: 844 })
+      const [dateBox, statusBox, attendanceBox, addBox] = await Promise.all(
+        [dateInput, status, attendance, add].map((control) => control.boundingBox()),
+      )
+      if (!dateBox || !statusBox || !attendanceBox || !addBox) {
+        throw new Error('Dashboard controls must be visible')
+      }
+      expect(statusBox.y).toBeLessThan(dateBox.y + dateBox.height)
+      expect(statusBox.y + statusBox.height).toBeGreaterThan(dateBox.y)
+      expect(ar ? statusBox.x < dateBox.x : statusBox.x > dateBox.x).toBe(true)
+      expect(addBox.width).toBe(44)
+      expect(addBox.height).toBe(44)
+      expect(addBox.y).toBeLessThan(attendanceBox.y + attendanceBox.height)
+      expect(addBox.y + addBox.height).toBeGreaterThan(attendanceBox.y)
+      expect(attendanceBox.y < dateBox.y + dateBox.height).toBe(width === 1280)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      )
+      await controls.screenshot({
+        path: `.artifacts/verification/dashboard-${width}-${language}.png`,
+      })
+    }
+    await add.click()
+    await expect(page).toHaveURL(/view=add-student/)
+    await page.goBack()
+  }
+})
+
 test('dashboard charts and alphabetic fuzzy attendance preserve drafts', async ({
   page,
 }, testInfo) => {
