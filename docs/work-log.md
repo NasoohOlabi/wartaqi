@@ -2473,3 +2473,9 @@ Synthetic browser checks cover English and Arabic on desktop and at 320, 390 and
 The owner asked for CSV and Excel alongside the Contacts download in the course Students view. The download icon opens a localized menu for all three formats. CSV and Excel include the full accessible active course roster with names, phone numbers and the selected course level. Contacts still skips unusable numbers and reports the omission count in the menu.
 
 The roster browser scenario passed with desktop and emulated phone Chromium. It inspected all three synthetic downloads, including Arabic names, leading zeros, missing numbers, formula-like text and search-independent scope. It checked keyboard navigation and menu layout in English and Arabic from 320 to 1624px. The PR records release and Railway verification. Native Contacts import requires a device check.
+
+## 2026-11-27 10:07 Asia/Damascus — Shorten GitHub Actions validation
+
+The owner asked for faster CI on GitHub Free. A sampled PR took 7m 52s and a main run took 8m 1s. Playwright used more than six minutes in both runs. The core checks and three Playwright shards now run on standard Linux runners in parallel. `Verify` requires all jobs to pass, and new commits cancel older runs of the same PR. Each main commit gets its own run for Railway's Wait for CI. Each shard publishes an HTML report with traces retained for failed tests.
+
+Playwright discovery found 78, 81 and 73 cases in the shards. The combined cases exactly matched all 232 cases in the unsharded desktop and mobile suite. Actionlint and `bun run verify` passed. The required check's shell condition passed only when both prerequisites succeeded across all 16 combinations of success, failure, cancellation and skip. GitHub run timings and exact-commit Railway verification are recorded in the PR.
