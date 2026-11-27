@@ -261,6 +261,38 @@ async function sortFromToolbar(
   await page.keyboard.press('Escape')
 }
 
+test('roster birth years sort numerically and filter literally', async ({ page }) => {
+  const { writes } = await syntheticTables(page)
+  await page.goto('/?page=app&tab=roster')
+  const rows = page.locator('.roster-students-table tbody tr')
+  await sortFromToolbar(page, { column: 'birthYear' })
+  await expect(rows.locator('td:nth-child(6)')).toHaveText([
+    '2000',
+    '2001',
+    '2002',
+    '2003',
+    '—',
+    '—',
+  ])
+  expect(
+    await rows
+      .first()
+      .locator('td:nth-child(6) bdi')
+      .evaluate((year) => year.getClientRects().length),
+  ).toBe(1)
+  await page.getByRole('button', { name: 'Filter options' }).click()
+  await page.getByLabel('Add filter', { exact: true }).selectOption('birthYear')
+  await page.getByRole('searchbox', { name: 'Filter Birth year' }).fill('2001')
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(rows).toHaveCount(1)
+  await expect(rows.first()).toContainText('Alpha')
+  await page.getByRole('button', { name: 'Filter options' }).click()
+  await page.getByRole('searchbox', { name: 'Filter Birth year' }).fill('2010')
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(rows).toHaveCount(0)
+  expect(writes).toEqual([])
+})
+
 test('whole decimal levels display consistently and retain raw edit values', async ({ page }) => {
   const { writes } = await syntheticTables(page)
   await page.goto('/?page=app&tab=roster')
@@ -290,7 +322,7 @@ test('every staff table column sorts and filters without writes', async ({ page 
     ['view=courses', 2, true],
     [`view=courses&course=${courseId}&courseView=students`, 6, false],
     [`view=courses&course=${courseId}&courseView=grades`, 8, true],
-    ['tab=roster', 7, true],
+    ['tab=roster', 8, true],
     [`view=student&student=${studentIds[0]}`, 3, false],
     [`tab=attendance&course=${courseId}`, 4, false],
     [`tab=attendance&course=${courseId}&q=Alpha`, 4, false],
@@ -431,6 +463,17 @@ test('wide student details align profile fields, attendance and notes', async ({
     expect(editBounds.y + editBounds.height).toBeGreaterThan(titleBounds.y)
     if (ar) expect(editBounds.x + editBounds.width).toBeLessThan(titleBounds.x)
     else expect(editBounds.x).toBeGreaterThan(titleBounds.x + titleBounds.width)
+    await page.setViewportSize({ width: 320, height: 844 })
+    for (const [label, action] of [
+      [ar ? 'الحضور' : 'Attendance', attendance],
+      [ar ? 'ملاحظات الطالب' : 'Student notes', note],
+    ] as const) {
+      const heading = await details.getByRole('heading', { name: label, exact: true }).boundingBox()
+      const button = await action.boundingBox()
+      if (!heading || !button) throw new Error('Student activity heading or action is hidden')
+      expect(button.y + button.height / 2).toBeCloseTo(heading.y + heading.height / 2, 0)
+    }
+    await page.setViewportSize({ width: 894, height: 759 })
     await note.click()
     await expect(
       notes.getByRole('textbox', { name: ar ? 'الملاحظة' : 'Note', exact: true }),
@@ -482,6 +525,20 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
       const heading = await title.boundingBox()
       const name = await open.boundingBox()
       const attendance = await first.locator('td[data-label]').nth(3).boundingBox()
+      const phone = await first.locator('td').nth(2).boundingBox()
+      const level = await first.locator('td').nth(4).boundingBox()
+      const year = await first.locator('td').nth(5).boundingBox()
+      const courses = await first.locator('td').nth(6).boundingBox()
+      if (!phone || !level || !year || !courses) throw new Error('Roster fields are hidden')
+      expect(phone.y).toBe(attendance?.y)
+      expect(level.y).toBe(year.y)
+      expect(year.y).toBe(courses.y)
+      await expect(first.locator('td').nth(5)).toHaveText('2000')
+      await expect(rows.filter({ hasText: 'Echo' }).locator('td').nth(5)).toHaveText('—')
+      await expect(first.locator('td').nth(5)).toHaveAttribute(
+        'data-label',
+        ar ? 'سنة الميلاد' : 'Birth year',
+      )
       if (!heading || !name || !attendance)
         throw new Error('Roster title or student fields are hidden')
       expect(name.height).toBeGreaterThanOrEqual(44)
@@ -508,10 +565,11 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
       await page.screenshot({ path: '.artifacts/verification/compact-roster-ar.png' })
     }
     await open.click()
-    await expect(
-      page.getByRole('heading', { name: ar ? 'معلومات الطالب' : 'Student information' }),
-    ).toBeVisible()
     const details = page.locator('.student-details')
+    const profileTitle = details.getByRole('heading', {
+      name: ar ? 'معلومات الطالب' : 'Student information',
+    })
+    await expect(profileTitle).toBeVisible()
     const profile = details.locator('.student-detail-profile')
     const name = profile.locator('.student-detail-name')
     const level = profile.locator('.student-detail-level')
@@ -521,6 +579,9 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
     const birthYear = profile.getByText('2000', { exact: true })
     const course = profile.getByRole('link', { name: courseName })
     const edit = details.getByRole('button', { name: ar ? 'تعديل الطالب' : 'Edit student' })
+    const refresh = details.getByRole('button', { name: ar ? 'تحديث' : 'Refresh' })
+    await expect(edit).toHaveText('')
+    await expect(edit).toHaveAttribute('title', ar ? 'تعديل الطالب' : 'Edit student')
     const backName = ar ? 'العودة إلى الطلاب' : 'Back to students'
     const back = page.getByRole('button', { name: backName, exact: true })
     const appBar = page.locator('.workspace-brand')
@@ -553,6 +614,17 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
       await expect(back).toBeInViewport({ ratio: 1 })
       await expect(edit.locator('svg[aria-hidden="true"]')).toBeVisible()
       await expect(edit).toBeInViewport()
+      const titleBounds = await profileTitle.boundingBox()
+      if (!titleBounds) throw new Error('Student information heading is hidden')
+      for (const control of [edit, refresh]) {
+        const bounds = await control.boundingBox()
+        if (!bounds) throw new Error('Student information action is hidden')
+        expect(bounds.width).toBeGreaterThanOrEqual(44)
+        expect(bounds.height).toBeGreaterThanOrEqual(44)
+        expect(bounds.y + bounds.height / 2).toBeCloseTo(titleBounds.y + titleBounds.height / 2, 0)
+        if (ar) expect(bounds.x + bounds.width).toBeLessThanOrEqual(titleBounds.x)
+        else expect(bounds.x).toBeGreaterThanOrEqual(titleBounds.x + titleBounds.width)
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
         width,
       )
@@ -607,7 +679,7 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
     await expect(open).toBeFocused()
     await sort.click()
     const columns = page.getByLabel(ar ? 'إضافة عمود' : 'Add column', { exact: true })
-    await expect(columns.locator('option:not([disabled])')).toHaveCount(7)
+    await expect(columns.locator('option:not([disabled])')).toHaveCount(8)
     await columns.selectOption('first')
     await page.keyboard.press('Escape')
     await expect(rows.first().locator('.roster-mobile-open')).toHaveText('Alpha Family')
@@ -615,7 +687,7 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
     await expect(rows.first().locator('.roster-mobile-open')).toHaveText('Alpha Family')
     await filter.click()
     const filters = page.getByLabel(ar ? 'إضافة تصفية' : 'Add filter', { exact: true })
-    await expect(filters.locator('option:not([disabled])')).toHaveCount(7)
+    await expect(filters.locator('option:not([disabled])')).toHaveCount(8)
     await filters.selectOption('first')
     await page
       .getByRole('searchbox', { name: ar ? 'تصفية الاسم الأول' : 'Filter First name' })
@@ -651,6 +723,12 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
   await expect(course).toHaveText('5')
   await expect(course).toBeInViewport({ ratio: 1 })
   await expect(back).toBeInViewport({ ratio: 1 })
+  const reloaded = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/notebook',
+  )
+  await page.locator('.student-details').getByRole('button', { name: 'تحديث', exact: true }).click()
+  expect((await reloaded).ok()).toBe(true)
+  await expect(page).toHaveURL((url) => url.searchParams.get('student') === studentIds[0])
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360)
   await page.screenshot({
     path: '.artifacts/verification/student-profile-numbered-course-ar.png',
@@ -955,6 +1033,23 @@ test('student portal dates sort chronologically and combine course/status filter
       .locator('dd'),
   ).toHaveText('1')
   const table = page.locator('table')
+  for (const ar of [false, true]) {
+    if (ar) await clickAccountAction(page, 'العربية')
+    const title = page.getByRole('heading', { name: ar ? 'حضوري' : 'My attendance' })
+    const refresh = page.getByRole('button', { name: ar ? 'تحديث' : 'Refresh', exact: true })
+    await expect(table.locator('tbody tr')).toHaveCount(3)
+    for (const width of [320, 360, 390, 1280]) {
+      await page.setViewportSize({ width, height: 844 })
+      const heading = await title.boundingBox()
+      const button = await refresh.boundingBox()
+      if (!heading || !button) throw new Error('Student portal heading or refresh is hidden')
+      expect(button.y + button.height / 2).toBeCloseTo(heading.y + heading.height / 2, 0)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width,
+      )
+    }
+  }
+  await clickAccountAction(page, 'English')
   await everyColumn(table, 3)
   await sortFromToolbar(page, { column: 'date' })
   await expect(table.locator('tbody tr td:nth-child(2)')).toHaveText([

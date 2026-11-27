@@ -26,6 +26,8 @@ The notebook opens on a dashboard. Verify the selected-date recording gaps, the 
 
 Table controls: Use the shared `TableToolbar` beside the title for each sortable list. `TableHeader` supplies the sortable columns on wide layouts and on the compact Courses table. Stacked records show their own labels and use the toolbar menus for every sort and filter field. `e2e/table-pages.spec.ts` verifies desktop column sorting, mobile menu coverage, 44px targets, number and date ordering, combined filters, and URL persistence. `e2e/table-controls.spec.ts` checks filtered bulk attendance and hidden drafts. Filter to a subset, mark its unmarked students present, and verify saved and drafted exceptions keep their values. Verify filters remain usable when no rows match.
 
+In the student portal, verify that My attendance and its Sort, Filter and Refresh controls share one row in English and Arabic at 320, 360, 390 and 1280px. The heading may wrap within its own space. `e2e/table-pages.spec.ts` covers the row geometry and exercises the student portal's table controls.
+
 Open a copied Grades link after sorting by Result. The `tables` value uses only letters, digits, hyphens and underscores. The result order survives reopening. Old JSON links restore the same order and are rewritten when opened. Check that Arabic filter text also survives reopening.
 
 In a signed-in view, use the corner **Copy link** control and reopen the copied address. Check that it keeps the selected course, screen and filters. Deny clipboard access and check that the full address appears in a focused field for manual copying. `e2e/notebook.spec.ts` exercises both clipboard paths with a synthetic attendance view on desktop and an emulated phone.

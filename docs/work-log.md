@@ -2468,6 +2468,38 @@ The owner requested the same phone layout in Settings → Students and icon butt
 
 Synthetic browser checks cover English and Arabic on desktop and at 320, 390 and 430px. They check alignment, overflow, localized labels, 44px targets, form navigation and the existing student save flow. The PR records release checks and Railway verification. Native WhatsApp handoff remains unverified.
 
+## 2026-11-27 09:53 Asia/Damascus — Add course roster export formats
+
+The owner asked for CSV and Excel alongside the Contacts download in the course Students view. The download icon opens a localized menu for all three formats. CSV and Excel include the full accessible active course roster with names, phone numbers and the selected course level. Contacts still skips unusable numbers and reports the omission count in the menu.
+
+The roster browser scenario passed with desktop and emulated phone Chromium. It inspected all three synthetic downloads, including Arabic names, leading zeros, missing numbers, formula-like text and search-independent scope. It checked keyboard navigation and menu layout in English and Arabic from 320 to 1624px. The PR records release and Railway verification. Native Contacts import requires a device check.
+
+## 2026-11-27 09:56 Asia/Damascus — Show birth years in notebook Students
+
+The owner requested birth years in the notebook roster to group students by age. The desktop table shows a sortable Birth year column. Phones show the year on the same row as Level and Courses. Missing years display an em dash, and the year filter matches digits literally.
+
+Focused browser checks use synthetic records to verify sorting, filtering, missing years and the compact layout in English and Arabic. The PR records release and Railway verification.
+
+## 2026-11-27 10:00 Asia/Damascus — Keep desktop roster WhatsApp inline
+
+The owner reported that the WhatsApp icon appeared below the phone number on desktop. The roster now keeps its dial and WhatsApp links side by side at all widths and gives the desktop phone column room for both targets.
+
+The contact browser scenario checks phone and icon geometry, 44px contact targets and English and Arabic at 1280/1624px and phone widths. It uses synthetic contact records. Native WhatsApp handoff remains unverified.
+
+## 2026-11-27 10:05 Asia/Damascus — Keep student actions beside their headings
+
+The owner reported that Edit and Refresh took a separate row on the Arabic Student information page. The pencil now has a localized accessible name and tooltip, and both icons share the title row. The shared workspace header also keeps the student portal controls beside My attendance. The narrow student profile keeps the labeled Take attendance and Add note actions beside their section headings.
+
+Branch discovery found the merged profile, Back and roster updates on main. The dashboard, roster birth-year and export PRs address adjacent layouts. `bun run verify:release` passed with 229 browser checks. Synthetic Chromium checks cover phone and desktop row geometry in English and Arabic, the 360px Arabic course profile and its Refresh action, and student portal sorting and filtering. The supplied production link requires sign-in. The PR records Railway verification.
+
+## 2026-11-27 10:07 Asia/Damascus — Shorten GitHub Actions validation
+
+The owner asked for faster CI on GitHub Free. A sampled PR took 7m 52s and a main run took 8m 1s. Playwright used more than six minutes in both runs. The core checks and three Playwright shards now run on standard Linux runners in parallel. `Verify` requires all jobs to pass, and new commits cancel older runs of the same PR. Each main commit gets its own run for Railway's Wait for CI. Each shard publishes an HTML report with traces retained for failed tests.
+
+Playwright discovery found 78, 81 and 73 cases in the shards. The combined cases exactly matched all 232 cases in the unsharded desktop and mobile suite. Actionlint and `bun run verify` passed. The required check's shell condition passed only when both prerequisites succeeded across all 16 combinations of success, failure, cancellation and skip. GitHub run timings and exact-commit Railway verification are recorded in the PR.
+
+At 10:21 Asia/Damascus, PR #206 passed Validation in 3m 21s. Its HTML reports used 1.4 MB total, down from 138 MB in the baseline PR. The first main run stopped before browser tests on one runner after the preconfigured Microsoft apt feed returned HTTP 403. `Verify` failed and Railway blocked that deployment. Browser jobs now remove that unused feed on their disposable runners and still install Chromium's dependencies from Ubuntu. The local release check passed with 229 browser cases and three skips. The follow-up PR records hosted verification and Railway deployment evidence.
+
 ## 2026-11-27 10:44 Asia/Damascus — Offline workspace and live delivery
 
 The owner requested durable, fast offline work and live updates across the site for a small teaching team. The design and verification matrix document role-scoped device storage, optimistic edits, explicit conflict review, and repair after missed signals. Transactional PostgreSQL notifications wake authenticated Socket.IO clients. Routine notebook, profile and grade edits survive reloads and replay with their original operation IDs. Access administration and external effects require a connection.
