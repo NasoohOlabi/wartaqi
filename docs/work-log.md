@@ -2708,3 +2708,9 @@ Railway attributed roughly 99% of project egress charges to the web service. The
 Local Bun verification against disposable Postgres, Rust tests, Rust/Bun parity and transport recovery passed. Chromium verified offline save, reload and student delivery with zero website telemetry requests. Retired Settings bookmarks passed on desktop and mobile in English and Arabic. Verified gzip and cache headers against the running Rust hybrid and verified migration 022 with disposable Postgres. The release still requires CI, exact-commit Railway health and the production purge. Billing savings need a later comparable usage window.
 
 The broader Settings regression needed its expected navigation updated from five links to four. The administrator Settings and bilingual phone-link cases passed on both Playwright projects after the update.
+
+## 2026-11-27 21:44 Asia/Damascus - Build a local performance lab
+
+The owner requested repeated local Docker measurements and at least 30% reductions in requests, bytes, CPU, memory, and PostgreSQL storage. Railway is outside this task. Baseline 7f5ae9a uses disposable PostgreSQL 17 and synthetic fixtures with 2,408 and 120,729 events. The lab counts HTTP and WebSocket traffic at the proxy, records container cgroups, exercises offline sync across browsers and repeats a seven-reader workload.
+
+Both H+ baselines passed and recorded 163–164 requests, 79–80 API and socket requests, and 2.56 MB transferred. LAN and both large stress runs passed. The 56 large reads transferred 403 MB per run. The Docker registry timed out, so both measured images use the same cached runtime dependency layer and the release Rust compiler. The reports are under `.artifacts/performance`. Emulation and the fixture do not establish mobile-carrier or provider billing behavior.
