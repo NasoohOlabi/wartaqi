@@ -2417,3 +2417,9 @@ The navigation scenario exercises the course tabs, student return with a saved s
 The owner asked for two rows per student on the course Students page. The first row holds the name fields and course level when shown. The second holds the teacher, enrollment and handbook controls available in the selected view. In Groups, the teacher selector uses the space available alongside the enrollment switch.
 
 The course roster browser scenario passed for All columns, Groups and Books in English and Arabic at 320, 390 and 430px and on desktop. It checks row geometry and overflow with synthetic names, including a long mixed-script name, and exercises saved teacher assignments across searches. The PR records release checks and Railway verification.
+
+## 2026-11-27 08:46 Asia/Damascus — Compact dashboard attendance controls
+
+The owner asked to tighten the attendance panel and replace the Add student text button with a person-plus icon. The date and attendance counts share a row. The attendance action and the icon share a second row on phones and fit alongside the date on desktop. The icon opens the existing Administrator creation form and uses a localized accessible label.
+
+Synthetic browser checks exercise the icon and check layout and overflow at 320, 360 and 1280px in Arabic and English. Browser emulation covers these widths. The PR records release checks and Railway verification.
