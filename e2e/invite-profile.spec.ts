@@ -95,6 +95,11 @@ async function checkInvitedProfile(page: Page, role: 'teacher' | 'student', isMo
       },
     }),
   )
+  const unrelatedReads: string[] = []
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname
+    if (path === '/api/student/attendance' || path === '/api/notebook') unrelatedReads.push(path)
+  })
   await page.goto('/?page=app&view=profile&login=phone')
   const phoneInput = page.getByRole('textbox', { name: 'Phone number', exact: true })
   await phoneInput.fill(verifiedPhone)
@@ -147,6 +152,7 @@ async function checkInvitedProfile(page: Page, role: 'teacher' | 'student', isMo
   expect(phone).toBe('987654321')
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Personal details' })).toBeVisible()
+  expect(unrelatedReads).toEqual([])
   expect(loginCount).toBe(1)
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
 }

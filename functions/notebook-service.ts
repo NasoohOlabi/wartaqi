@@ -1,4 +1,5 @@
 import { profileUpdateSchema, validProfileUpdate } from '../server/profile'
+import { saveGradeEdit } from '../server/gradeSync'
 import {
   revokeTelegramGrants,
   rosterGrantBinding,
@@ -47,9 +48,15 @@ import {
 } from '../shared/neon'
 import { eventSchema, projectEvents } from '../shared/ledger'
 import { offlineAttendanceSyncSchema } from '../shared/offlineAttendance'
-import { offlineStudentSyncSchema } from '../shared/offlineStudent'
+import {
+  editableProfileSchema,
+  offlineStudentSyncSchema,
+  profileConflicts,
+  profileFields,
+} from '../shared/offlineStudent'
 import { validateAssignedPayloads } from '../shared/roster'
 import { courseAttendance, effectiveGradeResult } from '../shared/courseGrading'
+import { gradeOperationSchema, gradePath, gradeRecoverySchema } from '../shared/gradeSync'
 
 const teacherRow = z.object({
   id: z.uuid(),
@@ -1184,7 +1191,22 @@ export function createHandler(
           } else if (path === '/api/admin') response = await adminBoard(db)
           else {
             const body = await readBody(request)
-            response = await manage(db, path, body, subject)
+            const gradeEdit = path === gradePath ? gradeOperationSchema.safeParse(body) : undefined
+            const recovery =
+              path === gradePath && !gradeEdit?.success
+                ? gradeRecoverySchema.safeParse(body)
+                : undefined
+            if (gradeEdit?.success)
+              response = await saveGradeEdit(db, subject, teacher, gradeEdit.data)
+            else if (recovery?.success)
+              response = await saveGradeEdit(
+                db,
+                subject,
+                teacher,
+                recovery.data.operation,
+                recovery.data.grant,
+              )
+            else response = await manage(db, path, body, subject)
             if (path === '/api/admin/accounts/invite' && invitationReceipt?.kind === 'save') {
               const { requestId } = invitationRequestSchema.parse(body)
               await invitationReceipt.save(db, subject, requestId, response)
@@ -1232,7 +1254,11 @@ export function createHandler(
             operation.kind === 'note' ? operation.event.payload.studentId : operation.studentId
           const id = operation.kind === 'note' ? operation.event.id : operation.id
           const { rows } = await db.query(
-            'SELECT whatsapp FROM students WHERE id = $1 AND active AND ($2::boolean OR teacher_id = $3) FOR UPDATE',
+            operation.kind === 'profile-v1'
+              ? `SELECT COALESCE(first_name, name) AS "firstName", COALESCE(last_name, '') AS "lastName",
+                 whatsapp, location, birth_year AS "birthYear"
+               FROM students WHERE id = $1 AND active AND ($2::boolean OR teacher_id = $3) FOR UPDATE`
+              : 'SELECT whatsapp FROM students WHERE id = $1 AND active AND ($2::boolean OR teacher_id = $3) FOR UPDATE',
             [studentId, teacher.role === 'administrator', teacher.id],
           )
           const student = z.object({ whatsapp: z.string().nullable() }).optional().parse(rows[0])
@@ -1241,6 +1267,8 @@ export function createHandler(
             return reply({ id, kind: 'forbidden', currentWhatsapp: null })
           }
           const currentWhatsapp = student.whatsapp?.trim() || null
+          const currentProfile =
+            operation.kind === 'profile-v1' ? editableProfileSchema.parse(rows[0]) : null
           const clientTime =
             operation.kind === 'note' ? operation.event.clientTime : operation.clientTime
           const payload =
@@ -1259,7 +1287,59 @@ export function createHandler(
               [id, teacher.id, studentId, clientTime, JSON.stringify(payload)],
             )
             await db.query('COMMIT')
-            return reply({ id, kind: same.rowCount ? 'saved' : 'id_conflict', currentWhatsapp })
+            return reply({
+              id,
+              kind: same.rowCount ? 'saved' : 'id_conflict',
+              currentWhatsapp,
+              ...(currentProfile ? { profile: currentProfile } : {}),
+            })
+          }
+          let savedProfile = currentProfile
+          if (operation.kind === 'profile-v1' && currentProfile) {
+            const fields = profileConflicts(currentProfile, operation)
+            const nextProfile = { ...currentProfile, ...operation.changes }
+            savedProfile = nextProfile
+            const name = [nextProfile.firstName, nextProfile.lastName].filter(Boolean).join(' ')
+            if (name.length > 200)
+              for (const field of profileFields)
+                if (
+                  (field === 'firstName' || field === 'lastName') &&
+                  operation.changes[field] !== undefined &&
+                  !fields.includes(field)
+                )
+                  fields.push(field)
+            if (fields.length) {
+              await db.query('COMMIT')
+              return reply({
+                id,
+                kind: 'conflict',
+                currentWhatsapp,
+                profile: currentProfile,
+                profileConflicts: fields,
+              })
+            }
+            const changed = profileFields.filter(
+              (field) => currentProfile[field] !== nextProfile[field],
+            )
+            if (changed.length) {
+              const columns = {
+                firstName: 'first_name',
+                lastName: 'last_name',
+                whatsapp: 'whatsapp',
+                location: 'location',
+                birthYear: 'birth_year',
+              }
+              const updates = changed.map((field, index) => `${columns[field]} = $${index + 2}`)
+              const values = changed.map((field) => nextProfile[field])
+              if (changed.includes('firstName') || changed.includes('lastName')) {
+                values.push(name)
+                updates.push(`name = $${values.length + 1}`)
+              }
+              await db.query(`UPDATE students SET ${updates.join(', ')} WHERE id = $1`, [
+                studentId,
+                ...values,
+              ])
+            }
           }
           if (operation.kind === 'contact' && currentWhatsapp !== operation.expectedWhatsapp) {
             await db.query('COMMIT')
@@ -1278,7 +1358,13 @@ export function createHandler(
           return reply({
             id,
             kind: 'saved',
-            currentWhatsapp: operation.kind === 'contact' ? operation.whatsapp : currentWhatsapp,
+            currentWhatsapp:
+              operation.kind === 'contact'
+                ? operation.whatsapp
+                : savedProfile
+                  ? savedProfile.whatsapp
+                  : currentWhatsapp,
+            ...(savedProfile ? { profile: savedProfile } : {}),
           })
         }
         const current = await snapshot(db, teacher, !batch && !sync)

@@ -9,12 +9,12 @@ const url = process.env.TEST_STUDENT_TRANSFER_DATABASE_URL
 const integration = url ? test : test.skip
 
 integration(
-  'versioned backups round-trip students, courses, enrollments and events',
+  'versioned backups round-trip students, courses, enrollments, events and grade receipts',
   async () => {
     if (!url) throw new Error('Disposable database required')
     const admin = new Pool({ connectionString: url })
     const names = Array.from(
-      { length: 14 },
+      { length: 15 },
       () => `transfer_${crypto.randomUUID().replaceAll('-', '')}`,
     )
     const pools: Pool[] = []
@@ -27,7 +27,7 @@ integration(
       !localPath.startsWith('transfer-test-')
     )
       throw new Error('Refusing cleanup outside the disposable transfer directory')
-    const files = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13].map((version) =>
+    const files = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((version) =>
       resolve(directory, `v${version}.json`),
     )
     const run = (command: string, file: string, dbUrl: string, succeeds = true) => {
@@ -218,6 +218,16 @@ integration(
       )
       run('compare', files[11], urls[0], false)
       run('export', files[12], urls[0])
+      await migrate(source, 'neon/020-grade-sync-receipts.sql')
+      await migrate(source, 'neon/020-grade-sync-receipts.sql')
+      run('compare', files[12], urls[0])
+      const receipt = { request_id: crypto.randomUUID(), fingerprint: 'a'.repeat(64) }
+      await source.query('INSERT INTO grade_sync_receipts VALUES ($1, $2)', [
+        receipt.request_id,
+        receipt.fingerprint,
+      ])
+      run('compare', files[12], urls[0], false)
+      run('export', files[13], urls[0])
       for (let index = 0; index < targets.length; index++) {
         await migrate(targets[index], 'neon/003-courses.sql')
         await migrate(targets[index], 'neon/004-student-names.sql')
@@ -244,8 +254,12 @@ integration(
         if (index >= 11) {
           run('import', files[index], urls[index + 1], false)
           await migrate(targets[index], 'neon/013-invitations.sql')
-          if (index === 12) run('import', files[index], urls[index + 1], false)
+          if (index >= 12) run('import', files[index], urls[index + 1], false)
           await migrate(targets[index], 'neon/014-verified-phone.sql')
+        }
+        if (index >= 12) {
+          if (index === 13) run('import', files[index], urls[index + 1], false)
+          await migrate(targets[index], 'neon/020-grade-sync-receipts.sql')
         }
         run('import', files[index], urls[index + 1])
         run('compare', files[index], urls[index + 1])
@@ -258,7 +272,10 @@ integration(
                 .version,
           ),
         ),
-      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
+      expect((await targets[12].query('SELECT * FROM grade_sync_receipts')).rows).toEqual([])
+      expect((await targets[13].query('SELECT * FROM grade_sync_receipts')).rows).toEqual([receipt])
+      run('compare', files[12], urls[14], false)
       expect(
         (
           await targets[12].query(

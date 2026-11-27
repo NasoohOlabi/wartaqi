@@ -3,53 +3,33 @@ import { formatLevel } from './levelFormat'
 import { TableHeader, TableToolbar } from './DataTable'
 import { useDataTable } from './useDataTable'
 import { RefreshCw } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { z } from 'zod'
-import { neonStudentAttendanceSchema } from '../shared/neon'
 import { useLanguage } from './useLanguage'
 import type { Profile } from './ProfileMenu'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
 import { WorkspacePageHeader } from './WorkspacePageHeader'
-import { request } from './neon'
-
-type Attendance = z.infer<typeof neonStudentAttendanceSchema>
+import { studentAttendanceReplica } from './roleReplica'
+import type { CachedAccess } from './offlineAccess'
+import { useRoleReplica } from './useRoleReplica'
 export function StudentAttendance({
   userId,
+  accountId,
   signOut,
+  cached,
   profile,
 }: {
   userId: string
+  accountId: string
+  cached?: CachedAccess
   signOut: () => void
   profile: Profile
 }) {
   const { language, t, errorMessage } = useLanguage()
   const ar = language === 'ar'
-  const [data, setData] = useState<Attendance | null>(null)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(true)
-  const [revision, setRevision] = useState(0)
-  useEffect(() => {
-    let cancelled = false
-    request('/api/student/attendance', userId)
-      .then((value) => {
-        if (!cancelled) {
-          setData(neonStudentAttendanceSchema.parse(value))
-          setError('')
-        }
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) {
-          setData(null)
-          setError(cause instanceof Error ? cause.message : 'The request failed. Please try again.')
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [userId, revision])
+  const { data, error, loading, refresh } = useRoleReplica(
+    studentAttendanceReplica,
+    userId,
+    accountId,
+  )
   const attendanceTable = useDataTable(
     'portal-attendance',
     [...(data?.attendance ?? [])].sort((a, b) => b.date.localeCompare(a.date)),
@@ -70,22 +50,27 @@ export function StudentAttendance({
   )
   return (
     <div className="workspace">
-      <WorkspaceNavigation administrator={false} student profile={profile} leave={signOut} />
+      <WorkspaceNavigation
+        administrator={false}
+        student
+        offline={!!cached}
+        profile={profile}
+        leave={signOut}
+      />
       <main id="main-content" className="workspace-main" tabIndex={-1}>
         <WorkspacePageHeader
           title={ar ? 'حضوري' : 'My attendance'}
           actions={
             <TableToolbar
-              model={!loading && data?.attendance.length ? attendanceTable : undefined}
+              model={data?.attendance.length ? attendanceTable : undefined}
               actions={
                 <button
                   className="icon-button"
                   aria-label={t('Refresh')}
                   title={t('Refresh')}
-                  disabled={loading}
                   onClick={() => {
-                    setLoading(true)
-                    setRevision((n) => n + 1)
+                    cached?.reconnect()
+                    void refresh()
                   }}
                 >
                   <RefreshCw size={20} strokeWidth={1.6} aria-hidden="true" focusable="false" />
@@ -108,9 +93,15 @@ export function StudentAttendance({
             </div>
           </dl>
         )}
-        {loading && <p role="status">{ar ? 'جارٍ التحميل…' : 'Loading…'}</p>}
+        {cached?.offline && <p role="status">{ar ? 'غير متصل' : 'Offline'}</p>}
+        {loading && !data && !cached?.offline && (
+          <p role="status">{ar ? 'جارٍ التحميل…' : 'Loading…'}</p>
+        )}
+        {cached?.offline && !data && (
+          <p>{ar ? 'أعد الاتصال لعرض سجل الحضور.' : 'Connect to load your attendance.'}</p>
+        )}
         {error && <p role="alert">{errorMessage(error)}</p>}
-        {data && !loading && (
+        {data && (
           <section className="panel">
             {!data.attendance.some((item) => item.date === today()) && (
               <p>

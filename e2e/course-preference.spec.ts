@@ -185,6 +185,11 @@ test('remembers a validated course per account and keeps the header compact', as
     await page.evaluate(() => localStorage.setItem('halaqa-language-preference', 'en'))
     await page.goto('/?page=app&tab=roster&course=none')
     await expect(label).toHaveText('All students')
+    // A warm reload may still show the previous role until the new grant arrives.
+    const settings = page
+      .getByRole('navigation', { name: 'Main navigation' })
+      .getByRole('button', { name: 'Settings', exact: true })
+    await expect(settings).toHaveCount(role === 'administrator' ? 1 : 0)
     await page.getByLabel(/Change course/).click()
     await expect(page.getByRole('button', { name: 'All students', exact: true })).toHaveAttribute(
       'aria-pressed',

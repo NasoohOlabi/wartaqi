@@ -23,7 +23,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { useLanguage, type TranslationKey } from './useLanguage'
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { AttendanceRows } from './AttendanceRows'
 import { registerAttendanceReplay } from './attendanceReplayCapture'
 import { attendanceReplayMaxRows } from '../shared/attendanceReplay'
@@ -53,9 +53,13 @@ import { NotebookDashboard } from './NotebookDashboard'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
 import { CopyViewLink } from './CopyViewLink'
 import { SettingsNavigation } from './SettingsNavigation'
-import { useLedger } from './useLedger'
+import type { SaveStudentProfile } from './useLedger'
+import { StaffPendingNotice, StaffReplicaProvider } from './StaffReplica'
+import { openStaffChanges, useStaffReplica } from './staffReplicaContext'
+import type { CachedAccess } from './offlineAccess'
+import { AdminReplicaProvider } from './useRoleReplica'
+import { GradeSyncNotice } from './gradeSyncNotice'
 import { NeonAuth } from './NeonAuth'
-import { NeonRequestError, request } from './neon'
 import { WorkspaceLoading } from './WorkspaceLoading'
 import { AdminConsole } from './AdminConsole'
 import { InvitationMessageViewer } from './InvitationMessageViewer'
@@ -78,86 +82,149 @@ const maximumBirthYear = new Date().getFullYear()
 
 export default function Workspace({ goHome }: { goHome: () => void }) {
   const query = useQueryState()
+  const { language, t } = useLanguage()
   return (
     <NeonAuth onSignOut={goHome}>
-      {(userId, account, signOut, profile, cached) => (
-        <>
-          <CopyViewLink />
-          <DiagnosticsCapture
-            key={userId}
-            userId={userId}
-            cached={Boolean(cached)}
-            screen={
-              query.view === 'diagnostics' || query.view === 'telegram'
-                ? null
-                : query.view === 'profile' && !cached
-                  ? 'profile'
-                  : account.role === 'student'
-                    ? 'student-portal'
-                    : query.view === 'notebook'
-                      ? query.tab
-                      : query.view === 'settings' || query.view === 'administration'
-                        ? query.settingsSection === 'students'
-                          ? 'settings-students'
-                          : 'settings-accounts'
-                        : query.view === 'courses'
-                          ? (diagnosticsScreenSchema.safeParse(`course-${query.courseView}`).data ??
-                            'courses')
-                          : query.view === 'edit-student'
-                            ? 'settings-students'
-                            : query.view === 'invitation-message'
-                              ? 'invitation'
-                              : query.view
-            }
-          />
-          {!cached && query.view === 'telegram' && account.role === 'administrator' ? (
-            <TelegramConversationsPage
+      {(userId, account, signOut, profile, cached) => {
+        const administrator = account.role === 'administrator'
+        const liveOnly =
+          query.view === 'profile' ||
+          (administrator && ['invitation-message', 'telegram', 'diagnostics'].includes(query.view))
+        if (cached && liveOnly) {
+          if (!cached.offline) return <WorkspaceLoading message={t('Checking your access…')} />
+          return (
+            <div className="workspace">
+              <WorkspaceNavigation
+                administrator={administrator}
+                student={account.role === 'student'}
+                offline
+                profile={profile}
+                leave={signOut}
+              />
+              <main id="main-content" tabIndex={-1} className="workspace-main">
+                <p role="status">
+                  {language === 'ar'
+                    ? 'اتصل بوارتق لفتح هذه الصفحة.'
+                    : 'Connect to Wartaq to open this page.'}
+                </p>
+                <button className="secondary" onClick={cached.reconnect}>
+                  {t('Try again')}
+                </button>
+              </main>
+            </div>
+          )
+        }
+        const administratorSettings =
+          administrator &&
+          ['settings', 'administration', 'add-student', 'edit-student'].includes(query.view)
+        const newStudentCourse =
+          query.view === 'add-student' && query.courseView === 'students' ? query.course : ''
+        const content = (
+          <>
+            <CopyViewLink />
+            <DiagnosticsCapture
               key={userId}
               userId={userId}
-              profile={profile}
-              signOut={signOut}
-            />
-          ) : !cached && query.view === 'diagnostics' && account.role === 'administrator' ? (
-            <DiagnosticsPage userId={userId} profile={profile} signOut={signOut} />
-          ) : !cached && query.view === 'invitation-message' && account.role === 'administrator' ? (
-            <InvitationMessageViewer
-              key={`${userId}:${query.inviteMessage}`}
-              userId={userId}
-              requestId={query.inviteMessage}
-              profile={profile}
-              signOut={signOut}
-            />
-          ) : !cached && query.view === 'profile' ? (
-            <ProfileSettings key={userId} profile={profile} signOut={signOut} role={account.role} />
-          ) : account.role === 'student' ? (
-            <StudentAttendance key={userId} userId={userId} signOut={signOut} profile={profile} />
-          ) : !cached &&
-            account.role === 'administrator' &&
-            (query.view === 'settings' ||
-              query.view === 'administration' ||
-              query.view === 'add-student' ||
-              query.view === 'edit-student') ? (
-            <AdminConsole
-              key={`${userId}:${query.view === 'add-student'}`}
-              userId={userId}
-              signOut={signOut}
-              profile={profile}
-              initialCreateStudent={query.view === 'add-student'}
-              courseId={
-                query.view === 'add-student' && query.courseView === 'students' ? query.course : ''
+              cached={Boolean(cached)}
+              screen={
+                query.view === 'diagnostics' || query.view === 'telegram'
+                  ? null
+                  : query.view === 'profile' && !cached
+                    ? 'profile'
+                    : account.role === 'student'
+                      ? 'student-portal'
+                      : query.view === 'notebook'
+                        ? query.tab
+                        : query.view === 'settings' || query.view === 'administration'
+                          ? query.settingsSection === 'students'
+                            ? 'settings-students'
+                            : 'settings-accounts'
+                          : query.view === 'courses'
+                            ? (diagnosticsScreenSchema.safeParse(`course-${query.courseView}`)
+                                .data ?? 'courses')
+                            : query.view === 'edit-student'
+                              ? 'settings-students'
+                              : query.view === 'invitation-message'
+                                ? 'invitation'
+                                : query.view
               }
             />
-          ) : (
-            <Notebook
-              key={userId}
-              neon={{ userId, teacher: account }}
-              leave={signOut}
-              profile={profile}
-              cached={cached}
-            />
-          )}
-        </>
-      )}
+            {!cached && query.view === 'telegram' && account.role === 'administrator' ? (
+              <TelegramConversationsPage
+                key={userId}
+                userId={userId}
+                profile={profile}
+                signOut={signOut}
+              />
+            ) : !cached && query.view === 'diagnostics' && account.role === 'administrator' ? (
+              <DiagnosticsPage userId={userId} profile={profile} signOut={signOut} />
+            ) : !cached &&
+              query.view === 'invitation-message' &&
+              account.role === 'administrator' ? (
+              <InvitationMessageViewer
+                key={`${userId}:${query.inviteMessage}`}
+                userId={userId}
+                requestId={query.inviteMessage}
+                profile={profile}
+                signOut={signOut}
+              />
+            ) : !cached && query.view === 'profile' ? (
+              <ProfileSettings
+                key={userId}
+                profile={profile}
+                signOut={signOut}
+                role={account.role}
+              />
+            ) : account.role === 'student' ? (
+              <StudentAttendance
+                key={`${userId}:${account.id}`}
+                accountId={account.id}
+                userId={userId}
+                signOut={signOut}
+                profile={profile}
+                cached={cached}
+              />
+            ) : administratorSettings ? (
+              <AdminConsole
+                cached={cached}
+                key={`${userId}:${account.id}:${query.view === 'add-student'}`}
+                userId={userId}
+                signOut={signOut}
+                profile={profile}
+                initialCreateStudent={query.view === 'add-student'}
+                courseId={newStudentCourse}
+              />
+            ) : (
+              <Notebook
+                key={`${userId}:${account.role}:${account.id}`}
+                neon={{ userId, teacher: account }}
+                leave={signOut}
+                profile={profile}
+                cached={cached}
+              />
+            )}
+          </>
+        )
+        if (liveOnly || account.role === 'student') return content
+        const staff = (
+          <StaffReplicaProvider
+            key={`${userId}:${account.role}:${account.id}`}
+            neon={{ userId, teacher: account }}
+            cached={cached}
+            notebookView={!administratorSettings || Boolean(newStudentCourse)}
+          >
+            {content}
+          </StaffReplicaProvider>
+        )
+        return administrator ? (
+          <AdminReplicaProvider key={`${userId}:${account.id}`} userId={userId}>
+            <GradeSyncNotice userId={userId} confirmed={!cached} />
+            {staff}
+          </AdminReplicaProvider>
+        ) : (
+          staff
+        )
+      }}
     </NeonAuth>
   )
 }
@@ -181,14 +248,13 @@ function Notebook({
   profile,
   cached,
 }: {
-  cached?: { reconnect: () => void }
+  cached?: CachedAccess
   neon: { userId: string; teacher: NeonTeacher }
   leave: () => void
   profile: Profile
 }) {
   const { t, language, errorMessage } = useLanguage()
   const query = useQueryState()
-  const changesOrigin = useRef<typeof query.view>('notebook')
   const administrator = neon.teacher.role === 'administrator'
   const settingsHistory = query.view === 'history' && administrator
   const courseHistory = query.view === 'courses' && query.courseView === 'history' && administrator
@@ -201,7 +267,9 @@ function Notebook({
         setQuery({ view: 'history', tab: '' })
     }
   }, [administrator, query.view])
-  const [sessionDrafts, setSessionDrafts] = useState<Record<string, Record<string, string>>>({})
+  const [sessionDrafts, setSessionDrafts] = useState<
+    Record<string, { values: Record<string, string>; observed: ReadonlyMap<string, string | null> }>
+  >({})
   const sessionKey = `${query.courseScope}:${query.date}`
   const listOrigin = useRef<{ trigger: HTMLElement; top: number; search: string } | null>(null)
   const previousView = useRef(query.view)
@@ -257,15 +325,12 @@ function Notebook({
       student: '',
     })
   }
-  const ledger = useLedger(neon, !!cached)
+  const ledger = useStaffReplica()
   const userId = neon.userId
   const access = ledger.snapshotTeacher ?? neon.teacher
   const canCacheOffline = Boolean(access?.canRead && access.canWrite)
   const reviewChanges = query.view === 'changes' && canCacheOffline
   const { refresh } = ledger
-  useEffect(() => {
-    if (cached && ledger.loaded && !ledger.offline) cached.reconnect()
-  }, [cached, ledger.loaded, ledger.offline])
   const preference = useCoursePreference(neon.userId, ledger.loaded, ledger.courses)
   const fullRegister =
     administrator &&
@@ -273,32 +338,36 @@ function Notebook({
     tab === 'roster' &&
     !query.course
   const includeInactive = fullRegister || (history && administrator)
-  const baseProjection = projectEvents(ledger.events)
+  const baseProjection = useMemo(() => projectEvents(ledger.events), [ledger.events])
   const selectedCourse = ledger.courses.find((course) => course.id === query.course)
   const closedCourse = selectedCourse?.open === false ? selectedCourse : undefined
-  const selectedEnrollments = ledger.enrollments.filter((entry) => entry.courseId === query.course)
+  const selectedEnrollments = useMemo(
+    () => ledger.enrollments.filter((entry) => entry.courseId === query.course),
+    [ledger.enrollments, query.course],
+  )
   const activeEnrollments = selectedEnrollments.filter((entry) => entry.active)
-  const selectedIds = new Set(selectedEnrollments.map((entry) => entry.id))
-  const scopedEvents = baseProjection.events.filter((event) => {
-    const payload = event.payload
-    const target =
-      payload.kind === 'reversal'
-        ? baseProjection.events.find((item) => item.id === payload.targetId)
-        : event
-    return (
-      !target ||
-      target.payload.kind !== 'attendance' ||
-      (query.course
-        ? !!target.payload.enrollmentId && selectedIds.has(target.payload.enrollmentId)
-        : !target.payload.enrollmentId)
-    )
-  })
-  const scopedProjection = projectEvents(scopedEvents)
+  const scopedProjection = useMemo(() => {
+    const selectedIds = new Set(selectedEnrollments.map((entry) => entry.id))
+    const byId = new Map(baseProjection.events.map((event) => [event.id, event]))
+    const events = baseProjection.events.filter((event) => {
+      const target = event.payload.kind === 'reversal' ? byId.get(event.payload.targetId) : event
+      return (
+        !target ||
+        target.payload.kind !== 'attendance' ||
+        (query.course
+          ? !!target.payload.enrollmentId && selectedIds.has(target.payload.enrollmentId)
+          : !target.payload.enrollmentId)
+      )
+    })
+    return projectEvents(events)
+  }, [baseProjection, selectedEnrollments, query.course])
+  const activeStudents = new Set(activeEnrollments.map((entry) => entry.studentId))
+  const enrolledStudents = new Set(selectedEnrollments.map((entry) => entry.studentId))
   const courseStudents = ledger.roster.filter((student) =>
     query.course
       ? tab === 'dashboard' || tab === 'attendance' || tab === 'roster'
-        ? student.active && activeEnrollments.some((entry) => entry.studentId === student.studentId)
-        : selectedEnrollments.some((entry) => entry.studentId === student.studentId)
+        ? student.active && activeStudents.has(student.studentId)
+        : enrolledStudents.has(student.studentId)
       : includeInactive || student.active,
   )
   const projected = { ...scopedProjection, students: courseStudents }
@@ -325,7 +394,8 @@ function Notebook({
     !!ledger.pending.length ||
     !!ledger.storageBlocked ||
     !ledger.loaded ||
-    !neon.teacher.canWrite ||
+    !access.canWrite ||
+    ledger.invalidSnapshot ||
     ledger.offlineExpired ||
     (ledger.offline && !ledger.offlinePrepared)
   if (!ledger.loaded || !preference.ready)
@@ -347,7 +417,7 @@ function Notebook({
     query.view === 'notebook' || query.view === 'student' || settingsHistory
   const changesBack = {
     label: language === 'ar' ? 'رجوع' : 'Back',
-    onClick: () => setQuery({ view: changesOrigin.current }),
+    onClick: () => returnToParent({ view: 'notebook' }),
   }
   const back =
     query.view === 'student'
@@ -377,16 +447,14 @@ function Notebook({
       chooseDefault={showCourseSwitcher ? preference.chooseDefault : undefined}
       courseName={ledger.courses.find((course) => course.id === query.course)?.name}
       administrator={administrator}
-      offline={ledger.offline || !!cached}
+      offline={ledger.offline || cached?.offline}
       profile={
         canCacheOffline && ledger.offlinePendingCount > 0
           ? {
               ...profile,
               openChanges: () => {
                 if (reviewChanges) return
-                changesOrigin.current = query.view
-                setQuery({ view: 'changes' }, true)
-                window.scrollTo(0, 0)
+                openStaffChanges()
               },
             }
           : profile
@@ -395,11 +463,9 @@ function Notebook({
       disabled={ledger.busy}
     />
   )
-  const needsConnection =
-    ['profile', 'settings', 'administration', 'add-student', 'invitation-message'].includes(
-      query.view,
-    ) ||
-    (administrator && (query.view === 'history' || query.view === 'courses'))
+  const needsConnection = ['profile', 'invitation-message', 'telegram', 'diagnostics'].includes(
+    query.view,
+  )
   const offlineNotice = ledger.offline && (
     <div
       role="status"
@@ -415,13 +481,7 @@ function Notebook({
         {t('Try again')}
       </button>
       {ledger.offlinePendingCount > 0 && (
-        <button
-          className="secondary"
-          onClick={() => {
-            changesOrigin.current = query.view
-            setQuery({ view: 'changes' }, true)
-          }}
-        >
+        <button className="secondary" onClick={openStaffChanges}>
           {language === 'ar' ? '\u062a\u063a\u064a\u064a\u0631\u0627\u062a\u064a' : 'My changes'}
         </button>
       )}
@@ -461,6 +521,9 @@ function Notebook({
       {navigation}
       <main id="main-content" tabIndex={-1} className="workspace-main">
         {offlineNotice}
+        {!ledger.offline && ledger.offlinePendingCount > 0 && (
+          <StaffPendingNotice needsReview={ledger.offlineNeedsReview} />
+        )}
         {settingsHistory && (
           <WorkspacePageHeader
             title={
@@ -556,9 +619,7 @@ function Notebook({
         )}
         {ledger.message && (
           <p role="status" className="mb-4 rounded-lg bg-emerald-50 p-4 text-emerald-800">
-            {language === 'ar'
-              ? `${ledger.pending.length || (ledger.message.match(/^\d+/)?.[0] ?? '')} سجل محفوظ.`
-              : ledger.message}
+            {ledger.message}
           </p>
         )}
         {projected.conflicts > 0 && (
@@ -605,6 +666,10 @@ function Notebook({
         )}
         {query.view === 'courses' && administrator && (!courseHistory || !selectedCourse) && (
           <Courses
+            cached={
+              cached ??
+              (ledger.offline ? { offline: true, reconnect: () => void refresh() } : undefined)
+            }
             userId={neon.userId}
             courses={ledger.courses}
             exportEnrollments={ledger.enrollments}
@@ -631,7 +696,7 @@ function Notebook({
             canWrite={!disabled}
             offline={ledger.offline}
             save={ledger.save}
-            saveOfflinePhone={ledger.saveOfflinePhone}
+            saveStudentProfile={ledger.saveStudentProfile}
             date={query.date}
             administrator={administrator}
             userId={userId}
@@ -668,7 +733,7 @@ function Notebook({
                 }
                 onAdd={() => openChildView({ view: 'add-student', courseView: '', student: '' })}
               >
-                {administrator && !ledger.offline && selectedCourse && (
+                {administrator && selectedCourse && (
                   <CourseReadiness
                     course={selectedCourse}
                     enrollments={selectedEnrollments}
@@ -736,10 +801,27 @@ function Notebook({
               <AttendanceView
                 key={`${query.date}:${query.course}`}
                 userId={userId}
-                draft={sessionDrafts[sessionKey] ?? {}}
-                setDraft={(draft) =>
-                  setSessionDrafts((previous) => ({ ...previous, [sessionKey]: draft }))
-                }
+                draft={sessionDrafts[sessionKey]?.values ?? {}}
+                observed={sessionDrafts[sessionKey]?.observed}
+                setDraft={(values) => {
+                  const displayed = new Map(
+                    scopedProjection.attendance
+                      .filter(({ value }) => value.date === query.date)
+                      .map(({ value, event }) => [value.studentId, event.id]),
+                  )
+                  setSessionDrafts((previous) => {
+                    const before = previous[sessionKey]?.observed
+                    const observed = new Map<string, string | null>()
+                    for (const [id, mark] of Object.entries(values)) {
+                      if (mark)
+                        observed.set(
+                          id,
+                          before?.has(id) ? (before.get(id) ?? null) : (displayed.get(id) ?? null),
+                        )
+                    }
+                    return { ...previous, [sessionKey]: { values, observed } }
+                  })
+                }}
                 enrollments={activeEnrollments}
                 courseSelected={!!query.course}
                 courseName={selectedCourse?.name}
@@ -767,7 +849,7 @@ function Notebook({
                     : ''
                 }
                 date={query.date}
-                save={ledger.save}
+                save={(payloads) => ledger.save(payloads, sessionDrafts[sessionKey]?.observed)}
                 canCorrect={administrator && !ledger.offline}
                 onOpenStudent={openStudent}
               />
@@ -851,7 +933,7 @@ function StudentDetails({
   canWrite,
   offline,
   save,
-  saveOfflinePhone,
+  saveStudentProfile,
   date,
   administrator,
   userId,
@@ -871,11 +953,7 @@ function StudentDetails({
   canWrite: boolean
   offline: boolean
   save: Save
-  saveOfflinePhone: (
-    studentId: string,
-    expectedWhatsapp: string | null,
-    whatsapp: string | null,
-  ) => Promise<boolean>
+  saveStudentProfile: SaveStudentProfile
   date: string
   administrator: boolean
 }) {
@@ -1002,15 +1080,9 @@ function StudentDetails({
           <TeacherStudentForm
             key={student.studentId}
             student={student}
-            userId={userId}
             disabled={!canWrite}
-            offline={offline}
-            saveOfflinePhone={saveOfflinePhone}
+            saveStudentProfile={saveStudentProfile}
             cancel={() => setEditing(false)}
-            saved={async () => {
-              if (await refresh?.()) setEditing(false)
-              else throw new Error('Refresh failed')
-            }}
           />
         )}
         <div className="student-detail-profile">
@@ -1276,6 +1348,7 @@ function studentLevel(
 function AttendanceView({
   userId,
   draft,
+  observed,
   setDraft,
   students,
   allStudents,
@@ -1292,6 +1365,7 @@ function AttendanceView({
 }: {
   userId: string
   draft: Record<string, string>
+  observed?: ReadonlyMap<string, string | null>
   setDraft: (draft: Record<string, string>) => void
   canCorrect: boolean
   onOpenStudent: (studentId: string, element: HTMLElement) => void
@@ -1354,6 +1428,16 @@ function AttendanceView({
   const changed = allStudents.filter(
     (student) =>
       draft[student.studentId] && draft[student.studentId] !== current.get(student.studentId),
+  )
+  const savedVersions = new Map(
+    projected.attendance
+      .filter(({ value }) => value.date === date)
+      .map(({ value, event }) => [value.studentId, event.id]),
+  )
+  const changedDuringEdit = changed.filter(
+    ({ studentId }) =>
+      observed?.has(studentId) &&
+      observed.get(studentId) !== (savedVersions.get(studentId) ?? null),
   )
   const replayRows = visible.map((student) => ({
     id: student.studentId,
@@ -1620,7 +1704,10 @@ function AttendanceView({
               }}
               onMark={(id, value) => {
                 if (!value.length && current.has(id)) return
-                setDraft({ ...draft, [id]: value[0] ?? '' })
+                const next = { ...draft }
+                if (!value.length || value[0] === current.get(id)) delete next[id]
+                else next[id] = value[0]
+                setDraft(next)
               }}
               onCorrect={(id) => {
                 const record = projected.attendance.find(
@@ -1636,6 +1723,18 @@ function AttendanceView({
           </DirectionProvider>
           {changed.length > 0 && (
             <div className="attendance-save">
+              {changedDuringEdit.length > 0 && (
+                <p role="status">
+                  {language === 'ar'
+                    ? 'تغيّر الحضور المحفوظ أثناء تعديلك. ستتمكن من مراجعة القيم المتعارضة عند المزامنة.'
+                    : 'Saved attendance changed while you were editing. You can review conflicting marks when this device syncs.'}{' '}
+                  <bdi>
+                    {changedDuringEdit
+                      .map(({ name }) => name)
+                      .join(language === 'ar' ? '، ' : ', ')}
+                  </bdi>
+                </p>
+              )}
               <button
                 className="primary"
                 data-replay-action="save"
@@ -2022,24 +2121,14 @@ function RosterView({
 }
 function TeacherStudentForm({
   student,
-  userId,
   disabled,
-  offline,
-  saveOfflinePhone,
+  saveStudentProfile,
   cancel,
-  saved,
 }: {
   student: import('../shared/neon').NeonRosterStudent
-  userId: string
   disabled: boolean
-  offline: boolean
-  saveOfflinePhone: (
-    studentId: string,
-    expectedWhatsapp: string | null,
-    whatsapp: string | null,
-  ) => Promise<boolean>
+  saveStudentProfile: SaveStudentProfile
   cancel: () => void
-  saved: () => Promise<void>
 }) {
   const { language } = useLanguage()
   const ar = language === 'ar'
@@ -2058,43 +2147,20 @@ function TeacherStudentForm({
   const [location, setLocation] = useState(student.location ?? '')
   const [birthYear, setBirthYear] = useState(student.birthYear?.toString() ?? '')
   const [busy, setBusy] = useState(false)
-  const [committed, setCommitted] = useState(false)
   const [error, setError] = useState('')
-  const otherEdits =
-    firstName !== expected.firstName ||
-    lastName !== expected.lastName ||
-    group !== expected.group ||
-    location !== (expected.location ?? '') ||
-    birthYear !== (expected.birthYear?.toString() ?? '')
-  const waitingForConnection = offline && otherEdits
   return (
     <form
       className="role-editor"
       onSubmit={(event) => {
         event.preventDefault()
-        if (disabled || busy || committed || waitingForConnection) return
-        if (offline) {
-          setBusy(true)
-          void saveOfflinePhone(student.studentId, expected.whatsapp, whatsapp.trim() || null)
-            .then((success) => {
-              if (success) cancel()
-              else
-                setError(
-                  ar
-                    ? '\u062a\u0639\u0630\u0631 \u062d\u0641\u0638 \u0627\u0644\u0647\u0627\u062a\u0641'
-                    : 'Could not save phone update.',
-                )
-            })
-            .finally(() => setBusy(false))
-          return
-        }
+        if (disabled || busy) return
         const input = teacherStudentUpdateSchema.safeParse({
           studentId: student.studentId,
           firstName,
           lastName,
           group,
-          whatsapp: whatsapp || null,
-          location: location || null,
+          whatsapp: whatsapp.trim() || null,
+          location: location.trim() || null,
           birthYear: birthYear ? Number(birthYear) : null,
           expected,
         })
@@ -2107,26 +2173,21 @@ function TeacherStudentForm({
           return
         }
         setBusy(true)
-        void request('/api/student/update', userId, input.data, false)
-          .then(() => {
-            setCommitted(true)
-            return saved().catch(() =>
+        void saveStudentProfile(input.data)
+          .then((success) => {
+            if (success) cancel()
+            else
               setError(
                 ar
-                  ? 'تم الحفظ. حدّث الصفحة قبل التعديل مجدداً.'
-                  : 'Saved. Refresh before editing again.',
-              ),
-            )
-          })
-          .catch((cause: unknown) =>
-            setError(
-              cause instanceof NeonRequestError && cause.status === 409
-                ? ar
-                  ? '\u062a\u063a\u064a\u0631\u062a \u0627\u0644\u0645\u0639\u0644\u0648\u0645\u0627\u062a. \u062d\u062f\u062b \u0627\u0644\u0635\u0641\u062d\u0629.'
-                  : 'Information changed. Refresh and reopen the form.'
-                : ar
                   ? '\u062a\u0639\u0630\u0631 \u0627\u0644\u062d\u0641\u0638'
                   : 'Could not save. Please try again.',
+              )
+          })
+          .catch(() =>
+            setError(
+              ar
+                ? '\u062a\u0639\u0630\u0631 \u0627\u0644\u062d\u0641\u0638'
+                : 'Could not save. Please try again.',
             ),
           )
           .finally(() => setBusy(false))
@@ -2139,7 +2200,6 @@ function TeacherStudentForm({
             required
             maxLength={200}
             dir="auto"
-            disabled={offline}
             value={firstName}
             onChange={(e) => setFirstName(e.target.value)}
           />
@@ -2149,7 +2209,6 @@ function TeacherStudentForm({
           <input
             maxLength={200}
             dir="auto"
-            disabled={offline}
             value={lastName}
             onChange={(e) => setLastName(e.target.value)}
           />
@@ -2173,7 +2232,6 @@ function TeacherStudentForm({
           <input
             maxLength={200}
             dir="auto"
-            disabled={offline}
             value={location}
             onChange={(e) => setLocation(e.target.value)}
           />
@@ -2184,21 +2242,13 @@ function TeacherStudentForm({
             type="number"
             min={1900}
             max={maximumBirthYear}
-            disabled={offline}
             value={birthYear}
             onChange={(e) => setBirthYear(e.target.value)}
           />
         </label>
       </div>
       {error && <p role="alert">{error}</p>}
-      {waitingForConnection && (
-        <p role="status">
-          {ar
-            ? 'اتصل بوارْتق لحفظ تعديلات الحقول الأخرى.'
-            : 'Reconnect to save changes to the other fields.'}
-        </p>
-      )}
-      <button className="primary" disabled={disabled || busy || committed || waitingForConnection}>
+      <button className="primary" disabled={disabled || busy}>
         {ar ? '\u062d\u0641\u0638' : 'Save'}
       </button>{' '}
       <button className="secondary" type="button" disabled={busy} onClick={cancel}>

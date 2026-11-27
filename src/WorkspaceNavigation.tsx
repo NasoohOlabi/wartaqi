@@ -242,6 +242,7 @@ export function WorkspaceNavigation({
             <button
               className={query.view === 'profile' ? 'active' : ''}
               aria-current={query.view === 'profile' ? 'page' : undefined}
+              disabled={offline}
               onClick={() => openChildView({ view: 'profile' })}
             >
               <UserRound size={20} aria-hidden="true" />
@@ -274,7 +275,6 @@ export function WorkspaceNavigation({
               <button
                 className={coursesActive ? 'active' : ''}
                 aria-current={coursesActive ? 'page' : undefined}
-                disabled={offline}
                 onClick={() =>
                   setQuery(
                     {
@@ -331,7 +331,6 @@ export function WorkspaceNavigation({
               <button
                 className={settingsActive ? 'active' : ''}
                 aria-current={settingsActive ? 'page' : undefined}
-                disabled={offline}
                 onClick={() =>
                   setQuery(
                     {
