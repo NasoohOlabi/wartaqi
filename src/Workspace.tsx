@@ -13,6 +13,7 @@ import {
   CircleCheck,
   CircleMinus,
   ClipboardCheck,
+  Download,
   Pencil,
   RefreshCw,
   StickyNote,
@@ -1661,6 +1662,7 @@ function RosterView({
   const ar = language === 'ar'
   const contacts = selectedCourse ? courseContacts(exportStudents) : []
   const omitted = exportStudents.length - contacts.length
+  const exportLabel = ar ? 'تصدير جهات الاتصال' : 'Export contacts'
   const rosterTable = useDataTable('roster', students, [
     {
       id: 'first',
@@ -1722,16 +1724,18 @@ function RosterView({
     <section className="panel">
       <TableToolbar
         model={rosterTable}
-        className="mb-3"
+        className={selectedCourse ? 'mb-3 flex-wrap' : 'mb-3'}
         actions={
           selectedCourse && (
             <button
               type="button"
-              className="secondary"
+              className="icon-button"
+              aria-label={exportLabel}
+              title={exportLabel}
               disabled={!contacts.length}
               onClick={() => downloadContacts(selectedCourse.name, contacts)}
             >
-              {ar ? 'تصدير جهات الاتصال' : 'Export contacts'}
+              <Download size={20} aria-hidden="true" />
             </button>
           )
         }
