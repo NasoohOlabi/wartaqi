@@ -6,7 +6,6 @@ export function accountFetch(
   path: string,
   userId: string,
   body?: unknown,
-  keepalive = false,
   edit?: { time: string; id: string },
 ) {
   return fetch(`${window.location.origin}${path}`, {
@@ -18,6 +17,5 @@ export function accountFetch(
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(15000),
-    keepalive,
   })
 }

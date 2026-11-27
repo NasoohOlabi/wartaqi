@@ -451,26 +451,11 @@ parity(
         (await pool.query('SELECT whatsapp, location FROM students WHERE id=$1', [studentId])).rows,
       ).toEqual([{ whatsapp: '+12025550199', location: 'Local classroom' }])
       await same('/api/student/attendance', 200, { headers: student })
-      const journeyId = uuid()
-      const diagnosticsId = uuid()
-      await same(
-        '/api/diagnostics',
-        200,
-        post(teacher, {
-          events: [{ id: diagnosticsId, journeyId, step: 1, kind: 'screen', screen: 'attendance' }],
-        }),
-      )
-      expect(
-        (
-          await pool.query('SELECT event_id FROM website_diagnostics WHERE event_id=$1', [
-            diagnosticsId,
-          ])
-        ).rows,
-      ).toEqual([{ event_id: diagnosticsId }])
-      await same(`/api/diagnostics/journeys?actor=${users[0]}`, 200, { headers: admin })
-      await same(`/api/diagnostics/events?actor=${users[0]}&journey=${journeyId}`, 200, {
-        headers: admin,
+      expect(await same('/api/diagnostics', 400, post(teacher, {}))).toEqual({
+        error: 'Website diagnostics retired',
       })
+      await same('/api/diagnostics/journeys', 404, { headers: admin })
+      await same('/api/diagnostics/events', 404, { headers: admin })
       expect(await same('/api/diagnostics/replay', 400, post(teacher, {}))).toEqual({
         error: 'Session replay retired',
       })
@@ -523,13 +508,9 @@ parity(
       rust?.child.kill()
       await Promise.all([bun?.child.exited, rust?.exited])
       await pool.query('DELETE FROM events WHERE student_id = $1', [studentId])
-      await pool.query('DELETE FROM website_diagnostics WHERE actor_id = ANY($1::text[])', [users])
       await pool.query('DELETE FROM telegram_conversation_turns WHERE trace = $1', [trace])
       await pool.query('DELETE FROM neon_auth.verification WHERE identifier = ANY($1::text[])', [
         telegramGrants,
-      ])
-      await pool.query('DELETE FROM website_session_replay WHERE actor_id = ANY($1::text[])', [
-        users,
       ])
       await pool.query('DELETE FROM grade_sync_receipts WHERE request_id = ANY($1::uuid[])', [
         receipts,

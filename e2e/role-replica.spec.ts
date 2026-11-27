@@ -113,7 +113,6 @@ test('warm attendance is scoped to the last grant and disappears on confirmed wi
       },
     })
   })
-  await page.route('**/api/diagnostics*', (route) => route.fulfill({ json: { ok: true } }))
   await page.route('**/api/device-accounts', (route) => route.fulfill({ json: { accounts: [] } }))
 
   await page.goto('/?page=app')
@@ -182,7 +181,6 @@ test('administrator opens a prewarmed board during a stalled refresh and preserv
   await page.route('**/api/notebook', (route) =>
     route.fulfill({ json: { teacher: account, students: [], events: [] } }),
   )
-  await page.route('**/api/diagnostics*', (route) => route.fulfill({ json: { ok: true } }))
   await page.route('**/api/admin', async (route) => {
     await boardRead
     await route.fulfill({

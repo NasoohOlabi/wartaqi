@@ -71,10 +71,7 @@ import type { Profile } from './ProfileMenu'
 import { ProfileSettings } from './ProfileSettings'
 import { teacherStudentUpdateSchema, type NeonTeacher } from '../shared/neon'
 import { OfflineAttendance } from './OfflineAttendance'
-import { DiagnosticsPage } from './DiagnosticsPage'
 import { TelegramConversationsPage } from './TelegramConversationsPage'
-import { useDiagnostics } from './diagnostics'
-import { diagnosticsScreenSchema, type DiagnosticsScreen } from '../shared/diagnostics'
 
 type Projection = ReturnType<typeof projectEvents>
 type Save = (payloads: Payload[]) => Promise<boolean>
@@ -90,7 +87,7 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
         const administrator = account.role === 'administrator'
         const liveOnly =
           query.view === 'profile' ||
-          (administrator && ['invitation-message', 'telegram', 'diagnostics'].includes(query.view))
+          (administrator && ['invitation-message', 'telegram'].includes(query.view))
         if (cached && liveOnly) {
           if (!cached.offline) return <WorkspaceLoading message={t('Checking your access…')} />
           return (
@@ -123,33 +120,6 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
         const content = (
           <>
             <CopyViewLink />
-            <DiagnosticsCapture
-              key={userId}
-              userId={userId}
-              cached={Boolean(cached)}
-              screen={
-                query.view === 'diagnostics' || query.view === 'telegram'
-                  ? null
-                  : query.view === 'profile' && !cached
-                    ? 'profile'
-                    : account.role === 'student'
-                      ? 'student-portal'
-                      : query.view === 'notebook'
-                        ? query.tab
-                        : query.view === 'settings' || query.view === 'administration'
-                          ? query.settingsSection === 'students'
-                            ? 'settings-students'
-                            : 'settings-accounts'
-                          : query.view === 'courses'
-                            ? (diagnosticsScreenSchema.safeParse(`course-${query.courseView}`)
-                                .data ?? 'courses')
-                            : query.view === 'edit-student'
-                              ? 'settings-students'
-                              : query.view === 'invitation-message'
-                                ? 'invitation'
-                                : query.view
-              }
-            />
             {!cached && query.view === 'telegram' && account.role === 'administrator' ? (
               <TelegramConversationsPage
                 key={userId}
@@ -157,8 +127,6 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
                 profile={profile}
                 signOut={signOut}
               />
-            ) : !cached && query.view === 'diagnostics' && account.role === 'administrator' ? (
-              <DiagnosticsPage userId={userId} profile={profile} signOut={signOut} />
             ) : !cached &&
               query.view === 'invitation-message' &&
               account.role === 'administrator' ? (
@@ -228,19 +196,6 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
       }}
     </NeonAuth>
   )
-}
-
-function DiagnosticsCapture({
-  userId,
-  screen,
-  cached,
-}: {
-  userId: string
-  screen: DiagnosticsScreen | null
-  cached: boolean
-}) {
-  useDiagnostics(userId, screen, cached)
-  return null
 }
 
 function Notebook({
@@ -461,9 +416,7 @@ function Notebook({
       disabled={ledger.busy}
     />
   )
-  const needsConnection = ['profile', 'invitation-message', 'telegram', 'diagnostics'].includes(
-    query.view,
-  )
+  const needsConnection = ['profile', 'invitation-message', 'telegram'].includes(query.view)
   const offlineNotice = ledger.offline && (
     <div
       role="status"

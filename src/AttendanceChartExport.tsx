@@ -25,7 +25,6 @@ export function AttendanceChartExport(source: ChartSource) {
         type="button"
         className="secondary inline-flex items-center gap-2"
         aria-expanded={open && !!source.attendance.length}
-        data-diagnostic-action={open ? undefined : 'export'}
         disabled={!source.attendance.length}
         onClick={() => setOpen(!open)}
       >

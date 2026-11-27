@@ -44,8 +44,6 @@ import {
   snapshotKey,
 } from './offlineAttendanceStore'
 import { syncOfflineAttendance, syncOfflineStudent } from './offlineAttendanceSync'
-import { recordDiagnosticAction } from './diagnostics'
-import type { DiagnosticsOutcome } from '../shared/diagnostics'
 import { offlineNotebook, overlayNotebook } from './offlineNotebookData'
 import { offlineAttendanceRecordSchema } from '../shared/offlineAttendance'
 import {
@@ -72,12 +70,6 @@ const foreignPendingMessage =
 const pendingLock = 'halaqa-pending'
 const locksUnavailableMessage =
   'This browser cannot safely coordinate saves between tabs. Use a current browser with Web Locks support.'
-
-function recordLedgerActions(userId: string, payloads: Payload[], outcome: DiagnosticsOutcome) {
-  for (const kind of new Set(payloads.map((payload) => payload.kind))) {
-    recordDiagnosticAction(userId, kind === 'reversal' ? 'correction' : kind, outcome)
-  }
-}
 
 function hasForeignPending(key: string) {
   return Object.keys(localStorage).some(
@@ -601,19 +593,9 @@ export function useLedger(
       if (!saved) return false
       setPending([])
       setMessage(`${batch.length} record${batch.length === 1 ? '' : 's'} saved.`)
-      recordLedgerActions(
-        neonUserId,
-        batch.map(({ payload }) => payload),
-        retry ? 'synced' : 'saved',
-      )
       return true
     } catch (cause) {
       if (!isCurrent()) return false
-      recordLedgerActions(
-        neonUserId,
-        batch.map(({ payload }) => payload),
-        'failed',
-      )
       setError(
         `${errorText(cause)}${writeStarted ? ' The save may already have reached the server. Retry the same pending batch to avoid counting it twice.' : ''}`,
       )
@@ -696,7 +678,6 @@ export function useLedger(
           ? '\u062d\u064f\u0641\u0638\u062a \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062c\u0647\u0627\u0632. \u0628\u0627\u0646\u062a\u0638\u0627\u0631 \u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629.'
           : 'Saved on this device. Waiting to sync.',
       )
-      recordLedgerActions(neonUserId, payloads, 'queued')
       await loadOffline().catch(() => false)
       void drain()
       return true
@@ -782,7 +763,6 @@ export function useLedger(
           ? '\u062d\u064f\u0641\u0638\u062a \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062c\u0647\u0627\u0632. \u0628\u0627\u0646\u062a\u0638\u0627\u0631 \u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629.'
           : 'Saved on this device. Waiting to sync.',
       )
-      recordDiagnosticAction(neonUserId, 'student', 'queued')
       await loadOffline().catch(() => false)
       void drain()
       return true

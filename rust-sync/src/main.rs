@@ -12,7 +12,6 @@ mod compat_http;
 mod compat_process;
 mod credentials;
 mod device_sessions;
-mod diagnostics;
 mod grade_sync;
 mod ledger;
 mod ledger_writes;
@@ -222,7 +221,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if !root.is_dir() {
             return Err("ASSET_DIR must be a directory".into());
         }
-        app = app.fallback(move |request: Request| {
+        let static_files = Router::new().fallback(move |request: Request| {
             let root = root.clone();
             async move {
                 let path = request.uri().path();
@@ -240,6 +239,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
             }
         });
+        app = app.merge(static_files.layer(tower_http::compression::CompressionLayer::new()));
     }
     if hybrid {
         let supervisor = compat_process::CompatProcess::new();
@@ -262,7 +262,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             | "/api/student/attendance"
                             | "/api/auth/get-session"
                     );
-                if api && !native_read {
+                if api && !native_read && !api::retired_website_path(path) {
                     compat_http::forward(&client, &supervisor, request).await
                 } else {
                     next.run(request).await

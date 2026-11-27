@@ -99,7 +99,12 @@ jobs:
           export BETTER_AUTH_SECRET="$(openssl rand -hex 32)"
           docker run -d --name wartaq-web --network host -e DATABASE_URL -e BETTER_AUTH_SECRET -e BETTER_AUTH_URL -e PORT wartaq-web
           curl --retry 12 --retry-delay 1 --retry-all-errors -fsS "$BETTER_AUTH_URL/health" | jq -e '.ok == true'
-          curl -fsS "$BETTER_AUTH_URL/" | grep -q 'type="module"'
+          shell=$(curl -fsS "$BETTER_AUTH_URL/")
+          asset=$(printf '%s\n' "$shell" | sed -n 's/.*src="\.\/\(assets\/[^"]*\.js\)".*/\1/p')
+          test -n "$asset"
+          curl --compressed -fsS -D "$RUNNER_TEMP/asset-headers" -o /dev/null "$BETTER_AUTH_URL/$asset"
+          grep -qi '^content-encoding: gzip' "$RUNNER_TEMP/asset-headers"
+          grep -qi '^cache-control: .*immutable' "$RUNNER_TEMP/asset-headers"
           curl -fsS "$BETTER_AUTH_URL/api/auth/get-session" | jq -e '. == null'
           curl -fsS "$BETTER_AUTH_URL/.well-known/oauth-protected-resource/mcp" | jq -e --arg resource "$BETTER_AUTH_URL/mcp" '.resource == $resource'
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2

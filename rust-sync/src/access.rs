@@ -39,6 +39,7 @@ impl Grant {
     pub(crate) fn is_admin(&self) -> bool {
         self.role == "administrator"
     }
+    #[cfg(test)]
     pub(crate) fn role(&self) -> &str {
         &self.role
     }

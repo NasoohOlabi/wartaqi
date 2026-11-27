@@ -17,8 +17,8 @@ use url::Url;
 
 use crate::{
     access, auth_browser, auth_get_session, auth_invitation_profile, auth_profile, catalog,
-    catalog_legacy, diagnostics, grade_sync, ledger, ledger_writes, roster_admin, session_identity,
-    staff_reads, student_writes, telegram_conversations, telegram_student, writes::Error,
+    catalog_legacy, grade_sync, ledger, ledger_writes, roster_admin, session_identity, staff_reads,
+    student_writes, telegram_conversations, telegram_student, writes::Error,
 };
 
 const WRITE_PATHS: &[&str] = &[
@@ -39,12 +39,19 @@ const WRITE_PATHS: &[&str] = &[
     "/api/admin/enrollments/assignment",
 ];
 const REPLAY_PATH: &str = "/api/diagnostics/replay";
-const DIAGNOSTICS_PATH: &str = "/api/diagnostics";
+const RETIRED_DIAGNOSTICS_PATH: &str = "/api/diagnostics";
 const JOURNEYS_PATH: &str = "/api/diagnostics/journeys";
 const DIAGNOSTIC_EVENTS_PATH: &str = "/api/diagnostics/events";
 const TELEGRAM_INGEST_PATH: &str = "/api/telegram/conversations";
 const TELEGRAM_CONVERSATIONS_PATH: &str = "/api/diagnostics/telegram/conversations";
 const TELEGRAM_TURNS_PATH: &str = "/api/diagnostics/telegram/turns";
+
+pub(crate) fn retired_website_path(path: &str) -> bool {
+    matches!(
+        path,
+        REPLAY_PATH | RETIRED_DIAGNOSTICS_PATH | JOURNEYS_PATH | DIAGNOSTIC_EVENTS_PATH
+    )
+}
 
 #[derive(Clone)]
 pub(crate) struct Api {
@@ -110,7 +117,7 @@ impl Api {
             .route("/api/student/attendance", any(handle))
             .route("/api/admin", any(handle))
             .route(REPLAY_PATH, any(handle))
-            .route(DIAGNOSTICS_PATH, any(handle))
+            .route(RETIRED_DIAGNOSTICS_PATH, any(handle))
             .route(JOURNEYS_PATH, any(handle))
             .route(DIAGNOSTIC_EVENTS_PATH, any(handle))
             .route(TELEGRAM_CONVERSATIONS_PATH, any(handle))
@@ -251,22 +258,23 @@ async fn handle(State(state): State<Api>, request: Request) -> Response {
     if from.is_some_and(|value| value != state.origin) {
         return error(StatusCode::FORBIDDEN, "Forbidden");
     }
-    if path == REPLAY_PATH {
+    if matches!(path, RETIRED_DIAGNOSTICS_PATH | REPLAY_PATH) {
         let status = if *method == Method::POST {
             StatusCode::BAD_REQUEST
         } else {
             StatusCode::NOT_FOUND
         };
-        return error(status, "Session replay retired");
+        let message = if path == REPLAY_PATH {
+            "Session replay retired"
+        } else {
+            "Website diagnostics retired"
+        };
+        return error(status, message);
     }
-    if matches!(
-        path,
-        DIAGNOSTICS_PATH
-            | JOURNEYS_PATH
-            | DIAGNOSTIC_EVENTS_PATH
-            | TELEGRAM_CONVERSATIONS_PATH
-            | TELEGRAM_TURNS_PATH
-    ) {
+    if matches!(path, JOURNEYS_PATH | DIAGNOSTIC_EVENTS_PATH) {
+        return error(StatusCode::NOT_FOUND, "Not found");
+    }
+    if matches!(path, TELEGRAM_CONVERSATIONS_PATH | TELEGRAM_TURNS_PATH) {
         return match authorized(&state, &parts, Route::Diagnostics, body).await {
             Ok(response) => response,
             Err(Error::Forbidden) => write_error(Error::Forbidden),
@@ -463,29 +471,11 @@ async fn authorized(
         Route::Me => grant.me(),
         _ if grant.requires_setup() => return Err(Error::Forbidden),
         Route::Diagnostics => {
-            // The diagnostic insert takes a foreign-key lock on the actor. Release the
-            // access check's row lock before competing with another writer for this event ID.
+            if !grant.is_admin() {
+                return Err(Error::Forbidden);
+            }
             tx.commit().await?;
-            let response = match (path, &parts.method) {
-                (DIAGNOSTICS_PATH, &Method::POST) => {
-                    let bytes = bounded_body(body, 16 * 1024).await?;
-                    diagnostics::ingest(&**client, &subject, grant.role(), headers, &bytes).await?
-                }
-                (JOURNEYS_PATH | DIAGNOSTIC_EVENTS_PATH, &Method::GET) => {
-                    if !grant.is_admin() {
-                        return Err(Error::Forbidden);
-                    }
-                    diagnostics::read(&**client, &parts.uri).await?
-                }
-                (TELEGRAM_CONVERSATIONS_PATH | TELEGRAM_TURNS_PATH, _) => {
-                    if !grant.is_admin() {
-                        return Err(Error::Forbidden);
-                    }
-                    telegram_conversations::read(&**client, &parts.method, &parts.uri).await?
-                }
-                _ => return Ok(error(StatusCode::NOT_FOUND, "Not found")),
-            };
-            return Ok(response);
+            return Ok(telegram_conversations::read(&**client, &parts.method, &parts.uri).await?);
         }
         Route::Notebook if !grant.is_student() && grant.can_read() => {
             staff_reads::notebook(&tx, &grant)

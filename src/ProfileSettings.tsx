@@ -54,11 +54,6 @@ export function ProfileSettings({
   )
   const form = (
     <section className="profile-settings panel">
-      <p className="muted">
-        {ar
-          ? 'يحتفظ وارتق بتشخيصات الاستخدام لمدة 30 يومًا.'
-          : 'Wartaq keeps usage diagnostics for 30 days.'}
-      </p>
       <form
         onSubmit={async (event) => {
           event.preventDefault()

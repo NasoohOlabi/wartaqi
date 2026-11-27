@@ -11,7 +11,7 @@ use serde_json::json;
 pub(crate) async fn health(pool: &Pool) -> Response {
     async fn check(pool: &Pool) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         let db = pool.get().await?;
-        db.query("SELECT course_enrollments.teacher_id, course_enrollments.active, course_enrollments.handbook_received, course_enrollments.notes, course_enrollments.grade_decisions, app_accounts.invitation_request_id, app_accounts.invitation_username, app_accounts.verified_phone, app_accounts.invitation_phone, app_accounts.invitation_birth_date, app_accounts.invitation_requires_setup, students.whatsapp, students.location, students.birth_year, courses.open, courses.attendance_minimum, courses.practical_minimum, courses.theory_minimum, telegram_conversation_turns.turn FROM app_accounts, teachers, students, courses, course_enrollments, events, website_diagnostics, telegram_conversation_turns, neon_auth.\"user\", neon_auth.account, neon_auth.session, neon_auth.verification LIMIT 0", &[]).await?;
+        db.query("SELECT course_enrollments.teacher_id, course_enrollments.active, course_enrollments.handbook_received, course_enrollments.notes, course_enrollments.grade_decisions, app_accounts.invitation_request_id, app_accounts.invitation_username, app_accounts.verified_phone, app_accounts.invitation_phone, app_accounts.invitation_birth_date, app_accounts.invitation_requires_setup, students.whatsapp, students.location, students.birth_year, courses.open, courses.attendance_minimum, courses.practical_minimum, courses.theory_minimum, telegram_conversation_turns.turn FROM app_accounts, teachers, students, courses, course_enrollments, events, telegram_conversation_turns, neon_auth.\"user\", neon_auth.account, neon_auth.session, neon_auth.verification LIMIT 0", &[]).await?;
         db.query("SELECT 1 FROM neon_auth.\"oauthClient\", neon_auth.\"oauthClientResource\", neon_auth.\"oauthResource\", neon_auth.\"oauthAccessToken\", neon_auth.\"oauthRefreshToken\", neon_auth.\"oauthConsent\", neon_auth.\"oauthClientAssertion\" LIMIT 0", &[]).await?;
         let assignment = db.query_opt("SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'students' AND column_name = 'teacher_id'", &[]).await?;
         if assignment.is_none_or(|row| row.get::<_, String>(0) != "YES") {
@@ -41,28 +41,18 @@ pub(crate) async fn maintain(pool: Pool) {
     let mut timer = tokio::time::interval(Duration::from_secs(3600));
     loop {
         timer.tick().await;
-        for (name, sql) in [
-            (
-                "Diagnostics",
-                "DELETE FROM website_diagnostics WHERE received_at < now() - interval '30 days'",
-            ),
-            (
-                "Replay",
-                "DELETE FROM website_session_replay WHERE received_at < now() - interval '3 days'",
-            ),
-            (
-                "Telegram conversation",
+        let result = async {
+            let db = pool.get().await?;
+            db.execute(
                 "DELETE FROM telegram_conversation_turns WHERE received_at < now() - interval '3 days'",
-            ),
-        ] {
-            match pool.get().await {
-                Ok(db) => {
-                    if db.execute(sql, &[]).await.is_err() {
-                        eprintln!("{name} cleanup failed");
-                    }
-                }
-                Err(_) => eprintln!("{name} cleanup failed"),
-            }
+                &[],
+            )
+            .await?;
+            Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+        }
+        .await;
+        if result.is_err() {
+            eprintln!("Telegram conversation cleanup failed");
         }
     }
 }

@@ -28,9 +28,7 @@ Record the successful production web deployment ID before switching. To roll bac
 
 Apply the ordered `railway/*.sql` authentication migrations, then ordered `neon/*.sql` application migrations to the new database. These are repeatable; preserve the Neon source data and record any access pause separately. Run `bun run verify:release` before stable promotion. The service's main deployment trigger has **Wait for CI** enabled.
 
-Apply `neon/015-website-diagnostics.sql` against the private Railway Postgres connection before deploying website diagnostics. Use `psql` with `ON_ERROR_STOP=1` and a single transaction. `/health` checks for the table. The selective notebook transfer omits this 30-day diagnostic stream. See [Website diagnostics](website-diagnostics.md).
-
-The retired session recorder's historical migrations 016 and 017 remain in sequence. The web service rejects old recording uploads and removes expired frames at startup and hourly. The original three-day retention applies. Infrastructure backups can still contain historical names and marks.
+Apply `neon/022-retire-website-telemetry.sql` over the private PostgreSQL connection after the exact web deployment with retired website telemetry passes `/health`. Use `psql` with `ON_ERROR_STOP=1` and a single transaction. Verify that both retired tables are absent and `/health` still passes. Reapply migration 022 after restoring an older full archive. [Website telemetry retirement](website-diagnostics.md) covers compatibility and rollback.
 
 Apply `neon/018-telegram-conversations.sql` using the same private migration procedure before deploying Telegram conversation diagnostics. The health check verifies the table. Use the existing shared `TELEGRAM_WORKER_SECRET` for ingestion, and keep full infrastructure backups containing conversations private. The selective notebook transfer omits the three-day transcript table.
 
