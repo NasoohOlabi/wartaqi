@@ -10,7 +10,6 @@ import {
 } from '../shared/diagnostics'
 import { request } from './neon'
 import type { Profile } from './ProfileMenu'
-import { SessionReplayPlayer } from './SessionReplayPlayer'
 import { SettingsNavigation } from './SettingsNavigation'
 import { useLanguage } from './useLanguage'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
@@ -85,7 +84,6 @@ export function DiagnosticsPage({
   const locale = ar ? 1 : 0
   const [role, setRole] = useState('')
   const [actor, setActor] = useState<Journey | null>(null)
-  const [showReplay, setShowReplay] = useState(false)
   const [selected, setSelected] = useState<Journey | null>(null)
   const [journeys, setJourneys] = useState<Journeys | null>(null)
   const [timeline, setTimeline] = useState<Timeline | null>(null)
@@ -165,7 +163,6 @@ export function DiagnosticsPage({
     label: ar ? 'العودة إلى القائمة' : 'Back to list',
     onClick: () => {
       latestRead.current++
-      setShowReplay(false)
       setSelected(null)
       setLoading(false)
       setError(false)
@@ -198,23 +195,6 @@ export function DiagnosticsPage({
               {selected.actorName || selected.actorId}
             </h2>
             <p className="muted">{roles[selected.role][locale]}</p>
-            <button
-              type="button"
-              className="secondary"
-              aria-expanded={showReplay}
-              onClick={() => setShowReplay((value) => !value)}
-            >
-              {ar ? 'إعادة تشغيل الجلسة' : 'Replay session'}
-            </button>
-            {showReplay && (
-              <SessionReplayPlayer
-                userId={userId}
-                actor={selected.actorId}
-                journey={selected.journeyId}
-                ar={ar}
-                screenLabel={(screen) => screens[screen][locale]}
-              />
-            )}
             {timeline?.items.length === 0 && (
               <p>{ar ? 'لا توجد أحداث مسجّلة.' : 'No recorded events.'}</p>
             )}

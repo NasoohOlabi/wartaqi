@@ -1,9 +1,7 @@
 import { expect, test } from 'bun:test'
 import { Pool } from 'pg'
 import { diagnosticsJourneysSchema, diagnosticsTimelineSchema } from '../shared/diagnostics'
-import { replayPageSchema, replayPath, type ReplayFrame } from '../shared/sessionReplay'
-import { pruneDiagnostics } from '../server/diagnostics'
-import { pruneSessionReplay } from '../server/sessionReplay'
+import { pruneDiagnostics, pruneExpiredRecordings } from '../server/diagnostics'
 import { createIdentity } from './integration-identity'
 import { startIntegrationServer } from './integration-server'
 
@@ -106,100 +104,39 @@ integration(
       expect(older.items.map(({ event }) => event.step)).toEqual([1])
       expect(older.nextCursor).toBeNull()
 
-      const studentId = crypto.randomUUID()
-      const frame = {
-        kind: 'click',
-        step: 1,
-        timeMs: 200,
-        screen: 'attendance',
-        width: 320,
-        height: 600,
-        theme: 'light',
-        language: 'en',
-        click: { x: 90, y: 180 },
-        boxes: [{ x: 20, y: 160, w: 150, h: 40, kind: 'control', label: 'attendance' }],
-        attendance: {
-          courseName: 'Synthetic recorded course',
-          date: '2026-11-23',
-          rows: [
+      const retired = origin + '/api/diagnostics/replay'
+      const legacyBatch = {
+        method: 'POST',
+        headers: { ...teacher.headers, origin, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          journeyId,
+          frames: [
             {
-              id: studentId,
-              name: 'Synthetic recorded student',
-              level: '2',
-              teacherName: '',
-              saved: null,
-              draft: 'present',
+              kind: 'view',
+              step: 1,
+              timeMs: 100,
+              screen: 'dashboard',
+              width: 360,
+              height: 800,
+              theme: 'light',
+              language: 'en',
+              boxes: [],
             },
           ],
-          totalRows: 1,
-          unmarkedCount: 0,
-          pendingCount: 1,
-          unmarkedOnly: false,
-          canCorrect: false,
-          dialog: null,
-        },
-        attendanceAction: { kind: 'mark', studentId, status: 'present' },
-      } satisfies ReplayFrame
-      const postReplay = (frames: unknown[], headers = {}) =>
-        fetch(origin + replayPath, {
-          method: 'POST',
-          headers: { ...teacher.headers, origin, 'content-type': 'application/json', ...headers },
-          body: JSON.stringify({ journeyId, frames }),
-        })
-      expect((await postReplay([frame], { origin: 'https://foreign.example' })).status).toBe(403)
-      expect((await postReplay([frame], { 'x-user-id': administrator.userId })).status).toBe(401)
-      expect((await postReplay([{ ...frame, html: '<p>Private student</p>' }])).status).toBe(400)
-      expect(
-        (await postReplay([{ ...frame, boxes: [{ ...frame.boxes[0], label: 'Private student' }] }]))
-          .status,
-      ).toBe(400)
-      expect((await postReplay([{ ...frame, click: { x: 321, y: 180 } }])).status).toBe(400)
-      expect(
-        (
-          await postReplay([
-            { ...frame, attendance: { ...frame.attendance, password: 'synthetic-secret' } },
-          ])
-        ).status,
-      ).toBe(400)
-      expect((await postReplay([{ ...frame, screen: 'profile' }])).status).toBe(400)
-      const replayRetries = await Promise.all([postReplay([frame]), postReplay([frame])])
-      expect(replayRetries.map((response) => response.status)).toEqual([200, 200])
-      for (let step = 2; step <= 20; step += 3) {
-        expect(
-          (await postReplay([0, 1, 2].map((offset) => ({ ...frame, step: step + offset })))).status,
-        ).toBe(200)
+        }),
       }
-      const replayUrl = `${origin}${replayPath}?actor=${teacher.userId}&journey=${journeyId}`
-      expect((await fetch(replayUrl, { headers: teacher.headers })).status).toBe(403)
-      const readReplay = async (after = '') => {
-        const response = await fetch(replayUrl + after, { headers: administrator.headers })
-        expect(response.status).toBe(200)
-        expect(response.headers.get('cache-control')).toBe('no-store')
-        return replayPageSchema.parse(await response.json())
-      }
-      expect((await readReplay()).items[0]).toEqual(frame)
-      const persisted = await pool.query(
-        "SELECT frame ? 'attendance' AS in_legacy_frame, attendance_payload->'attendance'->'rows'->0->>'name' AS name FROM website_session_replay WHERE actor_id = $1 AND step = 1",
-        [teacher.userId],
-      )
-      expect(persisted.rows).toEqual([
-        { in_legacy_frame: false, name: 'Synthetic recorded student' },
-      ])
-      expect((await readReplay()).nextAfter).toBe(20)
-      expect((await readReplay('&after=20')).items.map(({ step }) => step)).toEqual([21, 22])
+      expect((await fetch(retired, legacyBatch)).status).toBe(400)
+      expect((await fetch(retired, { headers: administrator.headers })).status).toBe(404)
+      const recordings = () =>
+        pool.query('SELECT step FROM website_session_replay WHERE actor_id = $1', [teacher.userId])
+      expect((await recordings()).rows).toEqual([])
       await pool.query(
-        "UPDATE website_session_replay SET received_at = now() - CASE WHEN step = 1 THEN interval '2 days 23 hours' ELSE interval '3 days 1 hour' END WHERE actor_id = $1",
-        [teacher.userId],
+        `INSERT INTO website_session_replay (actor_id, journey_id, step, frame, received_at)
+         VALUES ($1, $2, 1, '{}', now() - interval '4 days'), ($1, $2, 2, '{}', now())`,
+        [teacher.userId, journeyId],
       )
-      expect((await readReplay()).items).toEqual([frame])
-      await pruneSessionReplay(pool)
-      expect(
-        (
-          await pool.query('SELECT step FROM website_session_replay WHERE actor_id = $1', [
-            teacher.userId,
-          ])
-        ).rows,
-      ).toEqual([{ step: 1 }])
+      await pruneExpiredRecordings(pool)
+      expect((await recordings()).rows).toEqual([{ step: 2 }])
       expect((await read(timelineUrl)).items).toHaveLength(50)
 
       await pool.query(
