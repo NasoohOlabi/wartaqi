@@ -2423,3 +2423,5 @@ The course roster browser scenario passed for All columns, Groups and Books in E
 The owner reported that the Export contacts label squeezed the Arabic Students heading into individual letters. The course roster now uses a localized 44px download icon. Export, Sort and Filter share the heading row when they fit and wrap together when space is tight. `AGENTS.md` records the icon preference and directs agents to ask when an icon alone may be unclear.
 
 The contact export scenario passed in desktop and emulated phone Chromium at 320, 360, 390, 430 and 1624px in English and Arabic. It checked the heading, toolbar and filtered-roster vCard download using synthetic records. The PR records release checks and deployment verification.
+
+At 08:58 Asia/Damascus, the full browser suite caught the narrower All students toolbar wrapping when it could share a row with the heading. Scoped wrapping to courses, where the export icon appears. Both course export checks and the mobile All students scenario passed on rerun.
