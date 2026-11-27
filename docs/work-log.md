@@ -2511,3 +2511,9 @@ Synthetic browser checks exercise the leading 48px target, accessible label, too
 The owner reported wasted space in the follow-up date cards at 662px. The dashboard sizes each card to its localized label and wraps cards when they no longer fit on a row.
 
 Synthetic Chromium checks cover six recorded dates, one Arabic row at 662px, one row in both languages at 1280px, and wrapping without overflow on narrow phones. The PR records release and Railway verification.
+
+## 2026-11-27 11:17 Asia/Damascus — Show course results on the student profile
+
+The owner asked to see previous course grades, the pass decision and attendance rate when opening a student, especially for closed courses. Student information now lists those values for administrators, including withdrawn enrollments and saved result overrides. Attendance history opens on demand in All students and closed courses. It starts expanded for a selected open course.
+
+Synthetic Chromium scenarios cover the profile on desktop and emulated phones, with English and Arabic labels, a saved zero, missing scores, a closed-course override and the history disclosure. The PR records release and Railway checks. The supplied student record requires a signed-in account.

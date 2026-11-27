@@ -5,7 +5,7 @@ import { formatLevel } from './levelFormat'
 import { PhoneNumber } from './PhoneNumber'
 import { courseContacts, downloadContacts } from './courseContacts'
 import { downloadRosterCsv, downloadRosterExcel, rosterRows } from './rosterExport'
-import { TableHeader, TableToolbar } from './DataTable'
+import { TableControls, TableHeader, TableToolbar } from './DataTable'
 import { useDataTable } from './useDataTable'
 import { matchesText } from './studentSearch'
 import {
@@ -49,6 +49,7 @@ import {
 import { AttendanceChartExport } from './AttendanceChartExport'
 import { SummaryInsights } from './SummaryInsights'
 import { CourseReadiness } from './CourseReadiness'
+import { courseAttendance, effectiveGradeResult } from '../shared/courseGrading'
 import { NotebookDashboard } from './NotebookDashboard'
 import { WorkspaceNavigation } from './WorkspaceNavigation'
 import { CopyViewLink } from './CopyViewLink'
@@ -623,6 +624,7 @@ function Notebook({
           <StudentDetails
             student={ledger.roster.find((student) => student.studentId === query.student)}
             projected={query.course ? scopedProjection : baseProjection}
+            allAttendance={baseProjection.attendance}
             courses={ledger.courses}
             enrollments={ledger.enrollments}
             courseId={query.course}
@@ -843,6 +845,7 @@ function Notebook({
 function StudentDetails({
   student,
   projected,
+  allAttendance,
   courses,
   enrollments,
   courseId,
@@ -863,6 +866,7 @@ function StudentDetails({
   backLabel: string
   student: import('../shared/neon').NeonRosterStudent | undefined
   projected: Projection
+  allAttendance: Projection['attendance']
   courses: import('../shared/neon').Course[]
   enrollments: import('../shared/neon').Enrollment[]
   courseId: string
@@ -937,6 +941,7 @@ function StudentDetails({
       : courseMembership?.active && courses.some((course) => course.id === courseId && course.open))
   const editInSettings = administrator && !offline
   const editLabel = ar ? 'تعديل الطالب' : 'Edit student'
+  const historyLabel = ar ? 'سجل الحضور' : 'Attendance history'
   return (
     <div className="student-details">
       <section className="panel student-details-overview" aria-labelledby="student-details-title">
@@ -1111,6 +1116,59 @@ function StudentDetails({
               </button>
             )}
           </header>
+          {administrator && memberships.length > 0 && (
+            <div className="student-course-results">
+              <h3>{ar ? 'نتائج الدورات' : 'Course results'}</h3>
+              <table className="mobile-record-table role-table">
+                <thead>
+                  <tr>
+                    <th>{ar ? 'الدورة' : 'Course'}</th>
+                    <th>{ar ? 'نظري' : 'Theory'}</th>
+                    <th>{ar ? 'عملي' : 'Practical'}</th>
+                    <th>{ar ? 'نسبة الحضور' : 'Attendance rate'}</th>
+                    <th>{ar ? 'النتيجة' : 'Result'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {memberships.map((entry) => {
+                    const course = courses.find((item) => item.id === entry.courseId)
+                    if (!course) return null
+                    const { ratio } = courseAttendance(allAttendance, entry)
+                    const result = effectiveGradeResult(course, entry, ratio)
+                    const resultLabel =
+                      result === 'pass'
+                        ? ar
+                          ? 'ناجح'
+                          : 'Pass'
+                        : result === 'fail'
+                          ? ar
+                            ? 'راسب'
+                            : 'Fail'
+                          : ar
+                            ? 'قيد الانتظار'
+                            : 'Pending'
+                    return (
+                      <tr key={entry.id}>
+                        <td data-label={ar ? 'الدورة' : 'Course'}>
+                          <bdi>{course.name}</bdi>
+                          {!course.open && ` (${ar ? 'مغلقة' : 'Closed'})`}
+                          {!entry.active && ` (${ar ? 'منسحب' : 'Withdrawn'})`}
+                        </td>
+                        <td data-label={ar ? 'نظري' : 'Theory'}>{entry.theory ?? '\u2014'}</td>
+                        <td data-label={ar ? 'عملي' : 'Practical'}>
+                          {entry.practical ?? '\u2014'}
+                        </td>
+                        <td data-label={ar ? 'نسبة الحضور' : 'Attendance rate'}>
+                          <bdi>{ratio === null ? '\u2014' : `${ratio.toFixed(1)}%`}</bdi>
+                        </td>
+                        <td data-label={ar ? 'النتيجة' : 'Result'}>{resultLabel}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
           <dl className="student-detail-fields student-detail-totals">
             <div>
               <dt>{t('present')}</dt>
@@ -1217,39 +1275,47 @@ function StudentDetails({
           )}
         </section>
         <section className="panel student-details-history">
-          <TableToolbar model={detailRecords.length ? detailTable : undefined} className="mb-2">
-            <h2>{ar ? 'سجل الحضور' : 'Attendance history'}</h2>
-          </TableToolbar>
-          {detailRecords.length ? (
-            <div
-              className="role-table-scroll"
-              tabIndex={0}
-              role="region"
-              aria-label={ar ? 'سجل الحضور' : 'Attendance history'}
-            >
-              <table className="mobile-record-table role-table">
-                <TableHeader model={detailTable} />
-                <tbody>
-                  {detailTable.rows.map(({ event, value }) => (
-                    <tr key={event.id}>
-                      <td data-label={ar ? 'التاريخ' : 'Date'}>{value.date}</td>
-                      <td data-label={ar ? 'الدورة' : 'Course'}>
-                        {courses.find((course) =>
-                          memberships.some(
-                            (entry) =>
-                              entry.id === value.enrollmentId && entry.courseId === course.id,
-                          ),
-                        )?.name || (ar ? 'بلا دورة' : 'No course')}
-                      </td>
-                      <td data-label={ar ? 'الحالة' : 'Status'}>{t(value.status)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="muted">{ar ? 'لا توجد سجلات حضور' : 'No attendance records'}</p>
-          )}
+          <details
+            key={courseId}
+            open={Boolean(courseId && courses.find((course) => course.id === courseId)?.open)}
+          >
+            <summary>{historyLabel}</summary>
+            {detailRecords.length ? (
+              <>
+                <div className="table-toolbar-actions mb-2 justify-end">
+                  <TableControls model={detailTable} />
+                </div>
+                <div
+                  className="role-table-scroll"
+                  tabIndex={0}
+                  role="region"
+                  aria-label={historyLabel}
+                >
+                  <table className="mobile-record-table role-table">
+                    <TableHeader model={detailTable} />
+                    <tbody>
+                      {detailTable.rows.map(({ event, value }) => (
+                        <tr key={event.id}>
+                          <td data-label={ar ? 'التاريخ' : 'Date'}>{value.date}</td>
+                          <td data-label={ar ? 'الدورة' : 'Course'}>
+                            {courses.find((course) =>
+                              memberships.some(
+                                (entry) =>
+                                  entry.id === value.enrollmentId && entry.courseId === course.id,
+                              ),
+                            )?.name || (ar ? 'بلا دورة' : 'No course')}
+                          </td>
+                          <td data-label={ar ? 'الحالة' : 'Status'}>{t(value.status)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <p className="muted">{ar ? 'لا توجد سجلات حضور' : 'No attendance records'}</p>
+            )}
+          </details>
         </section>
       </div>
     </div>

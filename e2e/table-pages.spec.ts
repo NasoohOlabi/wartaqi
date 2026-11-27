@@ -418,6 +418,17 @@ test('wide student details align profile fields, attendance and notes', async ({
       name: ar ? 'سجل الحضور' : 'Attendance history',
     })
     const rows = history.locator('tbody tr')
+    const results = details.locator('.student-course-results')
+    await expect(
+      results.getByRole('heading', {
+        name: ar
+          ? '\u0646\u062a\u0627\u0626\u062c \u0627\u0644\u062f\u0648\u0631\u0627\u062a'
+          : 'Course results',
+      }),
+    ).toBeVisible()
+    await expect(results.locator('th').first()).toHaveText(
+      ar ? '\u0627\u0644\u062f\u0648\u0631\u0629' : 'Course',
+    )
     const profile = details.locator('.student-detail-profile')
     await expect(profile.locator('.student-detail-name')).toHaveText('Zulu Family')
     await expect(profile.getByRole('link', { name: 'Alpha course' })).toBeVisible()
@@ -427,7 +438,7 @@ test('wide student details align profile fields, attendance and notes', async ({
     await expect(rows).toHaveCount(3)
     for (const width of [1624, 1920, 2560]) {
       await page.setViewportSize({ width, height: 560 })
-      await expect(rows.first()).toBeInViewport({ ratio: 1 })
+      await expect(results.locator('tbody tr').first()).toBeInViewport({ ratio: 1 })
       const profileBounds = await details.locator('.student-details-overview').boundingBox()
       const historyBounds = await history.boundingBox()
       const notesBounds = await notes.boundingBox()
@@ -489,6 +500,7 @@ test('wide student details align profile fields, attendance and notes', async ({
   await expect(student).toBeVisible()
   await page.setViewportSize({ width: 1624, height: 900 })
   await page.goto('/?page=app&view=student&student=20000000-0000-4000-8000-000000000007')
+  await details.locator('.student-details-history summary').click()
   await expect(details.getByText('لا توجد سجلات حضور')).toBeVisible()
   await expect(details.getByText('لا توجد ملاحظات')).toBeVisible()
   await page.screenshot({ path: '.artifacts/verification/student-detail-empty-ar.png' })
@@ -600,6 +612,10 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
     await expect(chat).toHaveAttribute('href', 'https://wa.me/963912345678')
     await expect(dial).toHaveAttribute('href', 'tel:0912345678')
     await expect(dial).toHaveAttribute('dir', 'ltr')
+    const historyDisclosure = details.locator('.student-details-history details')
+    await expect(historyDisclosure).not.toHaveAttribute('open', '')
+    await historyDisclosure.locator('summary').click()
+    await back.scrollIntoViewIfNeeded()
     await expect(history.locator('tbody tr')).toHaveCount(3)
     await expect(history.locator('thead')).toBeHidden()
     for (const width of [320, 360, 390, 430]) {
