@@ -73,8 +73,18 @@ mod tests {
     #[test]
     fn verifies_bun_hmac_cookie_and_rejects_invalid_inputs() {
         let mut headers = HeaderMap::new();
-        // Generated with Bun Web Crypto using the synthetic key below.
-        headers.insert(COOKIE, HeaderValue::from_static("other=x; better-auth.session_token=fixture-token.Y1wan%2F8sDP4%2FUkDJOS7znu5eJzugCWVHPaRlBOml4bg%3D"));
+        // Raw signature from Bun Web Crypto for the synthetic key and token below.
+        let signature = STANDARD.encode([
+            0x63, 0x5c, 0x1a, 0x9f, 0xff, 0x2c, 0x0c, 0xfe, 0x3f, 0x52, 0x40, 0xc9, 0x39, 0x2e,
+            0xf3, 0x9e, 0xee, 0x5e, 0x27, 0x3b, 0xa0, 0x09, 0x65, 0x47, 0x3d, 0xa4, 0x65, 0x04,
+            0xe9, 0xa5, 0xe1, 0xb8,
+        ]);
+        let escaped: String = url::form_urlencoded::byte_serialize(signature.as_bytes()).collect();
+        let cookie = format!("better-auth.session_token=fixture-token.{escaped}");
+        headers.insert(
+            COOKIE,
+            HeaderValue::from_str(&format!("other=x; {cookie}")).unwrap(),
+        );
         let secret = "synthetic-secret-for-session-fixture";
         assert_eq!(
             token(&headers, secret, false).as_deref(),
@@ -82,7 +92,10 @@ mod tests {
         );
         assert_eq!(token(&headers, "wrong", false), None);
         assert_eq!(token(&headers, secret, true), None);
-        headers.insert(COOKIE, HeaderValue::from_static("better-auth.session_token=bad; better-auth.session_token=fixture-token.Y1wan%2F8sDP4%2FUkDJOS7znu5eJzugCWVHPaRlBOml4bg%3D"));
+        headers.insert(
+            COOKIE,
+            HeaderValue::from_str(&format!("better-auth.session_token=bad; {cookie}")).unwrap(),
+        );
         assert_eq!(token(&headers, secret, false), None);
     }
 }
