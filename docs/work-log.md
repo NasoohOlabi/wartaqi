@@ -2467,3 +2467,9 @@ Synthetic browser checks cover English and Arabic on desktop and at 320, 390 and
 The owner requested birth years in the notebook roster to group students by age. The desktop table shows a sortable Birth year column. Phones show the year on the same row as Level and Courses. Missing years display an em dash, and the year filter matches digits literally.
 
 Focused browser checks use synthetic records to verify sorting, filtering, missing years and the compact layout in English and Arabic. The PR records release and Railway verification.
+
+## 2026-11-27 10:00 Asia/Damascus — Keep desktop roster WhatsApp inline
+
+The owner reported that the WhatsApp icon appeared below the phone number on desktop. The roster now keeps its dial and WhatsApp links side by side at all widths and gives the desktop phone column room for both targets.
+
+The contact browser scenario checks phone and icon geometry, 44px contact targets and English and Arabic at 1280/1624px and phone widths. It uses synthetic contact records. Native WhatsApp handoff remains unverified.

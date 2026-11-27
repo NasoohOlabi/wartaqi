@@ -392,6 +392,14 @@
   display: none;
 }
 
+.roster-student-phone > span {
+  flex-wrap: nowrap;
+  column-gap: 0;
+}
+.roster-student-phone a[href^='https://wa.me/'] {
+  flex: none;
+}
+
 @media (max-width: 64rem) {
   table.mobile-record-table {
     display: block;
@@ -521,13 +529,6 @@
   }
   .roster-students-table tbody td:nth-child(7) {
     grid-column: 4;
-  }
-  .roster-student-phone > span {
-    flex-wrap: nowrap;
-    column-gap: 0;
-  }
-  .roster-student-phone a[href^='https://wa.me/'] {
-    flex: none;
   }
   .roster-students-table .roster-mobile-open {
     display: flex;
