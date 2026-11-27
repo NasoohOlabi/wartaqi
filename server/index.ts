@@ -562,7 +562,9 @@ export async function handle(request: Request): Promise<Response> {
            AND t.tgenabled IN ('O','A') AND c.relname IN ('students','courses','course_enrollments')`,
       )
       if (versions.rows[0]?.triggers !== 3) throw new Error('Edit version migration required')
-      await pool.query('SELECT edit_time FROM public.events LIMIT 0')
+      await pool.query(
+        'SELECT edit_time, wartaq_event_payload(payload, payload_packed, student_id, enrollment_id) FROM public.events LIMIT 0',
+      )
       return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } })
     } catch {
       return Response.json({ ok: false }, { status: 503, headers: { 'Cache-Control': 'no-store' } })

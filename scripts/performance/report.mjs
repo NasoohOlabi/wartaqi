@@ -3,7 +3,16 @@ import { readFileSync } from 'node:fs'
 const [file] = process.argv.slice(2)
 if (!file) throw new Error('Usage: node scripts/performance/report.mjs PERFORMANCE_JSON')
 const result = JSON.parse(readFileSync(file, 'utf8'))
-const requests = result.requests.filter((request) => request.phase !== 'setup')
+const active = result.activePhase
+  ? new Set(
+      result.steps
+        .slice(result.steps.findIndex(({ label }) => label === result.activePhase))
+        .map(({ label }) => label),
+    )
+  : null
+const requests = result.requests.filter((request) =>
+  active ? active.has(request.phase) : request.phase !== 'setup',
+)
 const api = requests.filter(
   ({ path }) => path.startsWith('/api/') || path.startsWith('/socket.io/'),
 )
@@ -31,6 +40,7 @@ console.log({
   wireBytes: bytes(requests),
   apiWireBytes: bytes(api),
   incomplete: requests.filter(({ finished }) => !finished).length,
+  notModified: requests.filter(({ status }) => status === 304).length,
   httpErrors: requests.filter(({ status }) => status >= 400).length,
   webCpuMicros: cpu('web'),
   dbCpuMicros: cpu('database'),

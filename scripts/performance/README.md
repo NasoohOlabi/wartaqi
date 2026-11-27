@@ -2,10 +2,12 @@
 
 Run the lab from PowerShell with Bun, Node, Docker Desktop and Playwright Chromium. It uses dedicated containers on `wartaq-perf-lab`, synthetic logins and a loopback-only web port. Each run clones one database template and drops its clone afterward.
 
+Build the baseline image from the pinned source revision before measuring a candidate. This comparison used `7f5ae9a` and PostgreSQL migrations through 022 for its baseline.
+
 ```powershell
 bun install --frozen-lockfile
 bunx playwright install chromium
-./scripts/performance/prepare.ps1
+./scripts/performance/prepare.ps1 -ThroughMigration 22
 ./scripts/performance/build.ps1 -Tag wartaq-perf:baseline
 ./scripts/performance/run.ps1 -Image wartaq-perf:baseline -Label baseline-a -Mode hplus
 ./scripts/performance/run.ps1 -Image wartaq-perf:baseline -Label baseline-b -Mode hplus
@@ -19,6 +21,10 @@ Run workloads serially and use fresh containers from the same two images in each
 The proxy counts real HTTP messages, including service-worker fetches and socket upgrades. It counts encoded bodies and HTTP headers and includes WebSocket frames under their connection. It excludes TCP and TLS framing. Simulated network timing comes from Chromium. Container CPU uses the cgroup usage delta, and sampled working set uses current memory minus inactive file pages. Lifetime memory peaks are separate from the sampled working set. Compare equivalent successful jobs and report failed operations alongside byte counts.
 
 Use `storage.sql` with `psql` against the appropriate local fixture. It reports logical row counts, relation bytes, and whole-database bytes. Measure `pg_wal` and the complete data directory separately when comparing Docker volume footprint. Equal rewrites on both databases avoid counting the compacting effect of index rebuilds as a schema saving.
+
+For the compact schema comparison, prepare the baseline templates with `./scripts/performance/prepare.ps1 -ThroughMigration 22`, then run `./scripts/performance/compare-storage.ps1 -Label storage-a` and repeat with another label. The script compares identical database clones after equal event table rewrites and checks that the ordered canonical ledger digest matches. For candidate browser and load runs, pass `-Migrations @('neon/023-compact-attendance.sql','neon/024-ledger-invalidation.sql') -ReclaimEvents`. Use `-Mode hplus-dashboard -Fixture large` for administrator first open, attendance, summary, notes, correction and history paging. `-Mode hplus-warm` measures active work separately after a 95-second idle window. Set `WARTAQ_PERF_BLACKHOLE_WS=1` to test a network that silently drops WebSocket upgrades.
+
+Use `-IsolateDatabase` to restore the same fixture into a fresh PostgreSQL container for each run when other scenarios might have changed the shared cluster's working set. `-Mode lan-preparation -Fixture large` checks that the large administrator notebook prepares a full offline copy on a fast link and opens its course summary after disconnecting.
 
 When registry downloads are unavailable in Docker, `build.ps1 -UseCachedRuntime` uses the existing `wartaqi:routed-web-current` dependency image and the same Bookworm Rust compiler as the production Dockerfile. It expects the cached Cargo registry archive under `.artifacts/performance`. The baseline lock comparison found identical package entries except for the removed `web-vitals` dependency. The candidate replaces the app source, built frontend and Rust executable in the cached image. The normal production Dockerfile is the portable path.
 

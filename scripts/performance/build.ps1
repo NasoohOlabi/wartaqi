@@ -19,22 +19,28 @@ if ((Get-FileHash -LiteralPath bun.lock).Hash -ne '0769C750DBC917707DBC031227DAD
     throw 'The cached runtime has only been checked against the original Bun lockfile.'
 }
 
-bun run build
+$stageName = 'image-' + [guid]::NewGuid().ToString('N')
+$stagePath = Join-Path $artifactRoot $stageName
+New-Item -ItemType Directory -Path $stagePath | Out-Null
+bunx tsc -b
+if ($LASTEXITCODE) { throw 'The frontend typecheck failed.' }
+bunx vite build --outDir "$stagePath/dist"
 if ($LASTEXITCODE) { throw 'The frontend build failed.' }
+bun scripts/precompress-assets.mjs "$stagePath/dist"
+if ($LASTEXITCODE) { throw 'Asset precompression failed.' }
 $buildContainerArgs = @(
     'run', '--rm', '--network', 'none',
     '--mount', "type=bind,source=$repoRoot,target=/source",
     '--mount', 'type=volume,source=wartaq-perf-rust-target,target=/target',
-    '-e', 'CARGO_TARGET_DIR=/target', 'rust:1.93-bookworm', 'sh', '-ec',
-    'tar -xzf /source/.artifacts/performance/cargo-registry.tar.gz -C /usr/local/cargo; cargo build --release --locked --offline --manifest-path /source/rust-sync/Cargo.toml; cp /target/release/wartaq-workspace-relay /source/.artifacts/performance/wartaq-web'
+    '-e', 'CARGO_TARGET_DIR=/target', '-e', "WARTAQ_STAGE=/source/.artifacts/performance/$stageName",
+    'rust:1.93-bookworm', 'sh', '-ec',
+    'tar -xzf /source/.artifacts/performance/cargo-registry.tar.gz -C /usr/local/cargo; cargo build --release --locked --offline --manifest-path /source/rust-sync/Cargo.toml; cp /target/release/wartaq-workspace-relay "$WARTAQ_STAGE/wartaq-web"'
 )
 docker @buildContainerArgs
 if ($LASTEXITCODE) { throw 'The offline Rust release build failed.' }
 
-$stagePath = Join-Path $artifactRoot ('image-' + [guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Path $stagePath | Out-Null
-Copy-Item -Recurse -Path dist,server,shared,functions -Destination $stagePath
-Copy-Item -Path package.json,bun.lock,"$artifactRoot/wartaq-web" -Destination $stagePath
+Copy-Item -Recurse -Path server,shared,functions -Destination $stagePath
+Copy-Item -Path package.json,bun.lock -Destination $stagePath
 @'
 FROM wartaqi:routed-web-current
 WORKDIR /app

@@ -6,17 +6,20 @@ export function courseReadiness({
   enrollments,
   students,
   attendance,
+  recordedEnrollmentIds,
 }: {
   course: Course
   enrollments: Enrollment[]
   students: NeonRosterStudent[]
   attendance: ReturnType<typeof projectEvents>['attendance']
+  recordedEnrollmentIds?: string[]
 }) {
   const activeStudents = new Map(
     students.filter((student) => student.active).map((student) => [student.studentId, student]),
   )
   const marked = new Set(
-    attendance.flatMap(({ value }) => (value.enrollmentId ? [value.enrollmentId] : [])),
+    recordedEnrollmentIds ??
+      attendance.flatMap(({ value }) => (value.enrollmentId ? [value.enrollmentId] : [])),
   )
   const rows = enrollments.flatMap((entry) => {
     const student = activeStudents.get(entry.studentId)

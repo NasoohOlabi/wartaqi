@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import type { NeonTeacher } from '../shared/neon'
 import type { CachedAccess } from './offlineAccess'
+import type { NotebookFocus } from './neon'
 import { useLanguage } from './useLanguage'
 import { useLedger } from './useLedger'
 
@@ -10,15 +11,17 @@ export function StaffReplicaProvider({
   neon,
   cached,
   notebookView,
+  focus,
   children,
 }: {
   neon: { userId: string; teacher: NeonTeacher }
   cached?: CachedAccess
   notebookView: boolean
+  focus?: NotebookFocus
   children: ReactNode
 }) {
   const [started, setStarted] = useState(notebookView)
-  const ledger = useLedger(neon, cached?.offline ?? false, started || notebookView)
+  const ledger = useLedger(neon, cached?.offline ?? false, started || notebookView, focus)
   if (!started && (notebookView || ledger.offlinePendingCount > 0 || ledger.pending.length > 0))
     setStarted(true)
   useEffect(() => {

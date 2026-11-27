@@ -1,8 +1,11 @@
 import { expect, test } from 'bun:test'
 import { randomBytes } from 'node:crypto'
+import { createServer } from 'node:http'
 import { Pool } from 'pg'
+import { Server } from 'socket.io'
 import { io, type Socket } from 'socket.io-client'
 import { z } from 'zod'
+import { subscribeWorkspaceChanges } from '../src/syncStream'
 import { createIdentity } from './integration-identity'
 import { startIntegrationServer } from './integration-server'
 import { startRustBackend } from './rust-backend-server'
@@ -13,6 +16,92 @@ const rustBinary = process.env.TEST_RUST_SYNC_BINARY
 const implementations = rustBinary ? ['Bun', 'Rust'] : ['Bun']
 if (rustBinary && !databaseUrl) throw new Error('Rust parity requires TEST_RAILWAY_DATABASE_URL')
 const integration = (databaseUrl ? test : test.skip).each(implementations)
+
+test('ledger hints refresh data but not grants, and cannot postpone grant repair', async () => {
+  const http = createServer()
+  const server = new Server(http)
+  await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
+  const address = http.address()
+  if (!address || typeof address === 'string') throw new Error('Missing server address')
+  const previous = new Map(
+    ['window', 'document', 'location', 'performance'].map((key) => [
+      key,
+      Object.getOwnPropertyDescriptor(globalThis, key),
+    ]),
+  )
+  let interval = () => {}
+  let now = 0
+  const browser = Object.assign(new EventTarget(), {
+    setTimeout,
+    clearTimeout,
+    clearInterval,
+    setInterval: (callback: () => void) => {
+      interval = callback
+      return 1
+    },
+  })
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: browser })
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: Object.assign(new EventTarget(), { visibilityState: 'visible' }),
+  })
+  Object.defineProperty(globalThis, 'location', {
+    configurable: true,
+    value: new URL(`http://127.0.0.1:${address.port}`),
+  })
+  Object.defineProperty(globalThis, 'performance', {
+    configurable: true,
+    value: { now: () => now },
+  })
+  let grant = 0
+  let ledger = 0
+  const stopGrant = subscribeWorkspaceChanges(
+    'test',
+    () => {
+      grant++
+    },
+    { skipLedger: true },
+  )
+  const stopLedger = subscribeWorkspaceChanges('test', () => {
+    ledger++
+  })
+  const until = async (condition: () => boolean) => {
+    for (let i = 0; i < 100 && !condition(); i++) await Bun.sleep(20)
+    expect(condition()).toBe(true)
+  }
+  try {
+    await until(() => server.sockets.sockets.size === 1 && grant > 0 && ledger > 0)
+    await Bun.sleep(100)
+    const baseGrant = grant
+    const baseLedger = ledger
+    for (const time of [30000, 60000, 90000, 119000]) {
+      now = time
+      server.emit('workspace:changed', 'ledger')
+      await Bun.sleep(70)
+      interval()
+    }
+    expect(grant).toBe(baseGrant)
+    expect(ledger).toBeGreaterThan(baseLedger)
+    now = 120000
+    interval()
+    await until(() => grant > baseGrant)
+    const beforeUnknown = grant
+    server.emit('workspace:changed', 'unknown')
+    await until(() => grant > beforeUnknown)
+    const beforeEmpty = grant
+    server.emit('workspace:changed')
+    await until(() => grant > beforeEmpty)
+  } finally {
+    stopGrant()
+    stopLedger()
+    server.close()
+    http.closeAllConnections()
+    for (const [key, descriptor] of previous) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor)
+      else Reflect.deleteProperty(globalThis, key)
+    }
+  }
+}, 10000)
 
 async function connect(socket: Socket) {
   const result = Promise.withResolvers<string>()
@@ -191,6 +280,11 @@ integration(
       await signals
       expect(hints).toEqual([[], [], []])
 
+      const ledgerSignals = Promise.all(clients.map(nextHint))
+      await pool.query('UPDATE events SET payload = payload WHERE false')
+      await ledgerSignals
+      expect(hints.slice(3)).toEqual([['ledger'], ['ledger'], ['ledger']])
+
       const recovered = Promise.all(clients.map(nextHint))
       await pool.query('SELECT pg_terminate_backend($1, 2000)', [firstPid])
       expect(await listenerId()).toBeUndefined()
@@ -199,7 +293,7 @@ integration(
       ])
       await recovered
       expect(hints.length).toBeGreaterThanOrEqual(6)
-      expect(hints.every((args) => args.length === 0)).toBe(true)
+      expect(hints.slice(6).every((args) => args.length === 0)).toBe(true)
       const recoveredPid = await listenerId()
       expect(recoveredPid).toBeDefined()
       expect(recoveredPid).not.toBe(firstPid)
@@ -208,7 +302,13 @@ integration(
       })
       expect((await profile.json()).account.name).toBe('Recovered sync name')
       first.disconnect()
+      const accessChanged = nextHint(second)
       await pool.query('UPDATE app_accounts SET active = false WHERE auth_user_id = $1', [userId])
+      await accessChanged
+      const deniedProfile = await fetch(`${origin}/api/me`, {
+        headers: { cookie: secondCookie, 'x-user-id': userId },
+      })
+      expect(deniedProfile.status).toBe(403)
       expect(await connect(first)).toBe('Unauthorized')
     } finally {
       for (const socket of sockets) socket.disconnect()

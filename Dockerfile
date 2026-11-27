@@ -7,7 +7,8 @@ COPY index.html vite.config.ts tsconfig*.json ./
 COPY src ./src
 COPY shared ./shared
 COPY public ./public
-RUN bunx vite build
+COPY scripts/precompress-assets.mjs ./scripts/precompress-assets.mjs
+RUN bunx vite build && bun scripts/precompress-assets.mjs
 
 FROM rust:1.93-bookworm AS rust-build
 WORKDIR /app

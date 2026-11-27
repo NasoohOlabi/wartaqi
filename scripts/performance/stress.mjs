@@ -32,20 +32,30 @@ async function signIn(phone, path, field) {
 }
 
 async function runLane(lane) {
+  let etag
+  let rows
   for (let iteration = 0; iteration < 8; iteration++) {
     const start = performance.now()
     const result = await fetch(origin + lane.path, {
-      headers: lane.headers,
+      headers: etag ? { ...lane.headers, 'If-None-Match': etag } : lane.headers,
       signal: AbortSignal.timeout(30_000),
     })
-    if (!result.ok) throw new Error(lane.path + ' returned ' + result.status)
-    const body = await result.json()
-    if (!Array.isArray(body[lane.field]) || !body[lane.field].length)
-      throw new Error(lane.path + ' omitted fixture data')
+    if (result.status === 304) {
+      if (!rows || !etag || result.headers.get('etag') !== etag)
+        throw new Error(lane.path + ' returned 304 without a matching loaded snapshot')
+    } else {
+      if (!result.ok) throw new Error(lane.path + ' returned ' + result.status)
+      const body = await result.json()
+      if (!Array.isArray(body[lane.field]) || !body[lane.field].length)
+        throw new Error(lane.path + ' omitted fixture data')
+      etag = result.headers.get('etag')
+      rows = body[lane.field].length
+    }
     operations.push({
       path: lane.path,
       ms: Math.round(performance.now() - start),
-      rows: body[lane.field].length,
+      status: result.status,
+      rows,
     })
   }
 }

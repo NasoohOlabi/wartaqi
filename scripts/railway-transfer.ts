@@ -155,11 +155,18 @@ async function snapshot(db: PoolClient, version: Version): Promise<Backup> {
     createdAt: new Date().toISOString(),
     tables: [],
   }
+  const packedColumn = await db.query(`SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'events' AND column_name = 'payload_packed'
+  ) AS present`)
+  const packed = z.object({ present: z.boolean() }).parse(packedColumn.rows[0]).present
   for (const table of tablesFor(version)) {
     const columns = columnsFor(table, version).map((column) =>
       table.name === 'public.events' && column === 'sequence'
         ? '"sequence"::text AS "sequence"'
-        : quote(column),
+        : table.name === 'public.events' && column === 'payload' && packed
+          ? 'wartaq_event_payload(payload, payload_packed, student_id, enrollment_id) AS payload'
+          : quote(column),
     )
     const result = await db.query(
       `SELECT row_to_json(item) AS row FROM (SELECT ${columns.join(',')} FROM ${sqlTable(table.name)}) item`,

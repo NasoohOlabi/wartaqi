@@ -19,6 +19,10 @@ mod ledger_writes;
 mod mcp_discovery;
 #[cfg(test)]
 mod mcp_tools;
+mod notebook_focus;
+mod notebook_history;
+mod notebook_student;
+mod notebook_summary;
 mod production_db;
 mod roster_admin;
 mod session_identity;
@@ -35,7 +39,7 @@ use std::{env, path::PathBuf, sync::Arc, time::Duration};
 use axum::{
     Router,
     extract::Request,
-    http::{StatusCode, header},
+    http::{Extensions, HeaderMap, StatusCode, Version, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::get,
@@ -48,6 +52,48 @@ use socketioxide::{
     handler::ConnectHandler,
 };
 use tokio_postgres::{AsyncMessage, NoTls};
+use tower_http::compression::{
+    CompressionLayer, CompressionLevel,
+    predicate::{Predicate, SizeAbove},
+};
+
+fn native_hybrid_route(method: &axum::http::Method, path: &str) -> bool {
+    match *method {
+        axum::http::Method::GET => matches!(
+            path,
+            "/api/me"
+                | "/api/notebook"
+                | "/api/admin"
+                | "/api/student/attendance"
+                | "/api/auth/get-session"
+                | "/api/device-accounts"
+        ),
+        axum::http::Method::POST => matches!(
+            path,
+            "/api/device-accounts/switch"
+                | "/api/attendance/sync"
+                | "/api/student/sync"
+                | "/api/events/correct"
+        ),
+        _ => false,
+    }
+}
+
+#[derive(Clone)]
+struct PrivateProjection;
+
+async fn mark_private_projection(req: Request, next: Next) -> Response {
+    let projection = req.method() == axum::http::Method::GET
+        && matches!(
+            req.uri().path(),
+            "/api/notebook" | "/api/admin" | "/api/student/attendance"
+        );
+    let mut response = next.run(req).await;
+    if projection && response.status() == StatusCode::OK {
+        response.extensions_mut().insert(PrivateProjection);
+    }
+    response
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -120,7 +166,11 @@ async fn listen(database_url: String, io: SocketIo) {
             while let Some(message) = poll_fn(|cx| connection.poll_message(cx)).await {
                 match message {
                     Ok(AsyncMessage::Notification(n)) if n.channel() == "wartaq_workspace_changed" => {
-                        let _ = io.emit("workspace:changed", &[(); 0]).await;
+                        if n.payload() == "ledger" {
+                            let _ = io.emit("workspace:changed", &"ledger").await;
+                        } else {
+                            let _ = io.emit("workspace:changed", &[(); 0]).await;
+                        }
                     }
                     Ok(_) => {},
                     Err(_) => break,
@@ -234,7 +284,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 let path = path.to_owned();
                 let method = request.method().clone();
-                tokio::task::spawn_blocking(move || assets::serve(&root, &method, &path))
+                let headers = request.into_parts().0.headers;
+                tokio::task::spawn_blocking(move || assets::serve(&root, &method, &path, &headers))
                     .await
                     .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
             }
@@ -253,16 +304,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     || path == "/mcp"
                     || path.starts_with("/mcp/")
                     || path.starts_with("/.well-known/");
-                let native_read = request.method() == axum::http::Method::GET
-                    && matches!(
-                        path,
-                        "/api/me"
-                            | "/api/notebook"
-                            | "/api/admin"
-                            | "/api/student/attendance"
-                            | "/api/auth/get-session"
-                    );
-                if api && !native_read && !api::retired_website_path(path) {
+                if api
+                    && !native_hybrid_route(request.method(), path)
+                    && !api::retired_website_path(path)
+                {
                     compat_http::forward(&client, &supervisor, request).await
                 } else {
                     next.run(request).await
@@ -270,6 +315,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }));
     }
+    app = app
+        .layer(middleware::from_fn(mark_private_projection))
+        .layer(
+            CompressionLayer::new()
+                .quality(CompressionLevel::Fastest)
+                .compress_when(SizeAbove::new(1024).and(
+                    |_: StatusCode, _: Version, _: &HeaderMap, extensions: &Extensions| {
+                        extensions.get::<PrivateProjection>().is_some()
+                    },
+                )),
+        );
     let (stop_polls, shutdown) = tokio::sync::watch::channel(());
     let app = app
         .route_service("/socket.io/", socket_service)
@@ -289,4 +345,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod hybrid_route_tests {
+    use super::native_hybrid_route;
+    use axum::http::Method;
+
+    #[test]
+    fn classroom_routes_are_native_but_auth_and_other_writes_use_bun() {
+        for (method, path) in [
+            (Method::GET, "/api/device-accounts"),
+            (Method::POST, "/api/device-accounts/switch"),
+            (Method::POST, "/api/attendance/sync"),
+            (Method::POST, "/api/student/sync"),
+        ] {
+            assert!(native_hybrid_route(&method, path), "{method} {path}");
+        }
+        for (method, path) in [
+            (Method::POST, "/api/auth/sign-in/phone"),
+            (Method::POST, "/api/auth/sign-out"),
+            (Method::POST, "/api/events"),
+            (Method::GET, "/api/device-accounts/switch"),
+            (Method::POST, "/api/device-accounts"),
+        ] {
+            assert!(!native_hybrid_route(&method, path), "{method} {path}");
+        }
+    }
 }

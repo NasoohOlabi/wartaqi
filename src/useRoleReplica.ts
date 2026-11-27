@@ -81,7 +81,9 @@ export function useRoleReplica<T>(definition: RoleReplica<T>, userId: string, ac
       return flight
     }
     activeRefresh.current = schedule
-    const unsubscribe = subscribeWorkspaceChanges(userId, schedule)
+    const unsubscribe = subscribeWorkspaceChanges(userId, schedule, {
+      skipLedger: definition.path === adminBoardReplica.path,
+    })
     return () => {
       disposed = true
       activeRefresh.current = null

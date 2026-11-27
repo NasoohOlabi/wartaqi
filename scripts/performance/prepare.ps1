@@ -1,3 +1,5 @@
+param([int]$ThroughMigration = [int]::MaxValue)
+
 $ErrorActionPreference = 'Stop'
 Set-Location (Resolve-Path "$PSScriptRoot/../..").Path
 $labDatabase = 'wartaq-perf-db'
@@ -40,7 +42,7 @@ if ($LASTEXITCODE -or !$hash) { throw 'Failed to generate a disposable password 
 Remove-Item Env:WARTAQ_PERF_PASSWORD
 
 $migrationFiles = @(Get-ChildItem railway -Filter '*.sql' | Sort-Object Name) +
-    @(Get-ChildItem neon -Filter '*.sql' | Sort-Object Name)
+    @(Get-ChildItem neon -Filter '*.sql' | Where-Object { [int]$_.BaseName.Split('-')[0] -le $ThroughMigration } | Sort-Object Name)
 Invoke-LabDocker cp scripts/performance/fixture.sql "$($labDatabase):/tmp/wartaq-fixture.sql"
 foreach ($fixture in $fixtures) {
     Invoke-LabDocker exec $labDatabase createdb -U postgres $fixture.name

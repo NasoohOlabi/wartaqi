@@ -126,6 +126,52 @@ parity(
       const teacher = await signIn('+12025550181', users[0])
       const admin = await signIn('+12025550182', users[1])
       const student = await signIn('+12025550183', users[2])
+      // Conditional reads still check the current session, role and snapshot before 304.
+      for (const [path, principal] of [
+        ['/api/notebook', teacher],
+        ['/api/admin', admin],
+        ['/api/student/attendance', student],
+      ] as const) {
+        const first = await fetch(`${rust.origin}${path}`, { headers: principal })
+        expect(first.status).toBe(200)
+        const tag = first.headers.get('etag')
+        expect(tag).toMatch(/^W\/"[a-f0-9]+"$/)
+        if (!tag) throw new Error('Missing validator')
+        const me = await fetch(`${rust.origin}/api/me`, { headers: principal })
+        expect(me.status).toBe(200)
+        expect(me.headers.get('etag')).toBeNull()
+        const conditional = { ...principal, 'if-none-match': tag }
+        expect((await fetch(`${rust.origin}${path}`, { headers: conditional })).status).toBe(304)
+        expect(
+          (
+            await fetch(`${rust.origin}${path}`, {
+              headers: {
+                ...conditional,
+                'x-user-id': users[1] === principal['x-user-id'] ? users[0] : users[1],
+              },
+            })
+          ).status,
+        ).toBe(401)
+        await pool.query('UPDATE students SET name = name WHERE id = $1', [studentId])
+        expect((await fetch(`${rust.origin}${path}`, { headers: conditional })).status).toBe(200)
+        await pool.query('UPDATE app_accounts SET active = false WHERE auth_user_id = $1', [
+          principal['x-user-id'],
+        ])
+        expect((await fetch(`${rust.origin}${path}`, { headers: conditional })).status).toBe(403)
+        await pool.query('UPDATE app_accounts SET active = true WHERE auth_user_id = $1', [
+          principal['x-user-id'],
+        ])
+      }
+      const teacherFirst = await fetch(`${rust.origin}/api/notebook`, { headers: teacher })
+      const teacherTag = teacherFirst.headers.get('etag')
+      if (!teacherTag) throw new Error('Missing teacher validator')
+      expect(
+        (
+          await fetch(`${rust.origin}/api/notebook`, {
+            headers: { ...admin, 'if-none-match': teacherTag },
+          })
+        ).status,
+      ).toBe(200)
       const same = async (path: string, status: number, init?: RequestInit) => {
         const [baseline, candidate] = await Promise.all(
           endpoints.map((url) => fetch(`${url}${path}`, init)),
@@ -138,7 +184,28 @@ parity(
           'vary',
           'cache-control',
         ]) {
-          expect(candidate.headers.get(header)).toBe(baseline.headers.get(header))
+          if (
+            header === 'vary' &&
+            status === 200 &&
+            ['/api/notebook', '/api/admin', '/api/student/attendance'].includes(path)
+          ) {
+            const variants = (value: string | null) =>
+              value
+                ?.toLowerCase()
+                .split(',')
+                .map((token) => token.trim()) ?? []
+            expect(new Set(variants(candidate.headers.get(header)))).toEqual(
+              new Set([...variants(baseline.headers.get(header)), 'accept-encoding']),
+            )
+            continue
+          }
+          expect(candidate.headers.get(header)).toBe(
+            header === 'cache-control' &&
+              status === 200 &&
+              ['/api/notebook', '/api/admin', '/api/student/attendance'].includes(path)
+              ? 'private, no-store'
+              : baseline.headers.get(header),
+          )
         }
         const expected: unknown = await baseline.json()
         expect(await candidate.json()).toEqual(expected)
@@ -475,6 +542,46 @@ parity(
           'x-edit-id': uuid(),
         },
       })
+      const correction = {
+        id: uuid(),
+        actor: 'Synthetic administrator',
+        clientTime: '2026-11-20T14:00:00.000Z',
+        receivedAt: '',
+        payload: { kind: 'reversal', targetId: events[3].id, reason: 'Synthetic correction' },
+      }
+      const rustOrigin = rust.origin
+      const correct = (principal: typeof teacher, event = correction) =>
+        fetch(`${rustOrigin}/api/events/correct`, jsonPost(principal, { events: [event] }))
+      expect((await correct(teacher)).status).toBe(403)
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await correct(admin)
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual({ saved: 1 })
+      }
+      expect(
+        (
+          await correct(admin, {
+            ...correction,
+            payload: { ...correction.payload, reason: 'Conflicting retry' },
+          })
+        ).status,
+      ).toBe(409)
+      expect(
+        (
+          await correct(admin, {
+            ...correction,
+            id: uuid(),
+            payload: { ...correction.payload, targetId: correction.id },
+          })
+        ).status,
+      ).toBe(403)
+      expect(
+        (
+          await pool.query('SELECT count(*)::int AS count FROM events WHERE id = $1', [
+            correction.id,
+          ])
+        ).rows[0].count,
+      ).toBe(1)
       await pool.query(
         "INSERT INTO events (id,teacher_id,student_id,actor,client_time,payload) VALUES ($1,$2,$3,'Synthetic teacher',now(),$4)",
         [uuid(), teacherId, studentId, { kind: 'unknown' }],

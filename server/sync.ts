@@ -8,9 +8,9 @@ const socketPath = '/socket.io/'
 const channel = 'wartaq_workspace_changed'
 const handshakeSchema = z.strictObject({ userId: z.string().min(1).max(128) })
 
-type WorkspaceEvents = { 'workspace:changed': () => void }
+type WorkspaceEvents = { 'workspace:changed': (hint?: 'ledger') => void }
 
-function listenForChanges(databaseUrl: string, invalidate: () => void) {
+function listenForChanges(databaseUrl: string, invalidate: (hint?: 'ledger') => void) {
   const stop = new AbortController()
   let retryDelay = 250
 
@@ -30,7 +30,8 @@ function listenForChanges(databaseUrl: string, invalidate: () => void) {
       client.on('error', disconnect)
       client.once('end', disconnect)
       client.on('notification', (notification) => {
-        if (notification.channel === channel) invalidate()
+        if (notification.channel === channel)
+          invalidate(notification.payload === 'ledger' ? 'ledger' : undefined)
       })
       try {
         await client.connect()
@@ -99,7 +100,9 @@ export function createWorkspaceSync({
     }
     next(new Error('Unauthorized'))
   })
-  const stopListening = listenForChanges(databaseUrl, () => io.emit('workspace:changed'))
+  const stopListening = listenForChanges(databaseUrl, (hint) =>
+    hint ? io.emit('workspace:changed', hint) : io.emit('workspace:changed'),
+  )
   const { fetch: socketFetch, websocket, idleTimeout } = engine.handler()
 
   return {

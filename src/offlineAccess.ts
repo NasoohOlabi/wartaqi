@@ -10,6 +10,7 @@ const key = 'halaqa-offline-access'
 export type CachedAccess = { offline: boolean; reconnect: () => void }
 
 export const grantStorageKey = 'wartaq-local-grant'
+export const grantChangeEvent = 'wartaq-local-grant-change'
 const localAccountSchema = z.union([
   neonTeacherSchema.omit({ invitationProfile: true }),
   neonStudentAccountSchema.omit({ invitationProfile: true }),
@@ -73,8 +74,10 @@ export function authorizeLocalGrant(userId: string, account: NeonAccount) {
       account,
     })
     const serialized = JSON.stringify(grant)
-    if (localStorage.getItem(grantStorageKey) !== serialized)
+    if (localStorage.getItem(grantStorageKey) !== serialized) {
       localStorage.setItem(grantStorageKey, serialized)
+      window.dispatchEvent(new Event(grantChangeEvent))
+    }
   } catch {
     /* Storage may be unavailable. */
   }
@@ -106,6 +109,7 @@ export function clearOfflineAccess() {
   clearLegacyOfflineAccess()
   try {
     localStorage.removeItem(grantStorageKey)
+    window.dispatchEvent(new Event(grantChangeEvent))
   } catch {
     /* Storage may be unavailable. */
   }

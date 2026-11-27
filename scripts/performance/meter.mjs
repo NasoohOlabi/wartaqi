@@ -15,10 +15,14 @@ export async function startMeter(listenPort, upstreamPort) {
   let phase = 'setup'
 
   function sample(request) {
+    const url = new URL(request.url, 'http://127.0.0.1')
     const record = {
       phase,
       method: request.method,
-      path: new URL(request.url, 'http://127.0.0.1').pathname,
+      path: url.pathname,
+      ...(url.pathname === '/api/notebook' && {
+        view: url.searchParams.get('focusView') ?? 'full',
+      }),
       sent: Buffer.byteLength(
         headerBlock(request.method + ' ' + request.url + ' HTTP/1.1', request.rawHeaders),
       ),
@@ -73,6 +77,7 @@ export async function startMeter(listenPort, upstreamPort) {
   })
   server.on('upgrade', (request, browser, head) => {
     const record = sample(request)
+    if (process.env.WARTAQ_PERF_BLACKHOLE_WS === '1') return
     const upstream = connect(upstreamPort, '127.0.0.1')
     upstream.on('error', () => browser.destroy())
     browser.on('error', () => upstream.destroy())

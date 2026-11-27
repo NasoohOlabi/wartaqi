@@ -178,7 +178,7 @@ test('administrator opens a prewarmed board during a stalled refresh and preserv
   let profileName = 'Teacher Name'
   await mockSession(page, adminId, () => true)
   await page.route('**/api/me', (route) => route.fulfill({ json: { account } }))
-  await page.route('**/api/notebook', (route) =>
+  await page.route(/\/api\/notebook(?:\?.*)?$/, (route) =>
     route.fulfill({ json: { teacher: account, students: [], events: [] } }),
   )
   await page.route('**/api/admin', async (route) => {

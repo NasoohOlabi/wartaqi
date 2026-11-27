@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { ChartNoAxesColumn, Download, Share2 } from 'lucide-react'
-import type { projectEvents, Student } from '../shared/ledger'
+import type { Attendance, Student } from '../shared/ledger'
 import {
   attendanceChartRows,
   drawAttendanceChart,
@@ -11,7 +11,7 @@ import { useLanguage } from './useLanguage'
 
 type ChartSource = {
   students: Student[]
-  attendance: ReturnType<typeof projectEvents>['attendance']
+  attendance: { value: Attendance }[]
   scope: string
 }
 

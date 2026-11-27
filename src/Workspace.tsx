@@ -32,6 +32,7 @@ import {
   normalizedNoteTags,
   statuses,
   statusSchema,
+  type Attendance,
   type LedgerEvent,
   type Payload,
   type Status,
@@ -48,6 +49,7 @@ import {
 } from './queryState'
 import { AttendanceChartExport } from './AttendanceChartExport'
 import { SummaryInsights } from './SummaryInsights'
+import type { NotebookSummary } from './notebookSummary'
 import { CourseReadiness } from './CourseReadiness'
 import { courseAttendance, effectiveGradeResult } from '../shared/courseGrading'
 import { NotebookDashboard } from './NotebookDashboard'
@@ -61,6 +63,7 @@ import type { CachedAccess } from './offlineAccess'
 import { AdminReplicaProvider } from './useRoleReplica'
 import { GradeSyncNotice } from './gradeSyncNotice'
 import { NeonAuth } from './NeonAuth'
+import type { NotebookFocus } from './neon'
 import { WorkspaceLoading } from './WorkspaceLoading'
 import { AdminConsole } from './AdminConsole'
 import { InvitationMessageViewer } from './InvitationMessageViewer'
@@ -77,6 +80,26 @@ type Projection = ReturnType<typeof projectEvents>
 type Save = (payloads: Payload[]) => Promise<boolean>
 
 const maximumBirthYear = new Date().getFullYear()
+
+function administratorNotebookFocus(
+  query: ReturnType<typeof useQueryState>,
+): NotebookFocus | undefined {
+  if (query.view === 'history' || (query.view === 'courses' && query.courseView === 'history'))
+    return { kind: 'history', course: query.course, student: query.student, before: query.before }
+  if (query.view === 'student' && query.student) return { kind: 'student', student: query.student }
+  if (query.view === 'changes' || (query.view === 'add-student' && query.courseView === 'students'))
+    return { kind: 'catalog' }
+  if (query.view === 'courses') {
+    return query.courseView === 'grades' && query.course
+      ? { kind: 'summary', course: query.course }
+      : { kind: 'catalog' }
+  }
+  if (query.view !== 'notebook') return
+  if (query.tab === 'summary' || (query.tab === 'roster' && query.course))
+    return { kind: 'summary', course: query.course }
+  if (query.tab === 'roster') return { kind: 'register' }
+  return { kind: 'session', date: query.date, course: query.course }
+}
 
 export default function Workspace({ goHome }: { goHome: () => void }) {
   const query = useQueryState()
@@ -181,6 +204,7 @@ export default function Workspace({ goHome }: { goHome: () => void }) {
             neon={{ userId, teacher: account }}
             cached={cached}
             notebookView={!administratorSettings || Boolean(newStudentCourse)}
+            focus={administrator ? administratorNotebookFocus(query) : undefined}
           >
             {content}
           </StaffReplicaProvider>
@@ -296,6 +320,7 @@ function Notebook({
     !query.course
   const includeInactive = fullRegister || (history && administrator)
   const baseProjection = useMemo(() => projectEvents(ledger.events), [ledger.events])
+  const historyPage = ledger.focus?.kind === 'history' ? ledger.focus : undefined
   const selectedCourse = ledger.courses.find((course) => course.id === query.course)
   const closedCourse = selectedCourse?.open === false ? selectedCourse : undefined
   const selectedEnrollments = useMemo(
@@ -304,6 +329,8 @@ function Notebook({
   )
   const activeEnrollments = selectedEnrollments.filter((entry) => entry.active)
   const scopedProjection = useMemo(() => {
+    if (historyPage)
+      return { ...baseProjection, reversed: new Set(historyPage.reversedIds), invalidReversals: 0 }
     const selectedIds = new Set(selectedEnrollments.map((entry) => entry.id))
     const byId = new Map(baseProjection.events.map((event) => [event.id, event]))
     const events = baseProjection.events.filter((event) => {
@@ -317,7 +344,7 @@ function Notebook({
       )
     })
     return projectEvents(events)
-  }, [baseProjection, selectedEnrollments, query.course])
+  }, [baseProjection, historyPage, selectedEnrollments, query.course])
   const activeStudents = new Set(activeEnrollments.map((entry) => entry.studentId))
   const enrolledStudents = new Set(selectedEnrollments.map((entry) => entry.studentId))
   const courseStudents = ledger.roster.filter((student) =>
@@ -637,7 +664,11 @@ function Notebook({
                 (student) => student.active && student.studentId === entry.studentId,
               ),
             )}
-            events={ledger.events}
+            attendance={
+              ledger.focus?.kind === 'summary'
+                ? ledger.focus.summary.attendance
+                : baseProjection.attendance
+            }
             refreshAfterWrite={ledger.refreshAfterWrite}
             defaultCourse={preference.defaultCourse}
             chooseDefault={preference.chooseDefault}
@@ -699,6 +730,11 @@ function Notebook({
                     enrollments={selectedEnrollments}
                     students={ledger.roster}
                     attendance={scopedProjection.attendance}
+                    recordedEnrollmentIds={
+                      ledger.focus?.kind === 'session'
+                        ? ledger.focus.recordedEnrollmentIds
+                        : undefined
+                    }
                     onGrades={() => setQuery({ view: 'courses', courseView: 'grades' }, true)}
                   />
                 )}
@@ -836,7 +872,11 @@ function Notebook({
                 enrollments={selectedEnrollments}
                 courses={ledger.courses}
                 allEnrollments={ledger.enrollments}
-                attendance={(query.course ? scopedProjection : baseProjection).attendance}
+                attendance={
+                  ledger.focus?.kind === 'summary' || ledger.focus?.kind === 'register'
+                    ? ledger.focus.summary.attendance
+                    : (query.course ? scopedProjection : baseProjection).attendance
+                }
                 onOpenStudent={openStudent}
               />
             )}
@@ -845,6 +885,7 @@ function Notebook({
                 key={query.course}
                 students={projected.students}
                 projected={projected}
+                summary={ledger.focus?.kind === 'summary' ? ledger.focus.summary : undefined}
                 scope={
                   selectedCourse?.name ||
                   (language === 'ar' ? 'السجل السابق / بلا دورة' : 'Previous / no course')
@@ -858,6 +899,7 @@ function Notebook({
                 students={students}
                 save={ledger.save}
                 inSettings={administrator}
+                page={historyPage}
               />
             )}
           </fieldset>
@@ -1793,7 +1835,7 @@ function RosterView({
   enrollments: import('../shared/neon').Enrollment[]
   courses: import('../shared/neon').Course[]
   allEnrollments: import('../shared/neon').Enrollment[]
-  attendance: Projection['attendance']
+  attendance: { value: Attendance }[]
 }) {
   const { t, language } = useLanguage()
   const ar = language === 'ar'
@@ -1804,6 +1846,16 @@ function RosterView({
   const exportPopup = useRef<HTMLDivElement>(null)
   const exportTrigger = useRef<HTMLButtonElement>(null)
   const [exportErrorCourse, setExportErrorCourse] = useState<string | null>(null)
+  const attendanceCounts = useMemo(() => {
+    const counts = new Map<string, { present: number; total: number }>()
+    for (const { value } of attendance) {
+      const count = counts.get(value.studentId) ?? { present: 0, total: 0 }
+      count.total++
+      if (value.status === 'present') count.present++
+      counts.set(value.studentId, count)
+    }
+    return counts
+  }, [attendance])
   const exportRoster = async (download: () => void | Promise<void>) => {
     if (!selectedCourse) return
     exportPopup.current?.hidePopover()
@@ -1832,15 +1884,13 @@ function RosterView({
       id: 'attendance',
       label: ar ? 'الحضور' : 'Attendance',
       value: (s) => {
-        const rows = attendance.filter(({ value }) => value.studentId === s.studentId)
-        return rows.length
-          ? (rows.filter(({ value }) => value.status === 'present').length / rows.length) * 100
-          : null
+        const count = attendanceCounts.get(s.studentId)
+        return count ? (count.present / count.total) * 100 : null
       },
       filterText: (s) => {
-        const rows = attendance.filter(({ value }) => value.studentId === s.studentId)
-        return rows.length
-          ? `${((rows.filter(({ value }) => value.status === 'present').length / rows.length) * 100).toFixed(1)}%`
+        const count = attendanceCounts.get(s.studentId)
+        return count
+          ? `${((count.present / count.total) * 100).toFixed(1)}%`
           : ar
             ? 'غير مسجل'
             : 'Not recorded'
@@ -2246,20 +2296,39 @@ function TeacherStudentForm({
 function Summary({
   students,
   projected,
+  summary,
   scope,
 }: {
   students: Student[]
   projected: Projection
+  summary?: NotebookSummary
   scope: string
 }) {
   const { t } = useLanguage()
   const totals = new Map(
     students.map((student) => [student.studentId, { present: 0, absent: 0, excused: 0, notes: 0 }]),
   )
-  const records = projected.attendance.filter(({ value }) => totals.has(value.studentId))
+  const attendance = summary
+    ? new Map(summary.attendance.map((record) => [attendanceScopeKey(record.value), record]))
+    : undefined
+  if (attendance) {
+    for (const [key, { value }] of projected.attendanceVersions) {
+      if (value) attendance.set(key, { value })
+      else attendance.delete(key)
+    }
+  }
+  const records = (attendance ? [...attendance.values()] : projected.attendance).filter(
+    ({ value }) => totals.has(value.studentId),
+  )
   for (const { value } of records) {
     const counts = totals.get(value.studentId)
     if (counts) counts[value.status]++
+  }
+  if (summary) {
+    for (const [studentId, count] of summary.noteCounts) {
+      const counts = totals.get(studentId)
+      if (counts) counts.notes = count
+    }
   }
   for (const { value } of projected.notes) {
     const counts = totals.get(value.studentId)
@@ -2326,11 +2395,13 @@ function History({
   students,
   save,
   inSettings,
+  page,
 }: {
   projected: Projection
   students: Student[]
   save: Save
   inSettings: boolean
+  page?: { nextBefore: string | null }
 }) {
   const { t, language } = useLanguage()
   const [target, setTarget] = useState('')
@@ -2340,7 +2411,7 @@ function History({
   const ids = new Set(students.map((student) => student.studentId))
   const visible = projected.events.filter((event) => {
     const payload = event.payload
-    if (query.student) {
+    if (query.student && !page) {
       if (payload.kind === 'reversal') {
         const target = projected.events.find((item) => item.id === payload.targetId)
         return (
@@ -2362,6 +2433,25 @@ function History({
   return (
     <section className="panel">
       <Heading className="title">{t('History & corrections')}</Heading>
+      {page && (query.q || query.group || query.student) && (
+        <label className="block max-w-md mt-3">
+          {language === 'ar' ? 'ابحث في السجل الكامل باسم الطالب' : 'Search all history by student'}
+          <select
+            value={query.student}
+            onChange={(event) => {
+              const student = event.target.value
+              setQuery(student ? { student } : { student: '', q: '', group: '' })
+            }}
+          >
+            <option value="">{language === 'ar' ? 'اختر طالبًا' : 'Choose a student'}</option>
+            {students.map((student) => (
+              <option key={student.studentId} value={student.studentId}>
+                {student.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <p className="muted mt-2 mb-6">
         {t(
           'Undo appends a correction. The original stays in the record. Undoing the latest attendance restores the previous status.',
@@ -2467,6 +2557,26 @@ function History({
           </li>
         ))}
       </ol>
+      {page && (query.before || page.nextBefore) && (
+        <nav
+          className="mt-4 flex flex-wrap gap-2"
+          aria-label={language === 'ar' ? 'صفحات السجل' : 'History pages'}
+        >
+          {query.before && (
+            <button className="secondary" onClick={() => setQuery({ before: '' }, true)}>
+              {language === 'ar' ? 'أحدث السجلات' : 'Newest records'}
+            </button>
+          )}
+          {page.nextBefore && (
+            <button
+              className="secondary"
+              onClick={() => setQuery({ before: page.nextBefore ?? '' }, true)}
+            >
+              {language === 'ar' ? 'سجلات أقدم' : 'Older records'}
+            </button>
+          )}
+        </nav>
+      )}
     </section>
   )
 }

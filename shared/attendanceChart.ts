@@ -1,9 +1,8 @@
-﻿import type { projectEvents, Student } from './ledger'
+import type { Attendance, Student } from './ledger'
 
-type Attendance = ReturnType<typeof projectEvents>['attendance']
 export const studentsPerChart = 6
 
-export function attendanceChartRows(students: Student[], attendance: Attendance) {
+export function attendanceChartRows(students: Student[], attendance: { value: Attendance }[]) {
   const counts = new Map<string, { present: number; total: number }>()
   for (const { value } of attendance) {
     const count = counts.get(value.studentId) ?? { present: 0, total: 0 }

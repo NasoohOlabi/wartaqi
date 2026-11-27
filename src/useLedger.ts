@@ -21,7 +21,12 @@ import { assignedEvents, validateAssignedPayloads } from '../shared/roster'
 import {
   apiUrl,
   getNotebook,
+  getNotebookView,
+  savesNetworkData,
+  type NotebookFocus,
+  type NotebookView,
   postEvents,
+  postCorrections,
   NeonRequestError,
   InvalidNotebookSnapshotError,
 } from './neon'
@@ -93,6 +98,7 @@ export function useLedger(
   neon: { userId: string; teacher: NeonTeacher },
   startOffline = false,
   enabled = true,
+  focus?: NotebookFocus,
 ) {
   const { t, language } = useLanguage()
   const neonUserId = neon.userId
@@ -117,8 +123,19 @@ export function useLedger(
   const [offlinePrepared, setOfflinePrepared] = useState(false)
   const [offlinePendingCount, setOfflinePendingCount] = useState(0)
   const [offlineNeedsReview, setOfflineNeedsReview] = useState(false)
-  const confirmed = useRef<NeonSnapshot | undefined>(undefined)
+  const confirmed = useRef<NotebookView | undefined>(undefined)
   const persisted = useRef<NeonSnapshot | undefined>(undefined)
+  const confirmedFocusKey = useRef<string | undefined>(undefined)
+  const completeRead = useRef<{ controller: AbortController; timer: number } | undefined>(undefined)
+  const focusKey = focus ? JSON.stringify(focus) : undefined
+  const requestedFocus = useRef({ key: focusKey, value: focus })
+  const [focused, setFocused] = useState<{
+    key: string
+    value: NonNullable<NotebookView['focus']>
+  }>()
+  useLayoutEffect(() => {
+    requestedFocus.current = { key: focusKey, value: focus }
+  })
   const visibleScope = useRef<string | null>(null)
   const syncWriting = useRef(false)
   const active = useRef<object | null>(null)
@@ -132,6 +149,12 @@ export function useLedger(
   const offlineRef = useRef(startOffline)
   const [invalidSnapshot, setInvalidSnapshot] = useState(false)
   const invalid = 0
+  const stopCompleteRead = useCallback(() => {
+    if (!completeRead.current) return
+    window.clearTimeout(completeRead.current.timer)
+    completeRead.current.controller.abort()
+    completeRead.current = undefined
+  }, [])
   const applySnapshot = useCallback((snapshot: NeonSnapshot) => {
     setSnapshotTeacher(snapshot.teacher)
     setEvents(snapshot.events)
@@ -193,19 +216,39 @@ export function useLedger(
     setOfflineNeedsReview([...attendance, ...students].some(({ outcome }) => outcome !== null))
     setOfflinePrepared(Boolean(cached))
     const base = visibleScope.current === key ? confirmed.current : undefined
-    if (cached && (!base || persisted.current === base)) {
+    const currentFocus = base?.focus && confirmedFocusKey.current === requestedFocus.current.key
+    if (
+      cached &&
+      (!base || persisted.current === base || (base.focus && offlineRef.current && !currentFocus))
+    ) {
       const local = offlineNotebook(cached, lease?.teacher ?? neon.teacher, attendance, students)
       // Invitation profiles belong to the live response only.
       visibleScope.current = key
+      setFocused(undefined)
       applySnapshot(base ? { ...local, teacher: base.teacher } : local)
-    } else if (base && (!offlineRef.current || hasAccess) && visibleScope.current === key) {
+    } else if (
+      base &&
+      (!base.focus || currentFocus) &&
+      (!offlineRef.current || hasAccess) &&
+      visibleScope.current === key
+    ) {
+      const focusKey = confirmedFocusKey.current
+      if (base.focus && focusKey) setFocused({ key: focusKey, value: base.focus })
       applySnapshot(overlayNotebook(base, attendance, students))
     }
-    return Boolean(base || cached)
+    return Boolean(cached || (base && (!base.focus || currentFocus)))
   }, [neonUserId, neon.teacher, applySnapshot])
 
-  async function accept(snapshot: NeonSnapshot, session: object, cacheKey: string) {
-    const isCurrent = () => active.current === session && snapshotKey(neonUserId) === cacheKey
+  async function accept(
+    snapshot: NotebookView,
+    session: object,
+    cacheKey: string,
+    viewKey?: string,
+  ) {
+    const isCurrent = () =>
+      active.current === session &&
+      snapshotKey(neonUserId) === cacheKey &&
+      (!snapshot.focus || requestedFocus.current.key === viewKey)
     if (!isCurrent()) return false
     if (
       !snapshot.teacher.canRead ||
@@ -231,6 +274,7 @@ export function useLedger(
       cacheKey = snapshotKey(neonUserId)
     }
     confirmed.current = snapshot
+    confirmedFocusKey.current = snapshot.focus ? viewKey : undefined
     visibleScope.current = cacheKey
     setInvalidSnapshot(false)
     connected.current = true
@@ -238,6 +282,7 @@ export function useLedger(
     setOffline(false)
     setOfflineExpired(false)
     setReadError('')
+    setFocused(snapshot.focus && viewKey ? { key: viewKey, value: snapshot.focus } : undefined)
     // Publish the authorized response even when browser storage is unavailable.
     try {
       const epoch = pendingEpoch.current
@@ -252,6 +297,7 @@ export function useLedger(
       if (isCurrent()) applySnapshot(snapshot)
     }
     if (!isCurrent()) return false
+    if (snapshot.focus) return true
     try {
       await cacheOfflineRoster(neonUserId, snapshot, cacheKey)
       if (!isCurrent()) return false
@@ -277,15 +323,55 @@ export function useLedger(
     if (!session) return Promise.resolve(false)
     const cacheKey = snapshotKey(neonUserId)
     const epoch = readEpoch.current
+    const view = requestedFocus.current
     const isCurrent = () => active.current === session && snapshotKey(neonUserId) === cacheKey
+    stopCompleteRead()
     const task = (async () => {
       try {
-        const snapshot = await getNotebook(neonUserId)
+        const started = performance.now()
+        const focus = confirmed.current && !confirmed.current.focus ? undefined : view.value
+        const snapshot = await getNotebookView(neonUserId, focus)
+        const rapid = performance.now() - started < 450
         if (!isCurrent() || locked.current || syncWriting.current || epoch !== readEpoch.current)
           return false
-        return await accept(snapshot, session, cacheKey)
+        const accepted = await accept(snapshot, session, cacheKey, view.key)
+        if (
+          accepted &&
+          snapshot.focus &&
+          rapid &&
+          !(view.value?.kind === 'history' && view.value.before) &&
+          !savesNetworkData() &&
+          document.visibilityState === 'visible'
+        ) {
+          const controller = new AbortController()
+          const stillCurrent = () =>
+            !controller.signal.aborted &&
+            isCurrent() &&
+            confirmed.current === snapshot &&
+            !locked.current &&
+            !syncWriting.current &&
+            epoch === readEpoch.current &&
+            requestedFocus.current.key === view.key
+          const timer = window.setTimeout(() => {
+            if (!stillCurrent()) {
+              if (completeRead.current?.controller === controller) completeRead.current = undefined
+              return
+            }
+            void getNotebookView(neonUserId, undefined, controller.signal)
+              .then((complete) => {
+                if (stillCurrent()) return accept(complete, session, cacheKey)
+              })
+              .catch(() => {})
+              .finally(() => {
+                if (completeRead.current?.controller === controller)
+                  completeRead.current = undefined
+              })
+          }, 750)
+          completeRead.current = { controller, timer }
+        }
+        return accepted
       } catch (cause) {
-        if (!isCurrent()) return false
+        if (!isCurrent() || requestedFocus.current.key !== view.key) return false
         if (cause instanceof NeonRequestError && (cause.status === 401 || cause.status === 403)) {
           if (cause.status === 403) clearOfflineAccess()
           confirmed.current = undefined
@@ -411,6 +497,29 @@ export function useLedger(
     refreshRef.current = requestRefresh
   })
   const refresh = useCallback((retryBlocked = false) => refreshRef.current(retryBlocked), [])
+  const previousFocus = useRef(focusKey)
+  useEffect(() => {
+    if (previousFocus.current === focusKey) return
+    previousFocus.current = focusKey
+    if (!enabled || (confirmed.current && !confirmed.current.focus)) return
+    let cancelled = false
+    void Promise.resolve(readInFlight.current).then(() => {
+      if (!cancelled && (!confirmed.current || confirmed.current.focus)) void refresh()
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [enabled, focusKey, refresh])
+  useEffect(() => {
+    const visibility = () => {
+      if (document.visibilityState !== 'visible') stopCompleteRead()
+    }
+    document.addEventListener('visibilitychange', visibility)
+    return () => {
+      stopCompleteRead()
+      document.removeEventListener('visibilitychange', visibility)
+    }
+  }, [stopCompleteRead])
   const refreshAfterWrite = useCallback(async () => {
     const session = active.current
     const cacheKey = snapshotKey(neonUserId)
@@ -553,6 +662,13 @@ export function useLedger(
         }
         setPending(batch)
         if (!neon.teacher.canWrite) throw new Error('Your account has read-only access.')
+        if (confirmed.current?.focus && batch.every(({ payload }) => payload.kind === 'reversal')) {
+          writeStarted = true
+          await postCorrections(neonUserId, batch)
+          if (!isCurrent()) return false
+          localStorage.removeItem(key)
+          return true
+        }
         const current = await getNotebook(neon.userId)
         if (!isCurrent()) return false
         applySnapshot(current)
@@ -579,6 +695,8 @@ export function useLedger(
         }
         if (!isCurrent()) return false
         confirmed.current = snapshot
+        confirmedFocusKey.current = undefined
+        setFocused(undefined)
         applySnapshot(snapshot)
         if (localGrant(neonUserId) || offlineAccess()?.userId === neonUserId)
           await cacheOfflineRoster(neonUserId, snapshot, cacheKey)
@@ -592,6 +710,7 @@ export function useLedger(
       })
       if (!saved) return false
       setPending([])
+      if (confirmed.current?.focus) queueMicrotask(() => void refreshAfterWrite())
       setMessage(`${batch.length} record${batch.length === 1 ? '' : 's'} saved.`)
       return true
     } catch (cause) {
@@ -663,7 +782,7 @@ export function useLedger(
             neonUserId,
             marks,
             notes,
-            observedMark === undefined ? cacheKey : undefined,
+            observedMark === undefined && !confirmed.current?.focus ? cacheKey : undefined,
           )
         } catch {
           throw new Error(
@@ -772,7 +891,11 @@ export function useLedger(
     }
   }
 
-  const scopedEvents = useMemo(() => assignedEvents(events, roster), [events, roster])
+  const historyPage = focused?.value.kind === 'history'
+  const scopedEvents = useMemo(
+    () => (historyPage ? events : assignedEvents(events, roster)),
+    [events, historyPage, roster],
+  )
   return {
     events: scopedEvents,
     roster,
@@ -781,7 +904,8 @@ export function useLedger(
     snapshotTeacher,
     pending,
     storageBlocked,
-    loaded,
+    loaded: loaded && (!focused || focused.key === focusKey),
+    focus: focused?.key === focusKey ? focused?.value : undefined,
     busy,
     error: readError || error,
     message,
