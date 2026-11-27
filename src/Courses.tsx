@@ -17,6 +17,7 @@ import {
 } from '@dnd-kit/react'
 import { useAdminBoardReplica } from './useRoleReplica'
 import {
+  ArrowRightLeft,
   Check,
   ClipboardList,
   Download,
@@ -53,33 +54,36 @@ type Board = ReturnType<typeof neonAdminBoardSchema.parse>
 
 type Draft = { id?: string; teacherId?: string }
 
+type GroupMoveMember = {
+  name: string
+  enrollmentId: Enrollment['id']
+  teacherId: Enrollment['teacherId']
+}
+
 function GroupMember({
   name,
   enrollmentId,
   teacherId,
-  options,
+  canMove,
   ar,
   disabled,
-  move,
-}: {
-  name: string
-  enrollmentId: string
-  teacherId: Enrollment['teacherId']
-  options: { teacherId: Enrollment['teacherId']; name: string }[]
+  openMove,
+}: GroupMoveMember & {
+  canMove: boolean
   ar: boolean
   disabled: boolean
-  move: (enrollmentId: string, teacherId: Enrollment['teacherId']) => void
+  openMove: (member: GroupMoveMember) => void
 }) {
   const { ref, handleRef, isDragging } = useDraggable({
     id: enrollmentId,
-    disabled: disabled || !options.length,
+    disabled: disabled || !canMove,
     data: { teacherId, name },
   })
-  const moveLabel = ar ? 'نقل إلى مجموعة' : 'Move to group'
+  const moveLabel = ar ? `نقل ${name} إلى مجموعة` : `Move ${name} to group`
   const dragLabel = `${ar ? 'اسحب الطالب' : 'Drag student'}: ${name}`
   return (
     <li ref={ref} className={`course-group-member${isDragging ? ' is-dragging' : ''}`}>
-      {options.length > 0 && (
+      {canMove && (
         <button
           ref={handleRef}
           type="button"
@@ -92,29 +96,19 @@ function GroupMember({
           <GripVertical size={18} aria-hidden="true" />
         </button>
       )}
-      <bdi className="min-w-0 [overflow-wrap:anywhere]">{name}</bdi>
-      {options.length > 0 && (
-        <select
-          className="min-h-11 min-w-0 max-w-full"
-          aria-label={`${moveLabel}: ${name}`}
-          value=""
+      <bdi className="min-w-0 flex-1 [overflow-wrap:anywhere]">{name}</bdi>
+      {canMove && (
+        <button
+          type="button"
+          className="secondary course-group-move"
+          aria-label={moveLabel}
+          aria-haspopup="dialog"
+          title={moveLabel}
           disabled={disabled}
-          onChange={(event) =>
-            move(enrollmentId, event.target.value === 'unassigned' ? null : event.target.value)
-          }
+          onClick={() => openMove({ name, enrollmentId, teacherId })}
         >
-          <option value="" disabled>
-            {moveLabel}
-          </option>
-          {options.map((destination) => (
-            <option
-              key={destination.teacherId ?? 'unassigned'}
-              value={destination.teacherId ?? 'unassigned'}
-            >
-              {destination.name}
-            </option>
-          ))}
-        </select>
+          <ArrowRightLeft size={18} aria-hidden="true" />
+        </button>
       )}
     </li>
   )
@@ -123,19 +117,19 @@ function GroupMember({
 function GroupSection({
   teacherId,
   group,
-  options,
+  canMove,
   ar,
   disabled,
-  move,
+  openMove,
   eligible,
 }: {
   teacherId: Enrollment['teacherId']
   eligible: boolean
   group: { name: string; members: { name: string; enrollmentId: string }[] }
-  options: { teacherId: Enrollment['teacherId']; name: string }[]
+  canMove: boolean
   ar: boolean
   disabled: boolean
-  move: (enrollmentId: string, teacherId: Enrollment['teacherId']) => void
+  openMove: (member: GroupMoveMember) => void
 }) {
   const { source } = useDragOperation()
   const { ref, isDropTarget } = useDroppable({
@@ -157,7 +151,7 @@ function GroupSection({
           {group.members.map(({ name, enrollmentId }) => (
             <GroupMember
               key={enrollmentId}
-              {...{ name, enrollmentId, teacherId, options, ar, disabled, move }}
+              {...{ name, enrollmentId, teacherId, canMove, ar, disabled, openMove }}
             />
           ))}
         </ul>
@@ -181,6 +175,17 @@ function CourseGroups({
   disabled: boolean
   move: (enrollmentId: string, teacherId: Enrollment['teacherId']) => void
 }) {
+  const [member, setMember] = useState<GroupMoveMember | null>(null)
+  const dialogRef = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (dialog && !dialog.open) dialog.showModal()
+  }, [member])
+  function closeMove() {
+    dialogRef.current?.close()
+    setMember(null)
+  }
+
   const unassigned = ar ? 'غير معيّن' : 'Unassigned'
   const groups = new Map<
     Enrollment['teacherId'],
@@ -227,11 +232,49 @@ function CourseGroups({
       {visibleGroups.map(([teacherId, group]) => (
         <GroupSection
           key={teacherId ?? 'unassigned'}
-          {...{ teacherId, group, ar, disabled, move }}
+          {...{ teacherId, group, ar, disabled }}
+          openMove={setMember}
           eligible={destinations.some((destination) => destination.teacherId === teacherId)}
-          options={destinations.filter((destination) => destination.teacherId !== teacherId)}
+          canMove={destinations.some((destination) => destination.teacherId !== teacherId)}
         />
       ))}
+      {member && (
+        <dialog
+          ref={dialogRef}
+          className="grade-dialog course-group-move-dialog rounded-xl border border-[var(--dark-border,#cde1df)]"
+          aria-labelledby="group-move-title"
+          dir={ar ? 'rtl' : 'ltr'}
+          onCancel={(event) => {
+            event.preventDefault()
+            closeMove()
+          }}
+        >
+          <h2 id="group-move-title" className="text-lg font-semibold [overflow-wrap:anywhere]">
+            {ar ? 'نقل' : 'Move'} <bdi>{member.name}</bdi> {ar ? 'إلى مجموعة' : 'to group'}
+          </h2>
+          <div className="course-group-destinations">
+            {destinations
+              .filter((destination) => destination.teacherId !== member.teacherId)
+              .map((destination) => (
+                <button
+                  key={destination.teacherId ?? 'unassigned'}
+                  type="button"
+                  className="secondary"
+                  disabled={disabled}
+                  onClick={() => {
+                    closeMove()
+                    move(member.enrollmentId, destination.teacherId)
+                  }}
+                >
+                  <bdi>{destination.name}</bdi>
+                </button>
+              ))}
+          </div>
+          <button type="button" className="secondary justify-self-end" onClick={closeMove}>
+            {ar ? 'إلغاء' : 'Cancel'}
+          </button>
+        </dialog>
+      )}
       <DragOverlay className="course-group-overlay">
         {(source) => <bdi>{typeof source.data?.name === 'string' ? source.data.name : ''}</bdi>}
       </DragOverlay>
