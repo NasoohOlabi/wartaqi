@@ -2520,6 +2520,8 @@ At 11:06 Asia/Damascus, the mobile navigation integration passed its full releas
 
 At 11:16 Asia/Damascus, hosted browser shard 1 caught the course preference test clicking a cached administrator menu while the synthetic account changed to Teacher. Holding the grant response reproduced the same missing menu item. The test now waits for the current role's navigation before opening the course chooser. The forced transition and the full course preference scenario each passed twice on desktop and twice on mobile. The dashboard integration's local release gate also passed with 167 unit and integration tests and 247 browser cases.
 
+At 11:23 Asia/Damascus, shard 2 exposed a single-status assumption in the Arabic mobile layout test. Holding the attendance request reproduced the two simultaneous messages. The test now checks the Arabic local-save confirmation and pending changes action before releasing the request, and the Arabic server acknowledgment afterward. The complete scenario passed twice on each Chromium project.
+
 ## 2026-11-27 10:48 Asia/Damascus — Fit six follow-up dates in one row
 
 The owner reported wasted space in the follow-up date cards at 662px. The dashboard sizes each card to its localized label and wraps cards when they no longer fit on a row.

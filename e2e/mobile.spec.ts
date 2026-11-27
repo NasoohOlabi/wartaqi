@@ -118,8 +118,20 @@ test('phone layouts keep every notebook view usable in English and Arabic', asyn
     .getByLabel(`الحضور للطالب ${longName}`)
     .getByRole('button', { name: 'غائب', exact: true })
     .click()
-  await page.getByRole('button', { name: 'حفظ الحضور (1)', exact: true }).click()
-  await expect(page.getByRole('status')).not.toContainText('saved')
+  const delivery = Promise.withResolvers<void>()
+  await page.route('**/api/attendance/sync', async (route) => {
+    await delivery.promise
+    await route.fallback()
+  })
+  const status = page.getByRole('status')
+  try {
+    await page.getByRole('button', { name: 'حفظ الحضور (1)', exact: true }).click()
+    await expect(status.filter({ hasText: 'حُفظت على هذا الجهاز. بانتظار المزامنة.' })).toBeVisible()
+    await expect(status.getByRole('button', { name: 'تغييراتي', exact: true })).toBeVisible()
+  } finally {
+    delivery.resolve()
+  }
+  await expect(status.filter({ hasText: 'قبلت وارتقِ التغييرات.' })).toBeVisible()
   await page
     .getByRole('row')
     .filter({ hasText: longName })
