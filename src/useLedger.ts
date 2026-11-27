@@ -417,6 +417,14 @@ export function useLedger(
     refreshRef.current = requestRefresh
   })
   const refresh = useCallback((retryBlocked = false) => refreshRef.current(retryBlocked), [])
+  const refreshAfterWrite = useCallback(async () => {
+    const session = active.current
+    const cacheKey = snapshotKey(neonUserId)
+    // The in-flight snapshot may have started before the write committed.
+    await readInFlight.current
+    if (active.current !== session || snapshotKey(neonUserId) !== cacheKey) return false
+    return refresh()
+  }, [neonUserId, refresh])
 
   const onQueueChange = useEffectEvent(() => {
     void loadOffline()
@@ -806,6 +814,7 @@ export function useLedger(
     offlineNeedsReview,
     saveStudentProfile,
     refresh,
+    refreshAfterWrite,
     save,
     retry: () => (storageBlocked ? Promise.resolve(false) : send(pending, true)),
     discard,

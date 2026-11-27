@@ -164,6 +164,7 @@ async function setupCourses(page: Page) {
   const attemptedCourseIds: string[] = []
   const assignments: EnrollmentAssignment[] = []
   let assignmentGate: Promise<void> | undefined
+  let holdNotebook: (() => Promise<void>) | undefined
   let failAssignment = false
   let dropCourseResponse = true
   let identity: string | null = teacherId
@@ -350,15 +351,21 @@ async function setupCourses(page: Page) {
       return route.fulfill({
         json: acceptSyntheticSync(path, route.request().postDataJSON(), events),
       })
-    return route.fulfill({
-      json: {
-        teacher: { ...teacher, id: administratorId },
-        students,
-        courses,
-        enrollments,
-        events,
-      },
-    })
+    const snapshot = {
+      teacher: { ...teacher, id: administratorId },
+      students,
+      courses,
+      enrollments,
+      events,
+    }
+    if (path === '/api/notebook' && holdNotebook) {
+      const captured = structuredClone(snapshot)
+      const wait = holdNotebook
+      holdNotebook = undefined
+      await wait()
+      return route.fulfill({ json: captured })
+    }
+    return route.fulfill({ json: snapshot })
   })
   const savedToast = page.getByRole('status').filter({ hasText: /^(Saved|تم الحفظ)$/ })
   return {
@@ -375,6 +382,15 @@ async function setupCourses(page: Page) {
     signInAs: (userId: string, adminId: string) => {
       identity = userId
       administratorId = adminId
+    },
+    holdNextNotebook: () => {
+      const captured = Promise.withResolvers<void>()
+      const release = Promise.withResolvers<void>()
+      holdNotebook = () => {
+        captured.resolve()
+        return release.promise
+      }
+      return { captured: captured.promise, release: release.resolve }
     },
     holdNextAssignment: () => {
       let release = () => {}
@@ -546,7 +562,10 @@ test('course sections and Settings keep their place in the workspace', async ({
   await expect(studentLink).toHaveCSS('text-decoration-line', 'underline')
   await studentLink.click()
   await expect(nav.getByRole('button', { name: 'Courses' })).toHaveAttribute('aria-current', 'page')
+  await page.getByRole('button', { name: 'General info', exact: true }).click()
+  await expect(page).toHaveURL(/course=none/)
   await page.getByRole('button', { name: 'Back to students' }).click()
+  await expect(page).toHaveURL(new RegExp(`course=${courseA}`))
   await expect(search).toHaveValue('Synthetic')
   await grades.click()
   await expect(grades).toHaveAttribute('aria-current', 'page')
@@ -591,6 +610,151 @@ test('course sections and Settings keep their place in the workspace', async ({
   const settingsFrame = await main.boundingBox()
   expect(settingsFrame?.x).toBe(frame?.x)
   expect(settingsFrame?.width).toBe(frame?.width)
+})
+
+test('student profiles explain missing enrollment and open general information', async ({
+  page,
+}, testInfo) => {
+  const { courses, enrollments, events } = await setupCourses(page)
+  const missingCourseId = '30000000-0000-4000-8000-000000000003'
+  const missingCourseName = 'A long course name for a student without an enrollment'
+  const numberedCourseId = '30000000-0000-4000-8000-000000000004'
+  const numberedCourseName = 'وارتق 6'
+  courses.push(
+    { id: missingCourseId, name: missingCourseName, open: true },
+    { id: numberedCourseId, name: numberedCourseName, open: true },
+  )
+  enrollments[1].active = false
+  events.push({
+    id: '50000000-0000-4000-8000-000000000001',
+    actor: 'Admin',
+    clientTime: '2026-01-01T12:00:00Z',
+    receivedAt: '',
+    payload: {
+      kind: 'attendance',
+      studentId,
+      enrollmentId: enrollB,
+      date: '2026-01-01',
+      status: 'present',
+    },
+  })
+  const mobile = testInfo.project.name === 'mobile'
+  await page.setViewportSize({ width: mobile ? 320 : 1440, height: 850 })
+  await page.goto('/?page=app')
+  await makeCurrent(page, 'Course A')
+  const profileUrl = `/?page=app&view=student&tab=roster&student=${studentId}`
+  const profile = page.locator('.student-details')
+  const name = profile.locator('.student-detail-name')
+  const level = profile.locator('.student-detail-level')
+  const history = profile.locator('.student-details-history')
+  const header = page.locator('.workspace-brand')
+  for (const ar of [false, true]) {
+    await page.evaluate(
+      (language) => localStorage.setItem('halaqa-language-preference', language),
+      ar ? 'ar' : 'en',
+    )
+    await page.goto(`${profileUrl}&course=${courseA}`)
+    const clear = header.getByRole('button', {
+      name: ar ? 'المعلومات العامة' : 'General info',
+      exact: true,
+    })
+    const missingEnrollment = ar ? /الطالب غير مسجل في الدورة/ : /Student is not enrolled in/
+    await expect(name).toHaveText('Synthetic Student')
+    await expect(profile.getByText(missingEnrollment)).toHaveCount(0)
+    await expect(clear).toBeVisible()
+
+    await page.goto(`${profileUrl}&course=${courseB}`)
+    await expect(profile.getByText(missingEnrollment)).toContainText('Course B')
+    await expect(level).toContainText('Advanced')
+    await expect(history.getByText('Course B', { exact: true })).toBeVisible()
+
+    await page.goto(`${profileUrl}&course=${missingCourseId}`)
+    await expect(profile.getByText(missingEnrollment)).toContainText(missingCourseName)
+    await expect(history.getByText('Course B', { exact: true })).toHaveCount(0)
+    await expect(clear).toBeInViewport({ ratio: 1 })
+    const target = await clear.boundingBox()
+    expect(target?.width).toBeGreaterThanOrEqual(44)
+    expect(target?.height).toBeGreaterThanOrEqual(44)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
+      true,
+    )
+
+    await page.goto(`${profileUrl}&course=${numberedCourseId}`)
+    await expect(profile.getByText(missingEnrollment)).toContainText(numberedCourseName)
+    await expect(clear).toBeInViewport({ ratio: 1 })
+    const logo = await header.locator('.wartaq-logo').boundingBox()
+    const badge = await header.locator('.workspace-course-name span').boundingBox()
+    if (!logo || !badge) throw new Error('Missing wordmark or course badge')
+    expect(Math.abs(logo.y + logo.height / 2 - badge.y - badge.height / 2)).toBeLessThanOrEqual(1)
+    if (mobile) {
+      const back = await expectMobileBack(page, ar ? 'العودة إلى الطلاب' : 'Back to students')
+      await expect(back).toBeVisible()
+    }
+    await mkdir('.artifacts/verification', { recursive: true })
+    await page.screenshot({
+      path: `.artifacts/verification/student-enrollment-${testInfo.project.name}-${ar ? 'ar' : 'en'}.png`,
+      scale: 'css',
+    })
+    await clear.click()
+    await expect(page).toHaveURL(new RegExp(`view=student.*student=${studentId}.*course=none`))
+    await expect(header.getByLabel(ar ? 'تغيير الدورة' : 'Change course')).toBeFocused()
+    await expect(name).toHaveText('Synthetic Student')
+    await expect(level).toContainText('Roster level')
+    await history.locator('summary').click()
+    await expect(history.getByText('Course B', { exact: true })).toBeVisible()
+    await expect(profile.getByText(missingEnrollment)).toHaveCount(0)
+    await expect(clear).toHaveCount(0)
+    await page.reload()
+    await expect(level).toContainText('Roster level')
+  }
+  await page.goto('/?page=app')
+  await expect(page).toHaveURL(new RegExp(`course=${courseA}`))
+  expect(events).toHaveLength(1)
+})
+
+test('threshold saves refresh after an older grade read', async ({ page }) => {
+  const { events, holdNextNotebook } = await setupCourses(page)
+  for (const [day, status] of [
+    ['01', 'present'],
+    ['02', 'absent'],
+  ] as const) {
+    events.push({
+      id: `50000000-0000-4000-8000-0000000000${day}`,
+      actor: 'Admin',
+      clientTime: '2026-01-01T12:00:00Z',
+      receivedAt: '',
+      payload: {
+        kind: 'attendance',
+        studentId,
+        enrollmentId: enrollA,
+        date: `2026-01-${day}`,
+        status,
+      },
+    })
+  }
+  await page.goto(`/?page=app&view=courses&courseView=grades&course=${courseA}`)
+  const row = page.getByRole('row').filter({ hasText: 'Synthetic' })
+  await page.getByLabel('Theory: Synthetic Student').fill('80')
+  await page.getByLabel('Practical: Synthetic Student').fill('80')
+  const oldRead = holdNextNotebook()
+  try {
+    await row.getByRole('button', { name: 'Save grades' }).click()
+    await oldRead.captured
+    await page.getByLabel('Minimum attendance %').fill('50')
+    const saved = page.waitForResponse('**/api/admin/courses/settings')
+    await page.getByRole('button', { name: 'Save thresholds' }).click()
+    expect(await (await saved).json()).toEqual({ saved: true })
+    // Let the client handle the write acknowledgement while the older snapshot is held.
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    )
+  } finally {
+    oldRead.release()
+  }
+  await expect(row.locator('td[data-label="Result"] div > span').first()).toHaveText('Pass')
 })
 
 test('mobile course subpages put All courses in the app bar', async ({ page }, testInfo) => {
