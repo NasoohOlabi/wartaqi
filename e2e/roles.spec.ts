@@ -27,7 +27,7 @@ async function expectSettingsLayout(navigation: Locator, rtl: boolean) {
       return { top, width, height, right, left, viewport: innerWidth }
     }),
   )
-  expect(boxes).toHaveLength(5)
+  expect(boxes).toHaveLength(4)
   for (const [index, box] of boxes.entries()) {
     expect(box.width).toBeGreaterThanOrEqual(44)
     expect(box.height).toBeGreaterThanOrEqual(44)
@@ -486,7 +486,6 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     'Accounts',
     'Students',
     'History & corrections',
-    'Diagnostics',
     'Telegram',
   ])
   const accountsSection = settingsSections.getByRole('link', { name: 'Accounts' })
