@@ -142,9 +142,6 @@
 :root[data-theme='dark'] .dashboard-mark-absent {
   border-block-start-color: var(--dark-absent);
 }
-:root[data-theme='dark'] .dashboard-mark-absent span {
-  color: var(--dark-absent);
-}
 :root[data-theme='dark'] .dashboard-mark-excused {
   border-block-start-color: var(--dark-excused);
 }

@@ -2424,6 +2424,12 @@ The owner asked to see which weekday each absence fell on and to fit each card i
 
 The dashboard browser scenario checked date order, two-line layout and overflow at 320, 390, 430 and 1280px in English and Arabic. It used synthetic attendance records. The PR records release checks and Railway verification.
 
+## 2026-11-27 09:47 Asia/Damascus — Fit dashboard attendance cards on one line
+
+The owner asked to remove the visible status words from the follow-up cards. Each card shows the weekday and date on one line, with a red top border for Absent and a green top border for Present. Excused uses amber and unmarked uses a dashed border. Screen readers retain the localized status.
+
+The dashboard and theme browser checks passed with synthetic records. They cover date order, single-line fit at 320, 360, 390, 430 and 1280px in English and Arabic, status colors, and screen-reader text. The PR records the full release checks and Railway verification.
+
 ## 2026-11-27 08:43 Asia/Damascus — Move mobile student Back into the top app bar
 
 The owner asked for Android-standard placement on the Arabic student profile. The mobile top app bar now shows a 48px Back control at the leading edge, on the right in Arabic and the left in English. Its direction, accessible label, tooltip and return destination follow the current language and student entry path. The desktop profile keeps its labelled Back control.
@@ -2466,4 +2472,10 @@ Synthetic browser checks cover English and Arabic on desktop and at 320, 390 and
 
 The owner reported that Edit and Refresh took a separate row on the Arabic Student information page. The pencil now has a localized accessible name and tooltip, and both icons share the title row. The shared workspace header also keeps the student portal controls beside My attendance. The narrow student profile keeps the labeled Take attendance and Add note actions beside their section headings.
 
-Branch discovery found the merged profile, Back and roster updates on main. The open dashboard and roster birth-year PRs address adjacent layouts. Synthetic Chromium checks cover phone and desktop row geometry in English and Arabic, the 360px Arabic course profile and its Refresh action, and student portal sorting and filtering. The supplied production link requires sign-in. The PR records release and Railway verification.
+Branch discovery found the merged profile, Back and roster updates on main. The dashboard, roster birth-year and export PRs address adjacent layouts. `bun run verify:release` passed with 229 browser checks. Synthetic Chromium checks cover phone and desktop row geometry in English and Arabic, the 360px Arabic course profile and its Refresh action, and student portal sorting and filtering. The supplied production link requires sign-in. The PR records Railway verification.
+
+## 2026-11-27 10:07 Asia/Damascus — Shorten GitHub Actions validation
+
+The owner asked for faster CI on GitHub Free. A sampled PR took 7m 52s and a main run took 8m 1s. Playwright used more than six minutes in both runs. The core checks and three Playwright shards now run on standard Linux runners in parallel. `Verify` requires all jobs to pass, and new commits cancel older runs of the same PR. Each main commit gets its own run for Railway's Wait for CI. Each shard publishes an HTML report with traces retained for failed tests.
+
+Playwright discovery found 78, 81 and 73 cases in the shards. The combined cases exactly matched all 232 cases in the unsharded desktop and mobile suite. Actionlint and `bun run verify` passed. The required check's shell condition passed only when both prerequisites succeeded across all 16 combinations of success, failure, cancellation and skip. GitHub run timings and exact-commit Railway verification are recorded in the PR.

@@ -11,6 +11,8 @@ bun run verify:release
 
 `bun install` enables Husky hooks. The secret scanner bootstrap downloads pinned Gitleaks 8.30.1 and checks its release SHA-256. Pre-commit formats staged files, scans staged changes, typechecks, tests and lints. Pre-push verifies the build and scans all local Git history. Missing scanners fail closed. CI also runs Ruff formatting, Python lint, the workbook preparation tests and all database integration suites on disposable PostgreSQL databases. The lint gate covers repository JavaScript and TypeScript and fails on warnings and obsolete suppressions. CI independently repeats checks; local hooks are convenience gates, not a security boundary. Keep the `source-map-js` override until its parents resolve a patched version without it.
 
+GitHub Actions runs the core checks and three Playwright shards in parallel on standard Linux runners. `Verify` requires all four jobs to pass on PRs and on `main`. Each shard uploads its own HTML report and keeps failure traces. Run `bun run verify:ui --shard=1/3` to reproduce an individual shard locally, or omit `--shard` for the full browser suite.
+
 ## Atomic Git work
 
 The release audit is `bun run security:audit`; see [Security](SECURITY.md) for the pinned picomatch backport and its checked, advisory-specific exception. Use Bun 1.3.0 to match CI and Docker.
