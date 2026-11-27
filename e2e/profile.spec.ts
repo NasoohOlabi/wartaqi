@@ -4,10 +4,10 @@ import { expect, test } from '@playwright/test'
 import { expectMobileBack } from './headerLayout'
 import { mkdir } from 'node:fs/promises'
 
-test('profile menu preserves attendance draft and dismisses', async ({ page }) => {
+test('profile menu preserves the attendance mark and dismisses', async ({ page }) => {
   await mockSyntheticNotebook(page)
   await page.goto('/?page=app')
-  await page.getByRole('button', { name: /Continue attendance/i }).click()
+  await page.getByRole('button', { name: 'Attendance', exact: true }).click()
   const attendance = page.getByRole('group', { name: / Omar$/ })
   await attendance.getByRole('button', { name: 'absent', exact: true }).click()
   const trigger = page.locator('.profile-trigger')

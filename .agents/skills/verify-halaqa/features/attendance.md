@@ -2,11 +2,11 @@
 
 ## Sub-features
 
-Present, Absent and Excused only; bulk marking of visible eligible unmarked students, calendar date, unmarked distinction and course-wide summary across all dates. Historical early/late marks display and count as Present while their raw events remain unchanged.
+Present, Absent and Excused save on tap. Attendance includes a session date, an unmarked filter and course-wide summary across all dates. Historical early/late marks display and count as Present while their raw events remain unchanged.
 
 ## How to get to it (user POV)
 
-Sign in to open the dashboard. Use **Take attendance** and choose an open course on Attendance to mark its enrolled students in name order. Resume a partly marked session on the same course and date. Toggle Show unmarked and verify drafts survive both filters and student lookups. The dashboard lists the current students with the most explicit absences in the last six recorded sessions through the selected date. Open a name to review the student. Reversing an absence changes the outreach list. **Summary** shows all-date totals for the selected course's authorized roster, including inactive memberships, with per-column table filters. Notes remain student-scoped and count across all dates.
+Sign in to open the dashboard. Use **Take attendance** and choose an open course on Attendance to mark its enrolled students in name order. Resume a partly marked session on the same course and date. Toggle Show unmarked and verify saved marks survive filters and student lookups. The dashboard lists the current students with the most explicit absences in the last six recorded sessions through the selected date. Open a name to review the student. Reversing an absence changes the outreach list. **Summary** shows all-date totals for the selected course's authorized roster, including inactive memberships, with per-column table filters. Notes remain student-scoped and count across all dates.
 
 ## Driving it with Playwright
 
@@ -16,11 +16,9 @@ On Dashboard, check that each follow-up card fits its localized weekday and nume
 
 At phone widths, verify Sort and Filter beside the Attendance title. Each record starts with its student name above the labelled level, teacher and attendance fields. The attendance field has three 44px segments in one pill-shaped track, with a transparent, borderless amber Add note button on its right in English and Arabic. Confirm the layout at 320/390/430px and on desktop. The same toolbar sits beside the Summary title. Desktop tables show sortable column headings.
 
-The authenticated notebook test opens a course with the synthetic student ليلى, presses **Absent** in the **Attendance for ليلى** group, clicks **Save attendance (1)** and asserts the matching Absent tally on Summary. Verify the selected tile has a green Present, red Absent or amber Excused tint in both themes and languages. Arrow keys move focus in the page's reading direction, and Space selects the focused status. An unmarked row has zero pressed buttons. Press the selected status again to discard an unsaved mark. Press a selected saved status again to clear it immediately. Save a different status first, then clear it and confirm that no mark reappears after sync and reload. The administrator’s **Correct this mark** action still reverses the targeted event. Confirm legacy early/late events contribute to Present.
+The authenticated notebook test opens a course with the synthetic student ليلى, presses **Absent** in the **Attendance for ليلى** group and asserts the matching Absent tally on Summary. Verify the selected tile has a green Present, red Absent or amber Excused tint in both themes and languages. Arrow keys move focus in the page's reading direction, and Space saves the focused status. An unmarked row has zero pressed buttons. Press the selected status again with touch or keyboard to clear it. Verify the date stays unmarked after reload, including when a clear follows a different saved status. Delay the first request and verify a second tap clears the pending mark in order. Check that the Save and bulk marking actions are absent. Use **Correct this mark** to reverse a saved mark when permitted. Confirm legacy early/late events contribute to Present.
 
-Click or tap Absent twice on an unmarked row. The first activation selects it with a red tint, and the second restores the neutral track even with the pointer still on the button. With keyboard navigation, the focused tile retains a visible outline after clearing.
-
-Exercise bulk marking, **Session date**, and optional Attendance filters. Save one Excused mark and leave a second as a draft before applying the bulk action. Check both exceptions survive. On phones check the pending Save clears the bottom navigation. Verify the saved count matches the intended changes. Combine per-column filters, including a no-match query, and confirm bulk marking leaves hidden drafts untouched.
+Vary **Session date** and combine per-column filters, including a no-match query. Mark one visible student and verify other students and dates keep their recorded status. With **Show unmarked** on, confirm the row disappears after the local save. Check that rapid taps are applied in order when sync is delayed.
 
 For Summary, use historical and current attendance in two courses. Assert course switching and reload retain independent all-date totals and inactive membership history. Saved `from`, `to`, `date`, `q`, `group`, `student` and `all` parameters must not narrow Summary. The page-level date, student-search and group controls are absent; per-column table filters narrow its rows without changing the overview totals. Other tabs retain their page controls. Check desktop/mobile in English/Arabic. Previous / no course counts only unscoped attendance.
 
@@ -30,7 +28,7 @@ Open **Export attendance chart** on Summary with a Teacher and a multi-page cour
 
 ## Gotchas
 
-Same student/date uses last surviving event in database sequence, never device clock. Undoing newest attendance reveals the prior surviving status. Filtered-out/inactive students must not be saved by group marking. Summary ignores saved date ranges, including reversed bounds.
+Same student/date uses last surviving event in database sequence, never device clock. Clearing attendance leaves the date unmarked. Undoing an event through History may reveal the prior surviving status. Summary ignores saved date ranges, including reversed bounds.
 
 Keep a legacy raw mark in projection/API tests, reverse a newer mark to reveal it as Present, and verify the original status remains in the raw event. An identical legacy retry stays idempotent; reusing its ID for a different raw status still conflicts even if both statuses project to Present. Course enrollment scopes remain independent.
 

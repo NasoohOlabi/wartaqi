@@ -4,7 +4,7 @@ import { clickAccountAction } from './profileActions'
 import { mockSyntheticNotebook } from './syntheticNotebook'
 
 for (const language of ['en', 'ar'] as const) {
-  test(`attendance replay renders the recorded roster, mark and save (${language})`, async ({
+  test(`attendance replay renders the recorded roster and saved mark (${language})`, async ({
     page,
   }) => {
     const ar = language === 'ar'
@@ -71,14 +71,6 @@ for (const language of ['en', 'ar'] as const) {
       .toBe(true)
     const row = page.locator('tr').filter({ hasText: student })
     await row.getByRole('button', { name: present, exact: true }).click()
-    await expect
-      .poll(() =>
-        frames.some((frame) =>
-          frame.attendance?.rows.some((row) => row.name === student && row.draft === 'present'),
-        ),
-      )
-      .toBe(true)
-    await page.getByRole('button', { name: ar ? /حفظ الحضور/ : /Save attendance/ }).click()
     await expect
       .poll(() =>
         frames.some((frame) =>

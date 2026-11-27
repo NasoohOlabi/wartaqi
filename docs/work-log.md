@@ -2542,8 +2542,18 @@ Synthetic Chromium checks exercise the warning, preserved withdrawal history, co
 
 At 11:50 Asia/Damascus, Browser shard 2 caught a grades result staying Pending after a threshold save. Verify failed because it aggregates that shard. Holding the grade refresh across the threshold write reproduced the failure on desktop and mobile. Course and grade saves now wait for any earlier read before requesting a snapshot. The held-read test checks that the result becomes Pass using the saved scores and threshold.
 
+## 2026-11-27 11:51 Asia/Damascus - Save attendance on tap
+
+The owner asked for each attendance tap to save without a separate button or batch marking. Each choice updates its row immediately and uses the existing durable offline queue. Repeating the selected status leaves it in place. Successive taps keep their order, and append-only corrections remain available to administrators.
+
+Verification covers individual requests, rapid updates with sync delayed, offline reload, corrections and English and Arabic layouts. The PR records release and Railway verification. Authenticated browser verification uses synthetic fixtures.
+
+The local verification gate passed against disposable Postgres. The real-server browser test confirmed that a single offline tap survives reload, creates one attendance event and reaches a separate signed-in student. The updated phone layout and profile tests passed in both Chromium projects.
+
 ## 2026-11-27 11:54 Asia/Damascus — Clear a saved attendance mark by pressing it again
 
 The owner asked to undo an accidental attendance selection from its row. Press the selected saved status to clear the student’s attendance for that course and date. The device saves the clear immediately and syncs when online. The clear leaves the date unmarked and retains the previous marks in history.
 
 Synthetic Chromium coverage exercises a desktop administrator and an Arabic phone-sized teacher view, including a disconnected reload and reconnection. Disposable PostgreSQL covers scoped projection, stale writes, exact retries and student visibility. The PR records the release checks and Railway verification.
+
+At 12:11 Asia/Damascus, integrated the clear with the save-on-tap change in main. The desktop test holds the earlier request and checks that the clear uses that mark’s revision. The Arabic phone test checks offline reload and reconnect. Two signed-in Chromium sessions against disposable PostgreSQL verified that the clear reaches the student view and preserves the earlier event in history.
