@@ -2572,6 +2572,12 @@ The browser regression exercises the middle and end of a long roster, a repeat t
 
 At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing before its confirmation delay while an earlier sync was still settling after reload. The hold now follows the result of the specific local save, and a focused row hands off focus before it is removed. The browser regression covers both keyboard and pointer focus through this path.
 
+## 2026-11-27 15:58 Asia/Damascus — Keep notes on the student profile
+
+The owner reported that a student note appeared in the attendance sidebar without context. Staff now read saved student notes on the student's profile with their dates, authors and tags. The attendance row still opens the form for adding a note to that student and date. The attendance sidebar shows the student and recorded-attendance counts. Day-level notes were deferred.
+
+Synthetic Chromium checks cover saving from Attendance, reading from the correct profile across dates, hiding a corrected note after reload, and English and Arabic desktop and phone layouts. `bun run verify:release` passed with 155 local tests and 256 browser cases. Optional provider suites were skipped locally. The browser checks use intercepted Auth and notebook routes. The PR records Railway verification.
+
 ## 2026-11-27 16:01 Asia/Damascus — Show course membership changes on the first tap
 
 The owner reported that a slow enrollment save left the switch looking off. A second tap after the save could undo the enrollment. The switch now displays the requested state during the save and accepts another tap after it settles. A failed confirmation restores the last confirmed state. Retry uses the original operation and displays its pending change.
@@ -2589,6 +2595,8 @@ The sync design records the next phases: compare reliable user edit times for th
 At 16:30 Asia/Damascus, merged main `4b687e0` into PR #219. The course switch shows the pending membership during save and retry alongside the separate write and readback queues. All 10 focused desktop and emulated-phone cases passed, including the switch, course assignments and attendance under delayed readback. `bun run verify` passed. Fresh CI and Railway verification remain pending.
 
 At 16:37 Asia/Damascus, merged main `3c8e1ee` into PR #219 and kept both work-log entries. The browser code matches the earlier verified branch, and the MCP enrollment changes match main. `bun run verify` passed with 155 tests and 14 opt-in skips. The new branch requires fresh CI before release.
+
+At 16:56 Asia/Damascus, merged main `f0927e3` after it moved student notes to profiles. The earlier release run passed 261 browser cases and had one mobile account-switch timeout. That case passed three consecutive reruns, and the separate history and dependency checks passed. All 10 focused desktop and emulated-phone cases passed on the combined tree, including profile notes, account switching and the delayed-read regressions. The deployed browser also reproduced both delays using synthetic API responses before the fix shipped.
 
 ## 2026-11-27 16:24 Asia/Damascus ? MCP enrollment levels
 
