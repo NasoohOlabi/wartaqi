@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { ProfileMenu, type Profile } from './ProfileMenu'
-import { BookOpen, House, Settings, UserRound } from 'lucide-react'
+import { ArrowLeft, BookOpen, House, Settings, UserRound } from 'lucide-react'
 import { useLanguage, type TranslationKey } from './useLanguage'
 import {
   navigateNotebook,
@@ -29,6 +29,7 @@ export function WorkspaceNavigation({
   profile,
   leave,
   disabled,
+  back,
 }: {
   administrator: boolean
   student?: boolean
@@ -41,6 +42,7 @@ export function WorkspaceNavigation({
   profile?: Profile
   leave: () => void
   disabled?: boolean
+  back?: { label: string; onClick: () => void }
 }) {
   const { t, language } = useLanguage()
   const query = useQueryState()
@@ -93,7 +95,20 @@ export function WorkspaceNavigation({
   return (
     <aside className="workspace-rail">
       <div className="workspace-brand">
-        <WartaqLogo />
+        <div className="flex items-center gap-1">
+          {back && (
+            <button
+              type="button"
+              className="workspace-up size-12 shrink-0 items-center justify-center rounded-full text-white hover:bg-white/10"
+              aria-label={back.label}
+              title={back.label}
+              onClick={back.onClick}
+            >
+              <ArrowLeft className="icon-directional" size={24} aria-hidden="true" />
+            </button>
+          )}
+          <WartaqLogo />
+        </div>
         <ProfileMenu
           profile={profile}
           administrator={administrator}
