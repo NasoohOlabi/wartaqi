@@ -2461,3 +2461,9 @@ Synthetic browser checks cover Arabic and English at 320, 390 and 430px and wide
 The owner requested the same phone layout in Settings → Students and icon buttons for Edit and Add student. WhatsApp shares the number line, the pencil sits beside the name fields on phones, and the person-plus icon shares the heading toolbar.
 
 Synthetic browser checks cover English and Arabic on desktop and at 320, 390 and 430px. They check alignment, overflow, localized labels, 44px targets, form navigation and the existing student save flow. The PR records release checks and Railway verification. Native WhatsApp handoff remains unverified.
+
+## 2026-11-27 10:05 Asia/Damascus — Keep student actions beside their headings
+
+The owner reported that Edit and Refresh took a separate row on the Arabic Student information page. The pencil now has a localized accessible name and tooltip, and both icons share the title row. The shared workspace header also keeps the student portal controls beside My attendance. The narrow student profile keeps the labeled Take attendance and Add note actions beside their section headings.
+
+Branch discovery found the merged profile, Back and roster updates on main. The open dashboard and roster birth-year PRs address adjacent layouts. Synthetic Chromium checks cover phone and desktop row geometry in English and Arabic, the 360px Arabic course profile and its Refresh action, and student portal sorting and filtering. The supplied production link requires sign-in. The PR records release and Railway verification.
