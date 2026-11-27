@@ -2572,6 +2572,12 @@ The browser regression exercises the middle and end of a long roster, a repeat t
 
 At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing before its confirmation delay while an earlier sync was still settling after reload. The hold now follows the result of the specific local save, and a focused row hands off focus before it is removed. The browser regression covers both keyboard and pointer focus through this path.
 
+## 2026-11-27 16:01 Asia/Damascus — Show course membership changes on the first tap
+
+The owner reported that a slow enrollment save left the switch looking off. A second tap after the save could undo the enrollment. The switch now displays the requested state during the save and accepts another tap after it settles. A failed confirmation restores the last confirmed state. Retry uses the original operation and displays its pending change.
+
+Four focused Chromium checks passed on desktop English and mobile Arabic. They cover a held enrollment write and refresh, a blocked second tap, later withdrawal, failed rejoin and retry with the original enrollment ID, and the earlier inactive roster regression. The course suite passed against disposable PostgreSQL. The PR records the release checks and Railway verification.
+
 ## 2026-11-27 16:03 Asia/Damascus — Keep online writes moving during readback
 
 The owner reported that an edit made on a connected phone committed late and asked to fix delivery before changing conflict policy. Two production attendance records showed about 13 seconds between their device timestamps and database receipt. The available telemetry could not tie the reported edit to a particular client stall.
@@ -2579,3 +2585,5 @@ The owner reported that an edit made on a connected phone committed late and ask
 Holding a post-save notebook read reproduced a second write stalling in attendance and course teacher assignment on desktop and emulated iPhone. The attendance drain now releases after upload and schedules readback independently. Course requests still send in submission order, while readback and retry handling run separately. Both browser regressions require the second write to succeed before releasing the held read and verify the result after reload. The PR records broader checks and Railway delivery. A physical phone and the original incident remain unverified.
 
 The sync design records the next phases: compare reliable user edit times for the same field, retain field history, and show automatic and manual conflict resolutions from the last seven days in Settings.
+
+At 16:30 Asia/Damascus, merged main `4b687e0` into PR #219. The course switch shows the pending membership during save and retry alongside the separate write and readback queues. All 10 focused desktop and emulated-phone cases passed, including the switch, course assignments and attendance under delayed readback. `bun run verify` passed. Fresh CI and Railway verification remain pending.

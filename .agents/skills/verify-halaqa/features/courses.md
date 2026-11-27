@@ -6,6 +6,8 @@ Use synthetic identities and records. On desktop and mobile, Courses defaults to
 
 Save a membership change and check the localized toast appears without moving the heading and dismisses automatically. On phones, verify the toast fits above navigation. A failed save shows the in-page error and no success toast.
 
+Hold the enrollment response and check that the first tap moves the switch immediately. Tap again while the switch is locked and confirm only one request was sent. Release the response and verify a later tap can withdraw the saved enrollment. Force a failed save and confirm the switch returns to its last confirmed state, then retry and check that the requested state appears while Retry is pending.
+
 Open Manage students with an inactive roster student who is already enrolled. Confirm the switch and Handbook received reflect the saved values. Withdraw and rejoin across reloads and check that both writes use the existing enrollment ID, preserving the course level, scores, handbook receipt and roster status. Exercise the path in English on desktop and Arabic on a phone.
 
 Hold the notebook read after a teacher assignment succeeds. Change the same assignment again and verify the second write reaches the server before releasing the read. Reload and check the last choice.

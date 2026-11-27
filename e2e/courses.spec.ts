@@ -2582,3 +2582,80 @@ test('administrator no-course Students includes the complete inactive register',
   await expect(page).toHaveURL(/view=history/)
   await expect(page).toHaveURL(new RegExp(`course=${courseB}`))
 })
+
+test('membership switch shows pending changes and retries safely', async ({ page }, testInfo) => {
+  const { assignments, enrollments, holdNextAssignment, failNextAssignment, holdNextNotebook } =
+    await setupCourses(page)
+  const mobile = testInfo.project.name === 'mobile'
+  if (mobile)
+    await page.addInitScript(() => localStorage.setItem('halaqa-language-preference', 'ar'))
+  const captured = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  let writes = 0
+  await page.route('**/api/admin/enrollments/membership', async (route) => {
+    writes += 1
+    captured.resolve()
+    await release.promise
+    await route.fallback()
+  })
+  await page.goto(`/?page=app&view=courses&courseView=students&course=${courseA}`)
+  const membership = page.getByRole('switch', {
+    name: `${mobile ? 'مسجل' : 'Enrolled'}: New Student`,
+  })
+  const activate = () => (mobile ? membership.tap() : membership.click())
+  try {
+    await activate()
+    await captured.promise
+    await expect(membership).toBeChecked()
+    await expect(membership).toBeDisabled()
+    const box = await membership.boundingBox()
+    if (!box) throw new Error('Membership switch is not visible')
+    const x = box.x + box.width / 2
+    const y = box.y + box.height / 2
+    if (mobile) await page.touchscreen.tap(x, y)
+    else await page.mouse.click(x, y)
+    expect(writes).toBe(1)
+    const refresh = holdNextNotebook()
+    try {
+      release.resolve()
+      await refresh.captured
+      await expect(membership).toBeChecked()
+      await expect(membership).toBeDisabled()
+    } finally {
+      refresh.release()
+    }
+  } finally {
+    release.resolve()
+  }
+  await expect(membership).toBeEnabled()
+  const id = enrollments.find(
+    (entry) => entry.studentId === secondStudentId && entry.courseId === courseA,
+  )?.id
+  expect(id).toBeTruthy()
+  await activate()
+  await expect(membership).not.toBeChecked()
+  await expect(membership).toBeEnabled()
+  failNextAssignment()
+  await activate()
+  await expect(
+    page.getByText(
+      mobile ? 'تعذر تأكيد حفظ تغييرات الطلاب.' : 'Could not confirm the student changes.',
+    ),
+  ).toBeVisible()
+  await expect(membership).not.toBeChecked()
+  const releaseRetry = holdNextAssignment()
+  try {
+    await page.getByRole('button', { name: mobile ? 'إعادة المحاولة' : 'Retry' }).click()
+    await expect(membership).toBeChecked()
+    await expect(membership).toBeDisabled()
+  } finally {
+    releaseRetry()
+  }
+  await expect(membership).toBeEnabled()
+  expect(writes).toBe(1)
+  expect(assignments.map((item) => item.kind === 'edit' && [item.id, item.active])).toEqual([
+    [id, false],
+    [id, true],
+    [id, true],
+  ])
+})

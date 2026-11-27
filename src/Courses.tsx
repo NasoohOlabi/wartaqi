@@ -217,6 +217,7 @@ export function Courses({
   const [selected, setSelected] = useState<Record<string, string[]>>({})
   const [bulkTeacher, setBulkTeacher] = useState('unchanged')
   const [failedSaves, setFailedSaves] = useState<Record<string, () => void>>({})
+  const [pendingMembership, setPendingMembership] = useState<Record<string, boolean>>({})
   const writeQueue = useRef<Promise<void>>(Promise.resolve())
   const readbackQueue = useRef<Promise<void>>(Promise.resolve())
   const pendingSaves = useRef(0)
@@ -230,9 +231,12 @@ export function Courses({
     body: unknown,
     onSuccess?: () => void,
     saveKey?: string,
-    refreshOnly = false,
+    options?: { refreshOnly?: boolean; membership?: { key: string; active: boolean } },
   ) {
+    const { refreshOnly = false, membership } = options ?? {}
     if (offline) return Promise.resolve(false)
+    if (membership)
+      setPendingMembership((current) => ({ ...current, [membership.key]: membership.active }))
     pendingSaves.current += 1
     setBusy(true)
     const write = writeQueue.current.then(async () => {
@@ -265,11 +269,21 @@ export function Courses({
         if (saveKey)
           setFailedSaves((current) => ({
             ...current,
-            [saveKey]: () => void submit(path, body, onSuccess, saveKey, writeSucceeded),
+            [saveKey]: () =>
+              void submit(path, body, onSuccess, saveKey, {
+                refreshOnly: writeSucceeded,
+                membership,
+              }),
           }))
         else setError(cause instanceof Error ? cause.message : 'Save failed')
         return false
       } finally {
+        if (membership)
+          setPendingMembership((current) => {
+            const next = { ...current }
+            delete next[membership.key]
+            return next
+          })
         pendingSaves.current -= 1
         if (!pendingSaves.current) setBusy(false)
       }
@@ -756,6 +770,7 @@ export function Courses({
                               },
                           entry ? undefined : () => clearTeacherDraft(draft.teacherId),
                           `membership:${draftKey}`,
+                          { membership: { key: draftKey, active } },
                         )
                       }
                       return (
@@ -855,7 +870,7 @@ export function Courses({
                               type="checkbox"
                               role="switch"
                               aria-label={`${ar ? 'مسجل' : 'Enrolled'}: ${student.firstName} ${student.lastName}`}
-                              checked={entry?.active ?? false}
+                              checked={pendingMembership[draftKey] ?? entry?.active ?? false}
                               disabled={busy || offline}
                               onChange={(event) => saveMembership(event.target.checked)}
                             />
