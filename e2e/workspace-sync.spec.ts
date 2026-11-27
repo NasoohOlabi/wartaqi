@@ -5,9 +5,12 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { z } from 'zod'
 import { createIdentity } from '../tests/integration-identity'
+import { startRustBackend } from '../tests/rust-backend-server'
+import { startRustBrowserProxy } from '../tests/rust-browser-proxy'
 
 // Requires a migrated disposable database, a production build and Playwright Chromium.
 const databaseUrl = process.env.TEST_RAILWAY_DATABASE_URL
+const rustBinary = process.env.TEST_RUST_BROWSER_BINARY
 test.use({ trace: 'off' })
 test('offline teacher edits reach a second signed-in student over live sync', async ({
   browser,
@@ -28,11 +31,15 @@ test('offline teacher edits reach a second signed-in student over live sync', as
   const teacherPhone = phonePrefix + '1'
   const studentPhone = phonePrefix + '2'
   const identities: string[] = []
+  const authSecret = randomBytes(32).toString('hex')
+  const proxy = rustBinary ? await startRustBrowserProxy() : undefined
+  let rust: Awaited<ReturnType<typeof startRustBackend>> | undefined
   const server = spawn('bun', ['tests/integration-server.ts'], {
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl,
-      BETTER_AUTH_SECRET: randomBytes(32).toString('hex'),
+      BETTER_AUTH_SECRET: authSecret,
+      TEST_WORKSPACE_ORIGIN: proxy?.origin,
     },
     stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
     serialization: 'json',
@@ -44,10 +51,15 @@ test('offline teacher edits reach a second signed-in student over live sync', as
         throw new Error('Fixture server exited during startup')
       }),
     ])
-    const origin = z
+    const bunOrigin = z
       .string()
       .regex(/^http:\/\/127\.0\.0\.1:\d+$/)
       .parse(address)
+    if (rustBinary && proxy) {
+      rust = await startRustBackend(rustBinary, databaseUrl, bunOrigin, authSecret, proxy.origin)
+      proxy.connect(bunOrigin, rust.origin)
+    }
+    const origin = proxy?.origin ?? bunOrigin
     identities.push(await createIdentity(db, 'Sync Teacher', password))
     identities.push(await createIdentity(db, 'Sync Student', password))
     await db.query(
@@ -161,7 +173,15 @@ test('offline teacher edits reach a second signed-in student over live sync', as
     })
     await Promise.all([staff.close(), learner.close()])
   } finally {
-    server.kill()
+    rust?.child.kill()
+    await Promise.all([rust?.exited, proxy?.close()])
+    if (server.connected) {
+      const closed = once(server, 'exit', { signal: AbortSignal.timeout(5000) })
+      server.send('close')
+      await closed.catch(() => server.kill())
+    } else {
+      server.kill()
+    }
     await db.query('DELETE FROM events WHERE student_id=$1', [studentId])
     await db.query('DELETE FROM app_accounts WHERE auth_user_id=ANY($1::text[])', [identities])
     await db.query('DELETE FROM course_enrollments WHERE id=$1', [enrollmentId])

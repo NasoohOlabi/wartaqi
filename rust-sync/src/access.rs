@@ -39,6 +39,9 @@ impl Grant {
     pub(crate) fn is_admin(&self) -> bool {
         self.role == "administrator"
     }
+    pub(crate) fn role(&self) -> &str {
+        &self.role
+    }
     pub(crate) fn is_student(&self) -> bool {
         self.role == "student"
     }

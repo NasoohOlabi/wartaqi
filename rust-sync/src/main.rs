@@ -1,7 +1,18 @@
 mod access;
+mod api;
+mod auth_get_session;
+mod catalog;
+#[cfg(test)]
+mod credentials;
+mod diagnostics;
+mod grade_sync;
 mod ledger;
-mod reads;
+mod ledger_writes;
+mod session_identity;
+mod session_replay;
 mod staff_reads;
+mod student_writes;
+mod writes;
 
 use std::{env, time::Duration};
 
@@ -26,27 +37,6 @@ use tokio_postgres::{AsyncMessage, NoTls};
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct Auth {
     user_id: String,
-}
-
-#[derive(Deserialize)]
-struct Grant {
-    account: Account,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Account {
-    #[serde(default, deserialize_with = "present_profile")]
-    invitation_profile: Option<InvitationProfile>,
-}
-fn present_profile<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<InvitationProfile>, D::Error> {
-    InvitationProfile::deserialize(deserializer).map(Some)
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct InvitationProfile {
-    requires_setup: bool,
 }
 
 async fn gate(req: Request, next: Next, origin: String) -> Response {
@@ -137,47 +127,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port: u16 = env::var("PORT").unwrap_or_else(|_| "3001".into()).parse()?;
     let origin = env::var("WORKSPACE_ORIGIN")?;
     let bun_origin = url::Url::parse(&env::var("BUN_ORIGIN")?)?;
-    let upstream = bun_origin.join("/api/me")?;
     let database_url = env::var("DATABASE_URL")?;
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .redirect(reqwest::redirect::Policy::none())
         .no_proxy()
         .build()?;
-    let reads = reads::router(&database_url, origin.clone(), &bun_origin, http.clone())?;
+    let api = api::create(
+        &database_url,
+        origin.clone(),
+        &bun_origin,
+        http,
+        env::var("BETTER_AUTH_SECRET").ok(),
+    )?;
+    let routes = api.router();
     let (layer, io) = SocketIo::builder().max_payload(4096).build_layer();
     io.ns(
         "/",
         (async || {}).with(move |socket: SocketRef, TryData(auth): TryData<Auth>| {
-            let http = http.clone();
-            let upstream = upstream.clone();
+            let api = api.clone();
             async move {
                 let auth = auth.map_err(|_| "Unauthorized")?;
                 if !(1..=128).contains(&auth.user_id.encode_utf16().count()) {
                     return Err("Unauthorized");
                 }
-                let cookie = socket
-                    .req_parts()
-                    .headers
-                    .get(header::COOKIE)
-                    .ok_or("Unauthorized")?
-                    .to_str()
-                    .map_err(|_| "Unauthorized")?;
-                let response = http
-                    .get(upstream)
-                    .header(header::COOKIE, cookie)
-                    .header("x-user-id", &auth.user_id)
-                    .send()
+                if !api
+                    .authorize_socket(&socket.req_parts().headers, &auth.user_id)
                     .await
-                    .map_err(|_| "Unauthorized")?;
-                if !response.status().is_success() {
-                    return Err("Unauthorized");
-                }
-                let grant: Grant = response.json().await.map_err(|_| "Unauthorized")?;
-                if grant
-                    .account
-                    .invitation_profile
-                    .is_some_and(|p| p.requires_setup)
                 {
                     return Err("Unauthorized");
                 }
@@ -193,7 +169,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/health",
             get(|| async { axum::Json(serde_json::json!({"ok": true})) }),
         )
-        .merge(reads)
+        .merge(routes)
         .layer(layer)
         .layer(middleware::from_fn(move |req, next| {
             gate(req, next, origin.clone())

@@ -1,6 +1,6 @@
 # Draft Rust backend migration
 
-The migration targets a complete local Rust backend for the existing React app and its same-origin HTTP and Socket.IO client. Performance measurement comes after the existing integration and browser suites pass against Rust. Rust currently serves the workspace relay and the native reads for `/api/me`, `/api/notebook`, `/api/student/attendance`, and `/api/admin`. Bun's existing session endpoint supplies the signed-in identity for those reads. Rust checks the requested identity, current role, scope, and expiry against Postgres inside the read transaction.
+The migration targets a complete local Rust backend for the existing React app and its same-origin HTTP and Socket.IO client. The current candidate serves the workspace relay, account and notebook reads, attendance and student sync, selected course and enrollment writes, and diagnostics and replay. It verifies existing signed cookies against Postgres when supplied with the same private signing key. Bun still issues browser sessions in the test fixture. The full-backend performance comparison follows complete local behavior parity. The owner also requested an early container comparison of the routes both backends support.
 
 ## What the repository does today
 
@@ -15,7 +15,7 @@ Entry points are [Bun's HTTP server](../server/index.ts), [its relay](../server/
 
 ## Run the relay and parity test
 
-The pilot lives in `rust-sync/`, with its own Cargo lockfile and Docker build context. It serves `GET /health` and `/socket.io/`. It checks the browser request and the Socket.IO identity, then relays the session cookie and expected user ID to Bun's existing `GET /api/me`. Bun makes the access decision. Rust listens on the existing Postgres channel and broadcasts the same empty hint. React's data requests, browser storage and write paths continue through Bun.
+The candidate lives in `rust-sync/`, with its own Cargo lockfile and Docker build context. It serves `GET /health`, `/socket.io/` and the ported HTTP endpoints. The socket handshake checks the session and the current application grant. Rust listens on the existing Postgres channel and broadcasts the same empty hint. React keeps its local queue and existing request paths.
 
 Use a disposable local Postgres and apply `railway/*.sql` then `neon/*.sql` in filename order, as in [CI](../.github/workflows/ci.yml). With the repository's Bun dependencies installed, run these PowerShell commands from the root. Use the actual port and database name for your disposable instance.
 
@@ -23,18 +23,24 @@ Use a disposable local Postgres and apply `railway/*.sql` then `neon/*.sql` in f
 cargo build --locked --release --manifest-path rust-sync/Cargo.toml
 $env:TEST_RAILWAY_DATABASE_URL = 'postgres://postgres@127.0.0.1:5432/notebook_test'
 $env:TEST_RUST_SYNC_BINARY = (Resolve-Path rust-sync/target/release/wartaq-workspace-relay.exe).Path
-bun test tests/sync-transport.test.ts tests/rust-reads-parity.test.ts
+bun test tests/sync-transport.test.ts tests/rust-backend-parity.test.ts
 ```
 
 On Windows, use `cargo +stable-x86_64-pc-windows-gnu` if your Rust toolchain uses MinGW instead of the MSVC linker. On Linux, omit `.exe` from the binary path.
 
 Both cases exercise the official JavaScript client against a real Bun instance and the same synthetic Postgres fixture. The Rust case routes only the socket traffic to Rust. The contract covers direct WebSocket, polling, upgrade, missing cookie, invalid identity, invitation setup, foreign origin and cross-site requests, transaction rollback, ignored diagnostics, committed writes, listener loss and fresh access denial after grant revocation. It compares statuses, errors and event arguments where they are part of the app contract. Session IDs, connection IDs and heartbeat timings are implementation-generated. The existing wider [sync verification matrix](sync-verification.md) remains the release gate for any future transport switch.
 
-Raw malformed Engine.IO requests can differ. For example, Rust checks for a cookie before the transport library validates an invalid query, while Bun validates the query first. The pilot's `/health` checks process liveness. The test independently waits for and verifies the live Postgres subscription. Before a Railway trial, run the real browser scenario through the planned same-origin ingress and verify readiness and rollback with the relay disconnected.
+Raw malformed Engine.IO requests can differ. For example, Rust checks for a cookie before the transport library validates an invalid query, while Bun validates the query first. The candidate's `/health` checks process liveness. The test independently waits for and verifies the live Postgres subscription. The real Chromium scenario passes with `TEST_RUST_BROWSER_BINARY` pointing at the candidate. Its same-origin proxy routes notebook and student reads, attendance sync and Socket.IO to Rust and obtains sign-in and static assets from Bun. Complete the browser suite and verify readiness and rollback before any deployment.
 
-The HTTP comparison uses the same sessions and fixtures for both backends. It checks statuses, response headers and JSON for all three roles, including rejected requests, enrollment visibility, hidden notes, legacy marks and a malformed ledger record. Staff course sorting uses Postgres's `en-US-x-icu` collation. Canonically equivalent names and differences between Postgres and Bun's ICU versions need additional parity coverage.
+The HTTP comparison uses the same sessions and fixtures for both backends. It checks statuses, response headers and JSON for all three roles. The suite includes rejected requests, enrollment visibility, legacy marks, malformed ledger data, transactional rollback, and retries across runtimes for grades, attendance, notes, phone numbers, and profiles. Staff course sorting uses Postgres's `en-US-x-icu` collation. Canonically equivalent names and differences between Postgres and Bun's ICU versions need additional parity coverage.
 
-For a standalone launch, set `PORT` (defaults to `3001`), `WORKSPACE_ORIGIN` to the browser-facing origin, `BUN_ORIGIN` to a fixed, trusted Bun origin, and `DATABASE_URL` to the disposable database. For a container build use `docker build -t wartaq-rust-sync rust-sync`. The relay's Postgres connection uses plaintext, so use loopback or an isolated private network. A later Railway trial would use an isolated environment, private Bun and Postgres addresses, and a same-origin ingress that forwards only `/socket.io/` to Rust. All other paths go to Bun. Keep the same ingress for the baseline, and route `/socket.io/` back to Bun for rollback.
+For a standalone launch, set `PORT` (defaults to `3001`), `WORKSPACE_ORIGIN` to the browser-facing origin, `BUN_ORIGIN` to a fixed, trusted Bun origin, and `DATABASE_URL` to the disposable database. With the shared private `BETTER_AUTH_SECRET`, session verification runs directly in Rust. Omit that setting to use Bun's session endpoint. For a container build use `docker build -t wartaq-rust-sync rust-sync`. The Postgres connection uses plaintext, so use loopback or an isolated private network. An eventual trial can route individual proven paths to Rust through the same public origin and restore their Bun routes for rollback.
+
+## Early local container comparison
+
+Both app containers ran with a 1-vCPU quota, identical synthetic database copies and 12 connected Socket.IO clients. At 20 requests per second, each completed 600 requests across two trials. Average app CPU per request was 17.74 ms for Bun and 2.93 ms for Rust. App resident memory was 196.1 MiB and 9.6 MiB respectively. The two-trial average p95 was 43.7 ms for Bun and 103.4 ms for Rust.
+
+At 75 requests per second, Bun completed both 900-request trials. Rust had 201 failed or timed-out requests in one trial and completed the other. These measurements cover notebook, student and account reads, attendance sync writes, and notifications on an internal Docker network. The local driver, sampler, and per-trial results are under `.artifacts/local-profile/`.
 
 ## Complete the local port before measuring
 

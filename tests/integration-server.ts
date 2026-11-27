@@ -2,13 +2,16 @@ import { randomBytes } from 'node:crypto'
 import type { WebSocketData } from '@socket.io/bun-engine'
 import { z } from 'zod'
 
-export async function startIntegrationServer(databaseUrl: string) {
+export async function startIntegrationServer(
+  databaseUrl: string,
+  authSecret = randomBytes(32).toString('hex'),
+) {
   const ready = Promise.withResolvers<unknown>()
   const child = Bun.spawn([process.execPath, 'run', import.meta.path], {
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl,
-      BETTER_AUTH_SECRET: randomBytes(32).toString('hex'),
+      BETTER_AUTH_SECRET: authSecret,
     },
     stdout: 'ignore',
     stderr: 'inherit',
@@ -53,8 +56,13 @@ if (import.meta.main) {
     },
   })
   process.env.PORT = String(server.port)
-  process.env.BETTER_AUTH_URL = server.url.origin
+  process.env.BETTER_AUTH_URL = process.env.TEST_WORKSPACE_ORIGIN ?? server.url.origin
   workspace = (await import('../server/index')).workspaceServer()
   handler.resolve(workspace)
+  process.on('message', (message) => {
+    if (message === 'close') {
+      void Promise.all([workspace?.close(), server.stop(true)]).finally(() => process.exit())
+    }
+  })
   process.send?.(server.url.origin)
 }

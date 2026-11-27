@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { randomBytes } from 'node:crypto'
 import { Pool } from 'pg'
 import { io, type Socket } from 'socket.io-client'
 import { z } from 'zod'
@@ -58,10 +59,14 @@ integration(
         'students',
         'teachers',
       ])
-      server = await startIntegrationServer(implementation === 'Bun' ? target.href : databaseUrl)
+      const secret = randomBytes(32).toString('hex')
+      server = await startIntegrationServer(
+        implementation === 'Bun' ? target.href : databaseUrl,
+        secret,
+      )
       const { origin } = server
       if (implementation === 'Rust' && rustBinary) {
-        relay = await startRustBackend(rustBinary, target.href, origin)
+        relay = await startRustBackend(rustBinary, target.href, origin, secret)
       }
       const socketOrigin = relay?.origin ?? origin
       async function listenerId() {
@@ -215,7 +220,7 @@ integration(
       for (const socket of sockets) socket.disconnect()
       relay?.child.kill()
       server?.child.kill()
-      await Promise.all([relay?.child.exited, server?.child.exited])
+      await Promise.all([relay?.exited, server?.child.exited])
       if (userId) {
         await pool.query('DELETE FROM app_accounts WHERE auth_user_id = $1', [userId])
         await pool.query('DELETE FROM teachers WHERE id = $1', [teacherId])
