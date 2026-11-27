@@ -531,17 +531,9 @@ test('course enrollment and same-day attendance stay separate', async ({ page },
   await expect(phone).toHaveAttribute('href', 'tel:012345')
   await row.getByRole('button', { name: 'Open student' }).click()
   await expect(page.getByRole('heading', { name: 'Student information' })).toBeVisible()
-  await expect(
-    page
-      .locator('.student-details')
-      .getByText('Level', { exact: true })
-      .locator('..')
-      .locator('dd'),
-  ).toHaveText('Advanced')
-  await expect(
-    page.locator('.student-details').getByText('Synthetic', { exact: true }),
-  ).toBeVisible()
-  await expect(page.locator('.student-details').getByText('Student', { exact: true })).toBeVisible()
+  const profile = page.locator('.student-detail-profile')
+  await expect(profile.locator('.student-detail-level')).toContainText('Advanced')
+  await expect(profile.locator('.student-detail-name')).toHaveText('Synthetic Student')
   await expect(
     page.locator('.student-details').getByText('012 345', { exact: true }),
   ).toHaveAttribute('dir', 'ltr')
