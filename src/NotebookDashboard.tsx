@@ -1,3 +1,4 @@
+import { UserRoundPlus } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import type { Attendance, Student } from '../shared/ledger'
@@ -26,6 +27,7 @@ export function NotebookDashboard({
 }) {
   const { language, t } = useLanguage()
   const ar = language === 'ar'
+  const addStudentLabel = t('Add student')
   const [showAll, setShowAll] = useState(false)
   const students = projected.students.filter((student) => student.active)
   const ids = new Set(students.map((student) => student.studentId))
@@ -79,6 +81,7 @@ export function NotebookDashboard({
           <label>
             {t('Session date')}
             <input
+              className="max-sm:px-2"
               type="date"
               value={date}
               onChange={(event) => {
@@ -86,32 +89,35 @@ export function NotebookDashboard({
               }}
             />
           </label>
-          {!canRecord ? (
-            <p className="muted">
-              {ar ? 'الحضور متاح للعرض فقط هنا.' : 'Attendance is view-only here.'}
-            </p>
-          ) : !students.length ? (
-            <p className="muted">
-              {ar ? 'لا يوجد طلاب حاليون في هذا العرض.' : 'No current students in this view.'}
-            </p>
-          ) : (
-            <>
+          <div className="dashboard-status">
+            {!canRecord ? (
+              <p>{ar ? 'الحضور متاح للعرض فقط هنا.' : 'Attendance is view-only here.'}</p>
+            ) : !students.length ? (
               <p>
-                {ar
-                  ? `${number(marked)} مسجل، ${number(unmarked)} غير مسجل`
-                  : `${number(marked)} marked, ${number(unmarked)} unmarked`}
+                {ar ? 'لا يوجد طلاب حاليون في هذا العرض.' : 'No current students in this view.'}
               </p>
-              {unmarked === 0 && (
-                <p className="muted">
-                  {ar ? 'تم تسجيل حضور جميع الطلاب.' : 'Attendance is complete for this date.'}
+            ) : (
+              <>
+                <p>
+                  <span className="inline-block">
+                    {ar ? `${number(marked)} مسجل،` : `${number(marked)} marked,`}
+                  </span>{' '}
+                  <span className="inline-block">
+                    {ar ? `${number(unmarked)} غير مسجل` : `${number(unmarked)} unmarked`}
+                  </span>
                 </p>
-              )}
-            </>
-          )}
+                {unmarked === 0 && (
+                  <p>
+                    {ar ? 'تم تسجيل حضور جميع الطلاب.' : 'Attendance is complete for this date.'}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
         </div>
-        <div className="dashboard-buttons">
+        <div className="dashboard-buttons max-sm:basis-full">
           <button
-            className="primary dashboard-primary"
+            className="primary dashboard-primary min-w-0 leading-tight max-sm:flex-1"
             onClick={() => onAttendance(canRecord && marked > 0 && unmarked > 0)}
           >
             {canRecord && marked > 0 && unmarked > 0
@@ -123,8 +129,13 @@ export function NotebookDashboard({
                 : 'Take attendance'}
           </button>
           {canAdd && (
-            <button className="secondary" onClick={onAdd}>
-              {ar ? 'إضافة طالب' : 'Add student'}
+            <button
+              className="secondary inline-flex size-11 shrink-0 items-center justify-center p-0"
+              aria-label={addStudentLabel}
+              title={addStudentLabel}
+              onClick={onAdd}
+            >
+              <UserRoundPlus size={22} aria-hidden="true" />
             </button>
           )}
         </div>
