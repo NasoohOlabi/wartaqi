@@ -2480,6 +2480,12 @@ The owner reported that the WhatsApp icon appeared below the phone number on des
 
 The contact browser scenario checks phone and icon geometry, 44px contact targets and English and Arabic at 1280/1624px and phone widths. It uses synthetic contact records. Native WhatsApp handoff remains unverified.
 
+## 2026-11-27 10:05 Asia/Damascus — Keep student actions beside their headings
+
+The owner reported that Edit and Refresh took a separate row on the Arabic Student information page. The pencil now has a localized accessible name and tooltip, and both icons share the title row. The shared workspace header also keeps the student portal controls beside My attendance. The narrow student profile keeps the labeled Take attendance and Add note actions beside their section headings.
+
+Branch discovery found the merged profile, Back and roster updates on main. The dashboard, roster birth-year and export PRs address adjacent layouts. `bun run verify:release` passed with 229 browser checks. Synthetic Chromium checks cover phone and desktop row geometry in English and Arabic, the 360px Arabic course profile and its Refresh action, and student portal sorting and filtering. The supplied production link requires sign-in. The PR records Railway verification.
+
 ## 2026-11-27 10:07 Asia/Damascus — Shorten GitHub Actions validation
 
 The owner asked for faster CI on GitHub Free. A sampled PR took 7m 52s and a main run took 8m 1s. Playwright used more than six minutes in both runs. The core checks and three Playwright shards now run on standard Linux runners in parallel. `Verify` requires all jobs to pass, and new commits cancel older runs of the same PR. Each main commit gets its own run for Railway's Wait for CI. Each shard publishes an HTML report with traces retained for failed tests.
