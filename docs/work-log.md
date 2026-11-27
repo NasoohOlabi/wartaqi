@@ -2518,6 +2518,8 @@ At 10:57 Asia/Damascus, integrated the new mobile app-bar return controls from m
 
 At 11:06 Asia/Damascus, the mobile navigation integration passed its full release gate with 167 unit and integration tests, 247 browser passes and five project-specific browser skips. All eight PR checks passed. The next main update changed the dashboard layout and its tests; the work log was the only merge conflict.
 
+At 11:16 Asia/Damascus, hosted browser shard 1 caught the course preference test clicking a cached administrator menu while the synthetic account changed to Teacher. Holding the grant response reproduced the same missing menu item. The test now waits for the current role's navigation before opening the course chooser. The forced transition and the full course preference scenario each passed twice on desktop and twice on mobile. The dashboard integration's local release gate also passed with 167 unit and integration tests and 247 browser cases.
+
 ## 2026-11-27 10:48 Asia/Damascus — Fit six follow-up dates in one row
 
 The owner reported wasted space in the follow-up date cards at 662px. The dashboard sizes each card to its localized label and wraps cards when they no longer fit on a row.
