@@ -2424,6 +2424,12 @@ The owner asked to see which weekday each absence fell on and to fit each card i
 
 The dashboard browser scenario checked date order, two-line layout and overflow at 320, 390, 430 and 1280px in English and Arabic. It used synthetic attendance records. The PR records release checks and Railway verification.
 
+## 2026-11-27 09:47 Asia/Damascus — Fit dashboard attendance cards on one line
+
+The owner asked to remove the visible status words from the follow-up cards. Each card shows the weekday and date on one line, with a red top border for Absent and a green top border for Present. Excused uses amber and unmarked uses a dashed border. Screen readers retain the localized status.
+
+The dashboard and theme browser checks passed with synthetic records. They cover date order, single-line fit at 320, 360, 390, 430 and 1280px in English and Arabic, status colors, and screen-reader text. The PR records the full release checks and Railway verification.
+
 ## 2026-11-27 08:43 Asia/Damascus — Move mobile student Back into the top app bar
 
 The owner asked for Android-standard placement on the Arabic student profile. The mobile top app bar now shows a 48px Back control at the leading edge, on the right in Arabic and the left in English. Its direction, accessible label, tooltip and return destination follow the current language and student entry path. The desktop profile keeps its labelled Back control.
@@ -2473,3 +2479,9 @@ Focused browser checks use synthetic records to verify sorting, filtering, missi
 The owner reported that the WhatsApp icon appeared below the phone number on desktop. The roster now keeps its dial and WhatsApp links side by side at all widths and gives the desktop phone column room for both targets.
 
 The contact browser scenario checks phone and icon geometry, 44px contact targets and English and Arabic at 1280/1624px and phone widths. It uses synthetic contact records. Native WhatsApp handoff remains unverified.
+
+## 2026-11-27 10:07 Asia/Damascus — Shorten GitHub Actions validation
+
+The owner asked for faster CI on GitHub Free. A sampled PR took 7m 52s and a main run took 8m 1s. Playwright used more than six minutes in both runs. The core checks and three Playwright shards now run on standard Linux runners in parallel. `Verify` requires all jobs to pass, and new commits cancel older runs of the same PR. Each main commit gets its own run for Railway's Wait for CI. Each shard publishes an HTML report with traces retained for failed tests.
+
+Playwright discovery found 78, 81 and 73 cases in the shards. The combined cases exactly matched all 232 cases in the unsharded desktop and mobile suite. Actionlint and `bun run verify` passed. The required check's shell condition passed only when both prerequisites succeeded across all 16 combinations of success, failure, cancellation and skip. GitHub run timings and exact-commit Railway verification are recorded in the PR.

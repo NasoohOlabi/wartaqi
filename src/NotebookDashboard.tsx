@@ -185,7 +185,7 @@ export function NotebookDashboard({
                     {dates.map((day, index) => (
                       <li key={day} className={`dashboard-mark dashboard-mark-${marks[index]}`}>
                         <time dateTime={day}>{dateLabels.get(day)}</time>
-                        <span>{markLabel(marks[index])}</span>
+                        <span className="sr-only">{markLabel(marks[index])}</span>
                       </li>
                     ))}
                   </ul>
