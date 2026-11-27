@@ -145,7 +145,7 @@ export async function planAttendance(
         '\u0644\u0645 \u064a\u064f\u062d\u0641\u0638 \u0623\u064a \u062a\u063a\u064a\u064a\u0631. \u0627\u0644\u0637\u0627\u0644\u0628 \u063a\u064a\u0631 \u0645\u0648\u062c\u0648\u062f \u0623\u0648 \u0627\u0633\u0645\u0647 \u063a\u064a\u0631 \u0645\u062d\u062f\u062f \u0641\u064a \u0627\u0644\u062f\u0648\u0631\u0629\u061b \u0623\u062f\u062e\u0644 \u0627\u0644\u0627\u0633\u0645 \u0627\u0644\u0643\u0627\u0645\u0644.',
       )
     const student = students[0]
-    if ((student.status === 'unmarked') !== (student.eventId === null))
+    if (student.status !== 'unmarked' && student.eventId === null)
       throw new Error('Inconsistent mark')
     const args = validateAgentCall(sync, {
       records: [

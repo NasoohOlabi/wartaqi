@@ -92,9 +92,20 @@ export function registerNotebookWorkflows(
         const total = counts.get(value.studentId)
         if (total) total.notes++
       }
+      const sessionVersions = new Map(
+        projection.attendanceVersions
+          .filter(
+            ({ value }) =>
+              value.date === date &&
+              (courseId === 'none'
+                ? !value.enrollmentId
+                : !!value.enrollmentId && ids.has(value.enrollmentId)),
+          )
+          .map((version) => [version.value.studentId, version]),
+      )
       const session = active.map((student) => {
         const enrollment = enrollmentByStudent.get(student.studentId)
-        const record = records.get(`${student.studentId}:${date}`)
+        const version = sessionVersions.get(student.studentId)
         return {
           studentId: student.studentId,
           name: student.name,
@@ -102,8 +113,8 @@ export function registerNotebookWorkflows(
           level: enrollment?.level ?? student.group,
           teacherId: enrollment?.teacherId ?? null,
           teacherName: enrollment?.teacherName ?? null,
-          status: record?.value.status ?? 'unmarked',
-          eventId: record?.event.id ?? null,
+          status: version?.value.status ?? 'unmarked',
+          eventId: version?.event.id ?? null,
         }
       })
       const marked = session.filter((row) => row.status !== 'unmarked').length

@@ -3,6 +3,7 @@ import { clickRecordAction } from './recordActions'
 import { clickAccountAction } from './profileActions'
 import { expect, test } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
+import { offlineAttendanceSyncSchema } from '../shared/offlineAttendance'
 
 const browserErrors = new WeakMap<object, string[]>()
 test.beforeEach(async ({ context, page }) => {
@@ -17,17 +18,21 @@ test.beforeEach(async ({ context, page }) => {
   watch(page)
   context.on('page', watch)
 })
-test.afterEach(async ({ context }, testInfo) => {
+test.afterEach(async ({ context, hasTouch }, testInfo) => {
   const errors = browserErrors.get(context) ?? []
   // The synthetic lost-response test deliberately aborts one network request.
-  const unexpected = testInfo.title.includes('lost response')
-    ? errors.filter((error) => !error.includes('net::ERR_FAILED'))
-    : errors
+  const unexpected = errors.filter((error) => {
+    if (testInfo.title.includes('lost response') && error.includes('net::ERR_FAILED')) return false
+    return !(
+      hasTouch &&
+      testInfo.title.includes('pressing saved attendance') &&
+      error === 'Failed to load resource: net::ERR_INTERNET_DISCONNECTED'
+    )
+  })
   expect(unexpected).toEqual([])
 })
 
 test('authenticated notebook supports attendance, notes and corrections', async ({
-  hasTouch,
   page,
 }, testInfo) => {
   const external: string[] = []
@@ -68,11 +73,6 @@ test('authenticated notebook supports attendance, notes and corrections', async 
   await expect.poll(() => attendancePosts).toBe(3)
   await expect(absent).toBeFocused()
   await expect(absent).toHaveCSS('outline-style', 'solid')
-  for (let repeat = 0; repeat < 2; repeat++) {
-    if (hasTouch) await absent.tap()
-    else await absent.click()
-    await expect(absent).toHaveAttribute('aria-pressed', 'true')
-  }
   const addNote = page.getByRole('button', { name: 'Add note for ليلى', exact: true })
   await expect(addNote).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   await expect(addNote).toHaveCSS('border-top-width', '0px')
@@ -135,6 +135,83 @@ test('authenticated notebook supports attendance, notes and corrections', async 
     page.getByLabel('Attendance for ليلى').getByRole('button', { pressed: true }),
   ).toHaveAccessibleName('absent')
   expect(external).toEqual([])
+})
+
+test('pressing saved attendance again clears the record after sync and reload', async ({
+  context,
+  hasTouch,
+  page,
+}) => {
+  await mockSyntheticNotebook(page, {
+    names: ['Lina'],
+    role: hasTouch ? 'teacher' : 'administrator',
+  })
+  await page.goto(`/?page=app&view=notebook&tab=attendance&course=${courseId}`)
+  await expect(
+    page.getByLabel('Attendance for Lina').getByRole('button', { pressed: true }),
+  ).toHaveAccessibleName('present')
+  if (hasTouch) await clickAccountAction(page, 'العربية')
+
+  const marks = page.getByLabel(hasTouch ? 'الحضور للطالب Lina' : 'Attendance for Lina')
+  const absent = marks.getByRole('button', { name: hasTouch ? 'غائب' : 'absent', exact: true })
+  const selected = marks.getByRole('button', { pressed: true })
+  const acknowledged = (status: 'absent' | null) =>
+    page.waitForResponse((response) => {
+      if (!response.ok() || !response.url().endsWith('/api/attendance/sync')) return false
+      const body = offlineAttendanceSyncSchema.parse(response.request().postDataJSON())
+      return body.records[0]?.event.payload.status === status
+    })
+  const activateAbsent = () => (hasTouch ? absent.tap() : absent.click())
+  const held = Promise.withResolvers<void>()
+  if (!hasTouch) {
+    await page.route('**/api/attendance/sync', async (route) => {
+      await held.promise
+      await route.fallback()
+    })
+  }
+  const replacementAck = acknowledged('absent')
+  const clearAck = acknowledged(null)
+  try {
+    await activateAbsent()
+    await expect(absent).toHaveAttribute('aria-pressed', 'true')
+    if (hasTouch) {
+      await replacementAck
+      await page.evaluate(() => navigator.serviceWorker.ready)
+      await page.reload()
+      await expect(absent).toHaveAttribute('aria-pressed', 'true')
+      await expect
+        .poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)))
+        .toBe(true)
+      await context.setOffline(true)
+      await expect(page.getByText('غير متصل', { exact: true })).toBeVisible()
+      await activateAbsent()
+      await expect(page.getByText('حُفظت على هذا الجهاز. بانتظار المزامنة.')).toBeVisible()
+      await page.reload()
+      await expect(marks).toBeVisible()
+      await expect(selected).toHaveCount(0)
+      await context.setOffline(false)
+    } else {
+      await absent.press('Space')
+      await expect(absent).toHaveAttribute('aria-pressed', 'false')
+      await expect(absent).toBeFocused()
+    }
+  } finally {
+    held.resolve()
+  }
+  const [replacementResponse, clearResponse] = await Promise.all([replacementAck, clearAck])
+  const replacement = offlineAttendanceSyncSchema.parse(
+    replacementResponse.request().postDataJSON(),
+  ).records[0]
+  const clear = offlineAttendanceSyncSchema.parse(clearResponse.request().postDataJSON()).records[0]
+  expect(clear).toMatchObject({
+    expectedEventId: replacement?.event.id,
+    event: { payload: { status: null } },
+  })
+  expect(await clearResponse.json()).toMatchObject({ outcomes: [{ kind: 'saved' }] })
+  await expect(selected).toHaveCount(0)
+  await page.reload()
+  await expect(marks).toBeVisible()
+  await expect(selected).toHaveCount(0)
 })
 
 test('individual marks persist across student navigation and can be corrected', async ({

@@ -112,7 +112,7 @@ export async function historyWorkflow(ctx: BotContext, snapshot: NeonSnapshot): 
       const value = e.payload
       const description =
         value.kind === 'attendance'
-          ? `${value.date} · ${L(normalizeStatus(value.status), { present: 'حاضر', absent: 'غائب', excused: 'معذور' }[normalizeStatus(value.status)])}`
+          ? `${value.date} · ${value.status === null ? L('Not marked', 'غير محدد') : L(normalizeStatus(value.status), { present: 'حاضر', absent: 'غائب', excused: 'معذور' }[normalizeStatus(value.status)])}`
           : value.kind === 'note'
             ? `${value.date} · ${short(value.text, 70)}`
             : ''
@@ -148,7 +148,7 @@ export async function historyWorkflow(ctx: BotContext, snapshot: NeonSnapshot): 
         payload.kind === 'note'
           ? `${payload.date}\n${payload.tags.map((tag) => `#${tag}`).join(' ')}\n${payload.text.slice(notePage * 2000, (notePage + 1) * 2000)}`
           : payload.kind === 'attendance'
-            ? `${payload.date} · ${L(normalizeStatus(payload.status), { present: 'حاضر', absent: 'غائب', excused: 'معذور' }[normalizeStatus(payload.status)])}`
+            ? `${payload.date} · ${payload.status === null ? L('Not marked', 'غير محدد') : L(normalizeStatus(payload.status), { present: 'حاضر', absent: 'غائب', excused: 'معذور' }[normalizeStatus(payload.status)])}`
             : ''
       return {
         text: `${details}${projection.reversed.has(target.id) ? `\n${L('Corrected', 'تم التصحيح')}` : ''}`,

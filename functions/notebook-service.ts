@@ -1372,7 +1372,7 @@ export function createHandler(
           const outcomes = []
           for (const { event, expectedEventId, expectedRevision } of sync.records) {
             const payload = event.payload
-            const latest = projectEvents(current.events).attendance.find(
+            const latest = projectEvents(current.events).attendanceVersions.find(
               ({ value }) =>
                 value.studentId === payload.studentId &&
                 value.enrollmentId === payload.enrollmentId &&

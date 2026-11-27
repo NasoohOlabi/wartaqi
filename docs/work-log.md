@@ -2549,3 +2549,11 @@ The owner asked for each attendance tap to save without a separate button or bat
 Verification covers individual requests, rapid updates with sync delayed, offline reload, corrections and English and Arabic layouts. The PR records release and Railway verification. Authenticated browser verification uses synthetic fixtures.
 
 The local verification gate passed against disposable Postgres. The real-server browser test confirmed that a single offline tap survives reload, creates one attendance event and reaches a separate signed-in student. The updated phone layout and profile tests passed in both Chromium projects.
+
+## 2026-11-27 11:54 Asia/Damascus — Clear a saved attendance mark by pressing it again
+
+The owner asked to undo an accidental attendance selection from its row. Press the selected saved status to clear the student’s attendance for that course and date. The device saves the clear immediately and syncs when online. The clear leaves the date unmarked and retains the previous marks in history.
+
+Synthetic Chromium coverage exercises a desktop administrator and an Arabic phone-sized teacher view, including a disconnected reload and reconnection. Disposable PostgreSQL covers scoped projection, stale writes, exact retries and student visibility. The PR records the release checks and Railway verification.
+
+At 12:11 Asia/Damascus, integrated the clear with the save-on-tap change in main. The desktop test holds the earlier request and checks that the clear uses that mark’s revision. The Arabic phone test checks offline reload and reconnect. Two signed-in Chromium sessions against disposable PostgreSQL verified that the clear reaches the student view and preserves the earlier event in history.

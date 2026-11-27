@@ -813,7 +813,7 @@ function Notebook({
                   const mark = { status }
                   const observed = sessionMarks[sessionKey]?.[studentId]
                     ? undefined
-                    : (scopedProjection.attendance.find(
+                    : (scopedProjection.attendanceVersions.find(
                         ({ value }) => value.studentId === studentId && value.date === date,
                       )?.event.id ?? null)
                   setSessionMarks((previous) => ({
@@ -1417,7 +1417,7 @@ function studentLevel(
     : formatLevel(student.group)
 }
 
-type AttendanceMarks = Partial<Record<string, { status: Status }>>
+type AttendanceMarks = Partial<Record<string, { status: Status | null }>>
 
 function AttendanceView({
   userId,
@@ -1437,7 +1437,7 @@ function AttendanceView({
 }: {
   userId: string
   pendingMarks: AttendanceMarks
-  onMark: (studentId: string, status: Status) => void
+  onMark: (studentId: string, status: Status | null) => void
   canCorrect: boolean
   onOpenStudent: (studentId: string, element: HTMLElement) => void
   disabled: boolean
@@ -1468,6 +1468,10 @@ function AttendanceView({
   )
   const candidates = [...students].sort((a, b) => a.name.localeCompare(b.name, language))
   const level = (student: Student) => studentLevel(student, courseSelected, enrollments)
+  const displayedMark = (studentId: string) => {
+    const pending = pendingMarks[studentId]
+    return pending ? pending.status : (current.get(studentId) ?? null)
+  }
   const attendanceTable = useDataTable('attendance', candidates, [
     { id: 'student', label: t('Student'), value: (student) => student.name },
     { id: 'level', label: language === 'ar' ? 'المستوى' : 'Level', value: level },
@@ -1482,7 +1486,7 @@ function AttendanceView({
       choices: [t('Not marked'), t('present'), t('absent'), t('excused')],
       label: language === 'ar' ? 'الحضور' : 'Attendance',
       value: (student) => {
-        const status = pendingMarks[student.studentId]?.status ?? current.get(student.studentId)
+        const status = displayedMark(student.studentId)
         return status === 'present' || status === 'absent' || status === 'excused'
           ? t(status)
           : t('Not marked')
@@ -1501,7 +1505,10 @@ function AttendanceView({
     level: level(student),
     teacherName:
       enrollments.find((entry) => entry.studentId === student.studentId)?.teacherName ?? '',
-    saved: statusSchema.safeParse(current.get(student.studentId)).data ?? null,
+    saved:
+      pendingMarks[student.studentId]?.status === null
+        ? null
+        : (current.get(student.studentId) ?? null),
     draft: pendingMarks[student.studentId]?.status ?? null,
   }))
   useLayoutEffect(() =>
@@ -1742,9 +1749,8 @@ function AttendanceView({
                 }
               }}
               onMark={(id, value) => {
-                const status = statusSchema.safeParse(value[0]).data
-                if (status && status !== (pendingMarks[id]?.status ?? current.get(id)))
-                  onMark(id, status)
+                const status = value.length ? statusSchema.safeParse(value[0]).data : null
+                if (status !== undefined && status !== displayedMark(id)) onMark(id, status)
               }}
               onCorrect={(id) => {
                 const record = projected.attendance.find(
@@ -2496,7 +2502,7 @@ function describeEvent(
   if (value.kind === 'student')
     return `${t('Student')}: ${value.name} · ${t(value.active ? 'active' : 'inactive')}`
   if (value.kind === 'attendance')
-    return `${name} · ${value.date} · ${t(normalizeStatus(value.status))}`
+    return `${name} · ${value.date} · ${t(value.status === null ? 'Not marked' : normalizeStatus(value.status))}`
   return `${name} · ${value.date} · #${value.tags.join(' #')} · ${value.text}`
 }
 function Empty({ text }: { text: string }) {

@@ -184,7 +184,9 @@ export function OfflineAttendance({
               <p className="muted">
                 {t('Attendance')} · <bdi>{item.event.payload.date}</bdi> ·{' '}
                 {changeStatus(item.outcome?.kind)}
-                {item.outcome?.kind !== 'conflict' && <> · {t(item.event.payload.status)}</>}
+                {item.outcome?.kind !== 'conflict' && (
+                  <> · {t(item.event.payload.status ?? 'Not marked')}</>
+                )}
               </p>
               {item.outcome?.kind === 'conflict' && (
                 <div className="flex flex-wrap gap-2">
@@ -200,7 +202,7 @@ export function OfflineAttendance({
                     {t(
                       pending.findLast(
                         (candidate) => attendanceKey(candidate) === attendanceKey(item),
-                      )?.event.payload.status ?? item.event.payload.status,
+                      )?.event.payload.status ?? 'Not marked',
                     )}
                   </p>
                   <button
