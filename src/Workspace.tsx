@@ -23,10 +23,8 @@ import {
   UserRound,
 } from 'lucide-react'
 import { useLanguage, type TranslationKey } from './useLanguage'
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { attendanceExitDuration, AttendanceRows } from './AttendanceRows'
-import { registerAttendanceReplay } from './attendanceReplayCapture'
-import { attendanceReplayMaxRows } from '../shared/attendanceReplay'
 import {
   attendanceScopeKey,
   projectEvents,
@@ -813,7 +811,6 @@ function Notebook({
             {tab === 'attendance' && query.course && !closedCourse && (
               <AttendanceView
                 key={`${query.date}:${query.course}`}
-                userId={userId}
                 pendingMarks={sessionMarks[sessionKey] ?? {}}
                 onMark={async (studentId, status) => {
                   const enrollment = activeEnrollments.find(
@@ -1434,7 +1431,6 @@ function studentLevel(
 type AttendanceMarks = Partial<Record<string, { status: Status | null }>>
 
 function AttendanceView({
-  userId,
   pendingMarks,
   onMark,
   students,
@@ -1449,7 +1445,6 @@ function AttendanceView({
   canCorrect,
   onOpenStudent,
 }: {
-  userId: string
   pendingMarks: AttendanceMarks
   onMark: (studentId: string, status: Status | null) => Promise<boolean>
   canCorrect: boolean
@@ -1569,10 +1564,7 @@ function AttendanceView({
           retainedRows[student.studentId],
       )
     : attendanceTable.rows
-  const unmarked = visible.filter(
-    (student) => !current.has(student.studentId) && !pendingMarks[student.studentId],
-  )
-  const replayRows = visible.map((student) => ({
+  const attendanceRows = visible.map((student) => ({
     id: student.studentId,
     name: student.name,
     level: level(student),
@@ -1582,28 +1574,9 @@ function AttendanceView({
       pendingMarks[student.studentId]?.status === null
         ? null
         : (current.get(student.studentId) ?? null),
-    draft: pendingMarks[student.studentId]?.status ?? null,
+    draft:
+      retainedRows[student.studentId]?.status ?? pendingMarks[student.studentId]?.status ?? null,
   }))
-  const recordedRows = query.unmarked
-    ? replayRows.filter((row) => !current.has(row.id))
-    : replayRows
-  useLayoutEffect(() =>
-    registerAttendanceReplay(userId, {
-      courseName: courseName ?? '',
-      date,
-      rows: recordedRows.slice(0, attendanceReplayMaxRows),
-      totalRows: recordedRows.length,
-      pendingCount: Object.keys(pendingMarks).length,
-      unmarkedCount: unmarked.length,
-      unmarkedOnly: Boolean(query.unmarked),
-      canCorrect,
-      dialog: noteStudent
-        ? { kind: 'note', name: noteStudent.name }
-        : correction
-          ? { kind: 'correction', name: correction.name }
-          : null,
-    }),
-  )
   return (
     <section className="panel attendance-session">
       <dialog
@@ -1779,7 +1752,6 @@ function AttendanceView({
           {t('Session date')}
           <input
             type="date"
-            data-replay-action="date"
             required
             value={date}
             onChange={(event) => {
@@ -1790,7 +1762,6 @@ function AttendanceView({
         {candidates.length > 0 && (
           <button
             className="secondary unmarked-toggle"
-            data-replay-action="unmarked"
             aria-pressed={query.unmarked}
             onClick={() => setQuery({ unmarked: query.unmarked ? '' : '1' }, true)}
           >
@@ -1812,10 +1783,7 @@ function AttendanceView({
         <>
           <DirectionProvider direction={language === 'ar' ? 'rtl' : 'ltr'}>
             <AttendanceRows
-              rows={replayRows.map((row) => {
-                const held = retainedRows[row.id]
-                return held ? { ...row, draft: held.status } : row
-              })}
+              rows={attendanceRows}
               exitingRows={exitingRows}
               header={<TableHeader model={attendanceTable} />}
               canCorrect={canCorrect}

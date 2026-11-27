@@ -2571,3 +2571,9 @@ After a local save, the selected mark now stays visible for 650 ms, then the car
 The browser regression exercises the middle and end of a long roster, a repeat tap, reload, and reduced-motion focus on desktop and mobile Chromium. Before and after recordings use synthetic records in a 390 px phone viewport. The PR records release and Railway checks. Physical-device and authenticated production behavior require separate verification.
 
 At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing before its confirmation delay while an earlier sync was still settling after reload. The hold now follows the result of the specific local save, and a focused row hands off focus before it is removed. The browser regression covers both keyboard and pointer focus through this path.
+
+## 2026-11-27 16:06 Asia/Damascus — Retire session recordings
+
+The owner requested removal of session replay while preserving notebook sync. Removed browser capture, attendance snapshots, the administrator player and frame ingestion. Older clients receive a terminal response to uploads, and the hourly cleanup still expires historical recordings after three days. Website journey diagnostics and Web Vitals continue. Attendance row focus now uses the mark control's own class.
+
+Two signed-in synthetic Chromium sessions against a disposable Postgres verified offline attendance, reload, reconnection, propagation to the student and clearing the mark. Neither browser requested the replay endpoint. A separate database integration test verified rejection of legacy uploads, retirement of playback and independent three-day recording and 30-day diagnostics retention. Production verification is tracked on the PR.

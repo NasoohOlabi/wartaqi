@@ -56,8 +56,8 @@ export function ProfileSettings({
     <section className="profile-settings panel">
       <p className="muted">
         {ar
-          ? 'يحتفظ وارتق بتشخيصات الاستخدام لمدة 30 يومًا، وبتسجيلات الجلسات لمدة 3 أيام. قد تتضمن تسجيلات الحضور أسماء الطلاب وعلامات الحضور.'
-          : 'Wartaq keeps usage diagnostics for 30 days and session replays for 3 days. Attendance replays can include student names and marks.'}
+          ? 'يحتفظ وارتق بتشخيصات الاستخدام لمدة 30 يومًا.'
+          : 'Wartaq keeps usage diagnostics for 30 days.'}
       </p>
       <form
         onSubmit={async (event) => {
