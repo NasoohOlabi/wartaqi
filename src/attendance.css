@@ -29,3 +29,30 @@
     scroll-margin-bottom: calc(8.5rem + env(safe-area-inset-bottom));
   }
 }
+
+@media (prefers-reduced-motion: no-preference) {
+  .attendance-session tr[data-attendance-exiting='true'] {
+    opacity: 0;
+    transition: opacity 260ms ease;
+  }
+}
+@media (width > 64rem) and (prefers-reduced-motion: no-preference) {
+  .attendance-session .attendance-cell {
+    display: grid;
+    grid-template-rows: 1fr;
+  }
+  .attendance-session .attendance-cell > div {
+    min-height: 0;
+  }
+  .attendance-session tr[data-attendance-exiting='true'] .attendance-cell {
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 260ms ease;
+  }
+  .attendance-session tr[data-attendance-exiting='true'] .attendance-cell > div {
+    overflow: clip;
+  }
+  .attendance-session tr[data-attendance-exiting='true'] td {
+    padding-block: 0;
+    transition: padding 260ms ease;
+  }
+}

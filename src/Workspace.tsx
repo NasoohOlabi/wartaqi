@@ -24,7 +24,7 @@ import {
 } from 'lucide-react'
 import { useLanguage, type TranslationKey } from './useLanguage'
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { AttendanceRows } from './AttendanceRows'
+import { attendanceExitDuration, AttendanceRows } from './AttendanceRows'
 import { registerAttendanceReplay } from './attendanceReplayCapture'
 import { attendanceReplayMaxRows } from '../shared/attendanceReplay'
 import {
@@ -263,6 +263,8 @@ function Notebook({
   const courseHistory = query.view === 'courses' && query.courseView === 'history' && administrator
   const history = settingsHistory || courseHistory
   const tab = history ? 'history' : query.tab
+  const showingUnmarkedAttendance =
+    tab === 'attendance' && query.view === 'notebook' && query.unmarked
   useEffect(() => {
     if (query.view === 'history') {
       if (!administrator) setQuery({ view: 'notebook', tab: '' })
@@ -523,9 +525,11 @@ function Notebook({
       {navigation}
       <main id="main-content" tabIndex={-1} className="workspace-main">
         {offlineNotice}
-        {!ledger.offline && ledger.offlinePendingCount > 0 && (
-          <StaffPendingNotice needsReview={ledger.offlineNeedsReview} />
-        )}
+        {!ledger.offline &&
+          ledger.offlinePendingCount > 0 &&
+          (!showingUnmarkedAttendance || ledger.offlineNeedsReview) && (
+            <StaffPendingNotice needsReview={ledger.offlineNeedsReview} />
+          )}
         {settingsHistory && (
           <WorkspacePageHeader
             title={
@@ -619,10 +623,16 @@ function Notebook({
             {errorMessage(ledger.error)}
           </p>
         )}
-        {ledger.message && (
-          <p role="status" className="mb-4 rounded-lg bg-emerald-50 p-4 text-emerald-800">
+        {showingUnmarkedAttendance ? (
+          <p role="status" className="sr-only">
             {ledger.message}
           </p>
+        ) : (
+          ledger.message && (
+            <p role="status" className="mb-4 rounded-lg bg-emerald-50 p-4 text-emerald-800">
+              {ledger.message}
+            </p>
+          )
         )}
         {projected.conflicts > 0 && (
           <p role="alert" className="mb-4 text-red-800">
@@ -805,11 +815,11 @@ function Notebook({
                 key={`${query.date}:${query.course}`}
                 userId={userId}
                 pendingMarks={sessionMarks[sessionKey] ?? {}}
-                onMark={(studentId, status) => {
+                onMark={async (studentId, status) => {
                   const enrollment = activeEnrollments.find(
                     (entry) => entry.studentId === studentId,
                   )
-                  if (!enrollment) return
+                  if (!enrollment) return false
                   const date = query.date
                   const mark = { status }
                   const observed = sessionMarks[sessionKey]?.[studentId]
@@ -822,8 +832,8 @@ function Notebook({
                     [sessionKey]: { ...previous[sessionKey], [studentId]: mark },
                   }))
                   // Keep local commits in tap order, including taps across sessions.
-                  attendanceSaves.current = attendanceSaves.current.then(async () => {
-                    await ledger.save(
+                  const save = attendanceSaves.current.then(async () => {
+                    const saved = await ledger.save(
                       [
                         {
                           kind: 'attendance',
@@ -842,7 +852,10 @@ function Notebook({
                       delete remaining[studentId]
                       return { ...previous, [sessionKey]: remaining }
                     })
+                    return saved
                   })
+                  attendanceSaves.current = save.then(() => undefined)
+                  return save
                 }}
                 enrollments={activeEnrollments}
                 courseSelected={!!query.course}
@@ -1438,7 +1451,7 @@ function AttendanceView({
 }: {
   userId: string
   pendingMarks: AttendanceMarks
-  onMark: (studentId: string, status: Status | null) => void
+  onMark: (studentId: string, status: Status | null) => Promise<boolean>
   canCorrect: boolean
   onOpenStudent: (studentId: string, element: HTMLElement) => void
   disabled: boolean
@@ -1453,6 +1466,15 @@ function AttendanceView({
 }) {
   const { t, language } = useLanguage()
   const query = useQueryState()
+  const [showUnmarked, setShowUnmarked] = useState(query.unmarked)
+  const [retainedRows, setRetainedRows] = useState<
+    Partial<Record<string, { status: Status; exiting: boolean }>>
+  >({})
+  const rowHolds = useRef(new Map<string, { timer: number | undefined }>())
+  if (showUnmarked !== query.unmarked) {
+    setShowUnmarked(query.unmarked)
+    setRetainedRows({})
+  }
   const [noteStudent, setNoteStudent] = useState<Student | null>(null)
   const [noteText, setNoteText] = useState('')
   const [noteTags, setNoteTags] = useState('')
@@ -1483,15 +1505,69 @@ function AttendanceView({
       choices: [t('Not marked'), t('present'), t('absent'), t('excused')],
       label: language === 'ar' ? 'الحضور' : 'Attendance',
       value: (student) => {
-        const status = pendingMarks[student.studentId]?.status ?? current.get(student.studentId)
+        const pending = pendingMarks[student.studentId]
+        const status =
+          query.unmarked && retainedRows[student.studentId]
+            ? null
+            : pending
+              ? pending.status
+              : current.get(student.studentId)
         return status === 'present' || status === 'absent' || status === 'excused'
           ? t(status)
           : t('Not marked')
       },
     },
   ])
+  function releaseRetainedRow(id: string) {
+    const timer = rowHolds.current.get(id)?.timer
+    if (timer !== undefined) window.clearTimeout(timer)
+    rowHolds.current.delete(id)
+    setRetainedRows((previous) => {
+      if (!previous[id]) return previous
+      const next = { ...previous }
+      delete next[id]
+      return next
+    })
+  }
+  async function markRow(id: string, status: Status | null) {
+    if (!query.unmarked) {
+      await onMark(id, status)
+      return
+    }
+    releaseRetainedRow(id)
+    if (!status) {
+      await onMark(id, null)
+      return
+    }
+    const hold: { timer: number | undefined } = { timer: undefined }
+    rowHolds.current.set(id, hold)
+    setRetainedRows((previous) => ({ ...previous, [id]: { status, exiting: false } }))
+    const saved = await onMark(id, status)
+    if (rowHolds.current.get(id) !== hold) return
+    if (!saved) {
+      releaseRetainedRow(id)
+      return
+    }
+    hold.timer = window.setTimeout(() => {
+      setRetainedRows((previous) => ({ ...previous, [id]: { status, exiting: true } }))
+      hold.timer = window.setTimeout(() => releaseRetainedRow(id), attendanceExitDuration)
+    }, 650)
+  }
+  useEffect(() => {
+    const holds = rowHolds.current
+    return () => {
+      for (const { timer } of holds.values()) window.clearTimeout(timer)
+      holds.clear()
+    }
+  }, [query.unmarked])
+  const exitingRows = new Set(Object.keys(retainedRows).filter((id) => retainedRows[id]?.exiting))
   const visible = query.unmarked
-    ? attendanceTable.rows.filter((student) => !current.has(student.studentId))
+    ? attendanceTable.rows.filter(
+        (student) =>
+          !current.has(student.studentId) ||
+          pendingMarks[student.studentId]?.status === null ||
+          retainedRows[student.studentId],
+      )
     : attendanceTable.rows
   const unmarked = visible.filter(
     (student) => !current.has(student.studentId) && !pendingMarks[student.studentId],
@@ -1508,12 +1584,15 @@ function AttendanceView({
         : (current.get(student.studentId) ?? null),
     draft: pendingMarks[student.studentId]?.status ?? null,
   }))
+  const recordedRows = query.unmarked
+    ? replayRows.filter((row) => !current.has(row.id))
+    : replayRows
   useLayoutEffect(() =>
     registerAttendanceReplay(userId, {
       courseName: courseName ?? '',
       date,
-      rows: replayRows.slice(0, attendanceReplayMaxRows),
-      totalRows: replayRows.length,
+      rows: recordedRows.slice(0, attendanceReplayMaxRows),
+      totalRows: recordedRows.length,
       pendingCount: Object.keys(pendingMarks).length,
       unmarkedCount: unmarked.length,
       unmarkedOnly: Boolean(query.unmarked),
@@ -1733,7 +1812,11 @@ function AttendanceView({
         <>
           <DirectionProvider direction={language === 'ar' ? 'rtl' : 'ltr'}>
             <AttendanceRows
-              rows={replayRows}
+              rows={replayRows.map((row) => {
+                const held = retainedRows[row.id]
+                return held ? { ...row, draft: held.status } : row
+              })}
+              exitingRows={exitingRows}
               header={<TableHeader model={attendanceTable} />}
               canCorrect={canCorrect}
               disabled={disabled}
@@ -1747,8 +1830,7 @@ function AttendanceView({
               }}
               onMark={(id, value) => {
                 const status = statusSchema.safeParse(value[0]).data
-                if (status) onMark(id, status)
-                else if (value.length === 0) onMark(id, null)
+                if (status || value.length === 0) void markRow(id, status ?? null)
               }}
               onCorrect={(id) => {
                 const record = projected.attendance.find(

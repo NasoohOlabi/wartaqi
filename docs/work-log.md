@@ -2561,3 +2561,13 @@ Verification covers touch, keyboard, taps during delayed delivery, reload, confl
 The owner reported a repeatable save failure in course management. Production returned HTTP 409 when the browser tried to create a second enrollment for a student with an inactive roster record. Manage students now uses the full set of saved enrollments, so it shows the correct state and updates the existing enrollment ID.
 
 The browser regression covers withdrawing and rejoining across reloads in desktop English and mobile Arabic. It checks the original enrollment ID, level, grade, handbook receipt and inactive roster status. The PR records release checks and Railway verification.
+
+## 2026-11-27 15:12 Asia/Damascus — Smooth Show unmarked attendance
+
+The owner reported that marking a student in **Show unmarked** made the list jump. The synthetic phone recording captured a card disappearing within 80 ms and the following card shifting 196 px in one frame. A second shift came from routine save notices resizing the area above the roster.
+
+After a local save, the selected mark now stays visible for 650 ms, then the card fades and collapses over 260 ms. Tapping the same status during the hold clears it. Reduced motion skips the animation, and keyboard focus continues in the roster. Routine confirmation is announced without shifting the list, and actionable sync notices remain available.
+
+The browser regression exercises the middle and end of a long roster, a repeat tap, reload, and reduced-motion focus on desktop and mobile Chromium. Before and after recordings use synthetic records in a 390 px phone viewport. The PR records release and Railway checks. Physical-device and authenticated production behavior require separate verification.
+
+At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing before its confirmation delay while an earlier sync was still settling after reload. The hold now follows the result of the specific local save, and a focused row hands off focus before it is removed. The browser regression covers both keyboard and pointer focus through this path.
