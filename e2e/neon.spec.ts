@@ -779,6 +779,7 @@ test('successive marks queue individually while the first delivery is held', asy
     await saveAttendance(page)
     await expect.poll(() => requests.length).toBe(1)
     await saveAttendance(page, 'absent')
+    await saveAttendance(page, 'absent')
     await saveAttendance(page, 'excused')
     await expect(
       page.getByLabel('Attendance for Alpha Student').getByRole('button', { pressed: true }),
@@ -786,18 +787,20 @@ test('successive marks queue individually while the first delivery is held', asy
     await expect(page.getByRole('button', { name: 'My changes', exact: true })).toBeVisible()
     expect(requests).toHaveLength(1)
     release()
-    await expect.poll(() => requests.length).toBe(3)
+    await expect.poll(() => requests.length).toBe(4)
     const records = requests.flatMap(({ records }) => records)
     expect(requests.every(({ records }) => records.length === 1)).toBe(true)
     expect(records.map(({ event }) => event.payload.status)).toEqual([
       'present',
       'absent',
+      null,
       'excused',
     ])
     expect(records.map(({ expectedEventId }) => expectedEventId)).toEqual([
       null,
       records[0].event.id,
       records[1].event.id,
+      records[2].event.id,
     ])
     await expect(page.getByText('Changes accepted by Wartaq.')).toBeVisible()
     await page.reload()

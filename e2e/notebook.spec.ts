@@ -71,8 +71,9 @@ test('authenticated notebook supports attendance, notes and corrections', async 
   for (let repeat = 0; repeat < 2; repeat++) {
     if (hasTouch) await absent.tap()
     else await absent.click()
-    await expect(absent).toHaveAttribute('aria-pressed', 'true')
+    await expect(absent).toHaveAttribute('aria-pressed', repeat === 0 ? 'false' : 'true')
   }
+  await expect.poll(() => attendancePosts).toBe(5)
   const addNote = page.getByRole('button', { name: 'Add note for ليلى', exact: true })
   await expect(addNote).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   await expect(addNote).toHaveCSS('border-top-width', '0px')
@@ -101,7 +102,7 @@ test('authenticated notebook supports attendance, notes and corrections', async 
     await page.screenshot({ path: '.artifacts/verification/notebook.png', fullPage: true })
   }
   await page.keyboard.press('Escape')
-  expect(attendancePosts).toBe(3)
+  expect(attendancePosts).toBe(5)
   await expect(page.getByRole('button', { name: /Save attendance/ })).toHaveCount(0)
   await page.getByRole('button', { name: 'Summary', exact: true }).click()
   const summaryRow = page.getByRole('row', { name: /ليلى/ })

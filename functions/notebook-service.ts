@@ -46,7 +46,7 @@ import {
   neonStudentAttendanceSchema,
   neonTeacherSchema,
 } from '../shared/neon'
-import { eventSchema, projectEvents } from '../shared/ledger'
+import { attendanceScopeKey, eventSchema, projectEvents } from '../shared/ledger'
 import { offlineAttendanceSyncSchema } from '../shared/offlineAttendance'
 import {
   editableProfileSchema,
@@ -1372,14 +1372,11 @@ export function createHandler(
           const outcomes = []
           for (const { event, expectedEventId, expectedRevision } of sync.records) {
             const payload = event.payload
-            const latest = projectEvents(current.events).attendance.find(
-              ({ value }) =>
-                value.studentId === payload.studentId &&
-                value.enrollmentId === payload.enrollmentId &&
-                value.date === payload.date,
+            const latest = projectEvents(current.events).attendanceVersions.get(
+              attendanceScopeKey(payload),
             )
             const version = latest
-              ? { eventId: latest.event.id, status: latest.value.status }
+              ? { eventId: latest.event.id, status: latest.value?.status ?? null }
               : null
             try {
               validateAssignedPayloads(
@@ -1416,7 +1413,7 @@ export function createHandler(
               (expectedRevision === 'unknown'
                 ? version !== null
                 : (version?.eventId ?? null) !== expectedEventId) &&
-              version?.status !== payload.status
+              (version?.status ?? null) !== payload.status
             ) {
               outcomes.push({ id: event.id, kind: 'conflict', current: version })
               continue

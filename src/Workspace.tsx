@@ -28,6 +28,7 @@ import { AttendanceRows } from './AttendanceRows'
 import { registerAttendanceReplay } from './attendanceReplayCapture'
 import { attendanceReplayMaxRows } from '../shared/attendanceReplay'
 import {
+  attendanceScopeKey,
   projectEvents,
   normalizeStatus,
   normalizedNoteTags,
@@ -813,8 +814,8 @@ function Notebook({
                   const mark = { status }
                   const observed = sessionMarks[sessionKey]?.[studentId]
                     ? undefined
-                    : (scopedProjection.attendance.find(
-                        ({ value }) => value.studentId === studentId && value.date === date,
+                    : (scopedProjection.attendanceVersions.get(
+                        attendanceScopeKey({ studentId, enrollmentId: enrollment.id, date }),
                       )?.event.id ?? null)
                   setSessionMarks((previous) => ({
                     ...previous,
@@ -1417,7 +1418,7 @@ function studentLevel(
     : formatLevel(student.group)
 }
 
-type AttendanceMarks = Partial<Record<string, { status: Status }>>
+type AttendanceMarks = Partial<Record<string, { status: Status | null }>>
 
 function AttendanceView({
   userId,
@@ -1437,7 +1438,7 @@ function AttendanceView({
 }: {
   userId: string
   pendingMarks: AttendanceMarks
-  onMark: (studentId: string, status: Status) => void
+  onMark: (studentId: string, status: Status | null) => void
   canCorrect: boolean
   onOpenStudent: (studentId: string, element: HTMLElement) => void
   disabled: boolean
@@ -1501,7 +1502,10 @@ function AttendanceView({
     level: level(student),
     teacherName:
       enrollments.find((entry) => entry.studentId === student.studentId)?.teacherName ?? '',
-    saved: statusSchema.safeParse(current.get(student.studentId)).data ?? null,
+    saved:
+      pendingMarks[student.studentId]?.status === null
+        ? null
+        : (current.get(student.studentId) ?? null),
     draft: pendingMarks[student.studentId]?.status ?? null,
   }))
   useLayoutEffect(() =>
@@ -1743,8 +1747,8 @@ function AttendanceView({
               }}
               onMark={(id, value) => {
                 const status = statusSchema.safeParse(value[0]).data
-                if (status && status !== (pendingMarks[id]?.status ?? current.get(id)))
-                  onMark(id, status)
+                if (status) onMark(id, status)
+                else if (value.length === 0) onMark(id, null)
               }}
               onCorrect={(id) => {
                 const record = projected.attendance.find(
@@ -2496,7 +2500,7 @@ function describeEvent(
   if (value.kind === 'student')
     return `${t('Student')}: ${value.name} · ${t(value.active ? 'active' : 'inactive')}`
   if (value.kind === 'attendance')
-    return `${name} · ${value.date} · ${t(normalizeStatus(value.status))}`
+    return `${name} · ${value.date} · ${t(value.status === null ? 'Not marked' : normalizeStatus(value.status))}`
   return `${name} · ${value.date} · #${value.tags.join(' #')} · ${value.text}`
 }
 function Empty({ text }: { text: string }) {
