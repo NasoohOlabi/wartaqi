@@ -647,9 +647,11 @@ export function useLedger(
       for (const payload of payloads) {
         if (payload.kind === 'attendance') {
           const current = projection.attendanceVersions.get(attendanceScopeKey(payload))
+          const event = makeEvent(neon.teacher.name, payload)
           marks.push(
             offlineAttendanceRecordSchema.parse({
-              event: makeEvent(neon.teacher.name, payload),
+              event,
+              editTime: event.editTime,
               expectedEventId:
                 observedMark === undefined ? (current?.event.id ?? null) : observedMark,
             }),
@@ -748,6 +750,7 @@ export function useLedger(
     if (!changed.length) return true
     const operation = offlineProfileOperationSchema.parse({
       kind: 'profile-v1',
+      editTime: new Date().toISOString(),
       id: crypto.randomUUID(),
       studentId: input.studentId,
       clientTime: new Date().toISOString(),

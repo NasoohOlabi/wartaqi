@@ -2569,6 +2569,13 @@ test('membership switch shows pending changes and retries safely', async ({ page
   const captured = Promise.withResolvers<void>()
   const release = Promise.withResolvers<void>()
   let writes = 0
+  const assignmentEdits: { time: string | undefined; id: string | undefined }[] = []
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/admin/enrollments/assignment') {
+      const headers = request.headers()
+      assignmentEdits.push({ time: headers['x-edit-time'], id: headers['x-edit-id'] })
+    }
+  })
   await page.route('**/api/admin/enrollments/membership', async (route) => {
     writes += 1
     captured.resolve()
@@ -2635,4 +2642,9 @@ test('membership switch shows pending changes and retries safely', async ({ page
     [id, true],
     [id, true],
   ])
+  expect(assignmentEdits).toHaveLength(3)
+  expect(assignmentEdits[1].time).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/)
+  expect(assignmentEdits[1].id).toBeTruthy()
+  expect(assignmentEdits[1].id).not.toBe(assignmentEdits[0].id)
+  expect(assignmentEdits[2]).toEqual(assignmentEdits[1])
 })

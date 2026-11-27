@@ -36,14 +36,23 @@ export async function saveGradeEdit(
   const existing = z.string().optional().parse(receipt.rows[0]?.fingerprint)
   if (existing !== undefined) return { status: existing === fingerprint ? 'accepted' : 'blocked' }
   const row = await db.query(
-    'SELECT practical::float8 AS practical, theory::float8 AS theory, notes FROM course_enrollments WHERE id = $1 FOR UPDATE',
-    [operation.id],
+    `SELECT practical::float8 AS practical, theory::float8 AS theory, notes,
+      COALESCE((edit_time, edit_id) >= ($2::timestamptz, $3::uuid), false) AS stale
+      FROM course_enrollments WHERE id = $1 FOR UPDATE`,
+    [operation.id, operation.editTime ?? null, operation.requestId],
   )
   if (!row.rowCount) return { status: 'blocked' }
-  const current = gradeValuesSchema.parse(row.rows[0])
-  if (gradeChangesConflict(current, operation.fields)) return { status: 'conflict', current }
+  const current = gradeValuesSchema.parse({
+    practical: row.rows[0].practical,
+    theory: row.rows[0].theory,
+    notes: row.rows[0].notes,
+  })
+  if (operation.editTime && row.rows[0].stale) return { status: 'conflict', current }
+  if (!operation.editTime && gradeChangesConflict(current, operation.fields))
+    return { status: 'conflict', current }
   const next = applyGradeChanges(current, operation.fields)
   if (
+    operation.editTime ||
     next.practical !== current.practical ||
     next.theory !== current.theory ||
     next.notes !== current.notes
