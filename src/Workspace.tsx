@@ -922,6 +922,7 @@ function StudentDetails({
       ? !memberships.length
       : courseMembership?.active && courses.some((course) => course.id === courseId && course.open))
   const editInSettings = administrator && !offline
+  const editLabel = ar ? 'تعديل الطالب' : 'Edit student'
   return (
     <div className="student-details">
       <section className="panel student-details-overview" aria-labelledby="student-details-title">
@@ -946,7 +947,9 @@ function StudentDetails({
             <>
               {(editInSettings || (userId && canWrite && !editing)) && (
                 <button
-                  className="secondary inline-flex min-h-11 items-center gap-2"
+                  className="icon-button"
+                  aria-label={editLabel}
+                  title={editLabel}
                   onClick={() => {
                     if (editInSettings)
                       openChildView({
@@ -957,10 +960,7 @@ function StudentDetails({
                     else setEditing(true)
                   }}
                 >
-                  <Pencil className="shrink-0" size={18} aria-hidden="true" />
-                  {ar
-                    ? '\u062a\u0639\u062f\u064a\u0644 \u0627\u0644\u0637\u0627\u0644\u0628'
-                    : 'Edit student'}
+                  <Pencil size={20} aria-hidden="true" />
                 </button>
               )}
               {refresh && (
