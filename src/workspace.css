@@ -423,8 +423,8 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 20px;
-  padding: 24px;
+  gap: 12px;
+  padding: 16px;
   border-radius: 16px;
   background: #e2f4f4;
 }
@@ -434,17 +434,13 @@
   font-weight: 700;
 }
 .dashboard-actions p {
-  margin-top: 5px;
   color: #496d72;
 }
 .dashboard-buttons {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.dashboard-primary {
-  min-height: 52px;
-  padding-inline: 24px;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
 }
 .attendance-group {
   border-top: 1px solid #dce9eb;
