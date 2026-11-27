@@ -144,6 +144,30 @@ integration(
       expect(
         (await call('/api/admin/enrollments/membership', subjects.admin, teacherMembership)).status,
       ).toBe(200)
+      const explicitLevel = await call('/api/admin/enrollments/save', subjects.admin, {
+        ...teacherMembership,
+        level: '3',
+      })
+      expect(await explicitLevel.json()).toEqual({ saved: true })
+      const readLevel = async () => {
+        const snapshot = neonSnapshotSchema.parse(
+          await (await call('/api/notebook', subjects.admin)).json(),
+        )
+        return snapshot.enrollments.find((entry) => entry.id === enrollmentIds[0])?.level
+      }
+      expect(await readLevel()).toBe('3')
+      expect(
+        (await call('/api/admin/enrollments/membership', subjects.admin, teacherMembership)).status,
+      ).toBe(200)
+      expect(await readLevel()).toBe('3')
+      expect(
+        (
+          await call('/api/admin/enrollments/save', subjects.admin, {
+            ...teacherMembership,
+            level: '',
+          })
+        ).status,
+      ).toBe(200)
       const assignedTeacher = neonSnapshotSchema.parse(
         await (await call('/api/notebook', subjects.admin)).json(),
       )
