@@ -56,7 +56,12 @@ struct Auth {
     user_id: String,
 }
 
-async fn gate(req: Request, next: Next, origin: String) -> Response {
+async fn gate(
+    req: Request,
+    next: Next,
+    origin: String,
+    mut shutdown: tokio::sync::watch::Receiver<()>,
+) -> Response {
     if req.uri().path().starts_with("/socket.io") && req.uri().path() != "/socket.io/" {
         return StatusCode::NOT_FOUND.into_response();
     }
@@ -75,6 +80,13 @@ async fn gate(req: Request, next: Next, origin: String) -> Response {
                 axum::Json(serde_json::json!({"code": 4, "message": {}})),
             )
                 .into_response();
+        }
+        if req.method() == axum::http::Method::GET {
+            // A pending Engine.IO poll can outlive its disconnected Socket.IO namespace.
+            return tokio::select! {
+                response = next.run(req) => response,
+                _ = shutdown.changed() => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+            };
         }
     }
     next.run(req).await
@@ -258,10 +270,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }));
     }
+    let (stop_polls, shutdown) = tokio::sync::watch::channel(());
     let app = app
         .route_service("/socket.io/", socket_service)
         .layer(middleware::from_fn(move |req, next| {
-            gate(req, next, origin.clone())
+            gate(req, next, origin.clone(), shutdown.clone())
         }));
     if hybrid {
         eprintln!("Rust web runtime ready with on-demand Bun compatibility");
@@ -270,6 +283,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
+            drop(stop_polls);
             task.abort();
             io.close().await;
         })
