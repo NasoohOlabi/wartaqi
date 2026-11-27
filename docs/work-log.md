@@ -2571,3 +2571,9 @@ After a local save, the selected mark now stays visible for 650 ms, then the car
 The browser regression exercises the middle and end of a long roster, a repeat tap, reload, and reduced-motion focus on desktop and mobile Chromium. Before and after recordings use synthetic records in a 390 px phone viewport. The PR records release and Railway checks. Physical-device and authenticated production behavior require separate verification.
 
 At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing before its confirmation delay while an earlier sync was still settling after reload. The hold now follows the result of the specific local save, and a focused row hands off focus before it is removed. The browser regression covers both keyboard and pointer focus through this path.
+
+## 2026-11-27 15:58 Asia/Damascus — Keep notes on the student profile
+
+The owner reported that a student note appeared in the attendance sidebar without context. Staff now read saved student notes on the student's profile with their dates, authors and tags. The attendance row still opens the form for adding a note to that student and date. The attendance sidebar shows the student and recorded-attendance counts. Day-level notes were deferred.
+
+Synthetic Chromium checks cover saving from Attendance, reading from the correct profile across dates, hiding a corrected note after reload, and English and Arabic desktop and phone layouts. The PR records release checks and Railway verification. The focus checks use intercepted Auth and notebook routes.
