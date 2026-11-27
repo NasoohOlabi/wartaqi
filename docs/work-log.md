@@ -2424,6 +2424,14 @@ The owner asked to tighten the attendance panel and replace the Add student text
 
 Synthetic browser checks exercise the icon and check layout and overflow at 320, 360 and 1280px in Arabic and English. Browser emulation covers these widths. The PR records release checks and Railway verification.
 
+## 2026-11-27 08:51 Asia/Damascus — Fix the notebook roster heading
+
+The owner reported that the Export contacts label squeezed the Arabic Students heading into individual letters. The course roster now uses a localized 44px download icon. Export, Sort and Filter share the heading row when they fit and wrap together when space is tight. `AGENTS.md` records the icon preference and directs agents to ask when an icon alone may be unclear.
+
+The contact export scenario passed in desktop and emulated phone Chromium at 320, 360, 390, 430 and 1624px in English and Arabic. It checked the heading, toolbar and filtered-roster vCard download using synthetic records. The PR records release checks and deployment verification.
+
+At 08:58 Asia/Damascus, the full browser suite caught the narrower All students toolbar wrapping when it could share a row with the heading. Scoped wrapping to courses, where the export icon appears. Both course export checks and the mobile All students scenario passed on rerun.
+
 ## 2026-11-27 08:54 Asia/Damascus — Compact mobile notebook roster
 
 The owner asked to remove the standalone WhatsApp and status rows in the notebook Students list. The status icon now sits beside the student's name, and WhatsApp shares the dial line with the phone number. The course toolbar wraps when the heading and controls need more room.

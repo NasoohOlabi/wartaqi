@@ -120,18 +120,42 @@ test('exports active course contacts and offers direct WhatsApp links', async ({
   const table = page.locator('.roster-students-table')
   const row = table.locator('tbody tr').filter({ hasText: arabicName })
   for (const ar of [false, true]) {
-    if (ar) {
-      await clickAccountAction(page, 'العربية')
-      await expect(page.getByRole('button', { name: 'تصدير جهات الاتصال' })).toBeVisible()
-    }
+    if (ar) await clickAccountAction(page, 'العربية')
+    const heading = page.getByRole('heading', { name: ar ? 'طلابك' : 'Your students', exact: true })
+    const exportLabel = ar ? 'تصدير جهات الاتصال' : 'Export contacts'
+    const exportAction = page.getByRole('button', { name: exportLabel, exact: true })
+    await expect(exportAction).toHaveText('')
+    await expect(exportAction).toHaveAttribute('title', exportLabel)
+    await expect(exportAction.locator('svg[aria-hidden="true"]')).toBeVisible()
     const whatsapp = row.getByRole('link', {
       name: ar ? 'محادثة واتساب: +442012345678' : 'WhatsApp chat: +442012345678',
     })
     const status = row.getByRole('img', { name: ar ? 'نشط' : 'Active', exact: true })
     await expect(whatsapp).toHaveAttribute('href', 'https://wa.me/442012345678')
     await expect(whatsapp).toHaveText('')
-    for (const width of [1624, 320, 390, 430]) {
+    for (const width of [1624, 320, 360, 390, 430]) {
       await page.setViewportSize({ width, height: 844 })
+      const exportBounds = await exportAction.boundingBox()
+      if (!exportBounds) throw new Error('Export contacts is hidden')
+      expect(exportBounds.width).toBeGreaterThanOrEqual(44)
+      expect(exportBounds.height).toBeGreaterThanOrEqual(44)
+      for (const label of ar
+        ? ['خيارات الفرز', 'خيارات التصفية']
+        : ['Sort options', 'Filter options']) {
+        const control = page.getByRole('button', { name: label, exact: true })
+        await expect(control).toBeVisible()
+        expect((await control.boundingBox())?.y).toBe(exportBounds.y)
+      }
+      const headingLines = await heading.evaluate(
+        (el) => el.clientHeight / Number.parseFloat(getComputedStyle(el).lineHeight),
+      )
+      expect(headingLines).toBe(1)
+      if (ar || width >= 390) {
+        const title = await heading.boundingBox()
+        if (!title) throw new Error('Students heading is hidden')
+        expect(title.y).toBeGreaterThanOrEqual(exportBounds.y)
+        expect(title.y + title.height).toBeLessThanOrEqual(exportBounds.y + exportBounds.height)
+      }
       const target = await whatsapp.boundingBox()
       if (!target) throw new Error('WhatsApp link is hidden')
       expect(target.width).toBeGreaterThanOrEqual(44)
@@ -172,4 +196,7 @@ test('exports active course contacts and offers direct WhatsApp links', async ({
       }
     }
   }
+  const arabicChat = page.getByRole('link', { name: 'محادثة واتساب: ٠٩١٢٣٤٥٦٧٨' })
+  await expect(arabicChat).toHaveAttribute('href', 'https://wa.me/963912345678')
+  await expect(arabicChat).toHaveText('')
 })
