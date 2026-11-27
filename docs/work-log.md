@@ -2571,3 +2571,9 @@ After a local save, the selected mark now stays visible for 650 ms, then the car
 The browser regression exercises the middle and end of a long roster, a repeat tap, reload, and reduced-motion focus on desktop and mobile Chromium. Before and after recordings use synthetic records in a 390 px phone viewport. The PR records release and Railway checks. Physical-device and authenticated production behavior require separate verification.
 
 At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing before its confirmation delay while an earlier sync was still settling after reload. The hold now follows the result of the specific local save, and a focused row hands off focus before it is removed. The browser regression covers both keyboard and pointer focus through this path.
+
+## 2026-11-27 16:32 Asia/Damascus - Draft Rust workspace relay
+
+The owner asked whether Rust could reduce Railway runtime costs while keeping React and matching existing backend behavior. The experimental service relays the existing Postgres change hints over Socket.IO and delegates the handshake access decision to Bun. The migration draft covers a same-origin trial, cost and latency measurement, and the parity requirements for moving reads or writes.
+
+`bun run verify` passed on disposable Postgres with 168 tests passed and one live-provider test skipped. The opt-in transport suite passed 58 assertions across Bun and Rust, including polling, WebSocket upgrade, role revocation, rollback, committed writes and listener recovery. The Windows Rust build, formatting and Clippy passed. The Linux release compiled with cached crates after the Docker builder encountered crates.io timeouts. Raw malformed Engine.IO request handling has a documented difference. The draft remains local, with browser ingress, Railway deployment and comparative cost measurement pending.
