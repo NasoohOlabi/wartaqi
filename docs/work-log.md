@@ -1,5 +1,11 @@
 # Work log
 
+## 2026-11-27 20:54 Asia/Damascus (UTC+03:00) - Open a dialog to move a course student
+
+The owner asked to replace the group dropdown with an icon button. Manage groups now shows a two-arrow Move icon on the student row with a localized tooltip and accessible name. The dialog names the student and lists available teachers and Unassigned. Choosing a destination saves the course assignment. Cancel and Escape restore keyboard focus to the button. The destination list can scroll while Cancel stays visible.
+
+Synthetic desktop and phone browser checks cover dismissal without a write, the localized tooltip and same-row button on a 320px layout, moving to an empty teacher, a failed save and retry, and the drag gesture. `bun run verify:release` passed 155 unit tests and 259 browser cases, with 16 optional integration tests and seven browser cases skipped. Production deployment is tracked on the PR. Physical devices remain unverified.
+
 ## 2026-11-27 20:28 Asia/Damascus (UTC+03:00) - Drag students between course groups
 
 The owner asked to drag students between teacher groups and hide teachers with no students in the course. Manage groups now lets an administrator drag a student onto a visible teacher group or Unassigned, including collapsed groups. Empty teacher groups appear after their first assignment. Their teachers stay selectable in Move to group, which also supports keyboard use. Both controls use the existing enrollment save and retry flow.

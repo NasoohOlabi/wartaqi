@@ -1398,7 +1398,7 @@ test('course management updates an existing enrollment for an inactive roster st
   expect(students[0].active).toBe(false)
 })
 
-test('course group accordions move one enrollment and preserve it on failure', async ({
+test('course group move modal cancels and retries one enrollment assignment', async ({
   page,
 }, testInfo) => {
   const { assignments, board, enrollments, failNextAssignment, students } = await setupCourses(page)
@@ -1453,29 +1453,61 @@ test('course group accordions move one enrollment and preserve it on failure', a
   const source = group('Admin')
   const destination = group('Destination Teacher')
   const unassigned = group(ar ? 'غير معيّن' : 'Unassigned')
-  const moveName = `${ar ? 'نقل إلى مجموعة' : 'Move to group'}: Synthetic Student`
-  const move = source.getByRole('combobox', { name: moveName })
+  const moveName = ar ? 'نقل Synthetic Student إلى مجموعة' : 'Move Synthetic Student to group'
+  const move = source.getByRole('button', { name: moveName })
+  const dialog = page.getByRole('dialog', { name: moveName })
+  const chooseTeacher = dialog.getByRole('button', { name: 'Destination Teacher' })
   await expect(move).toBeHidden()
   await source.locator('summary').click()
   await expect(move).toBeVisible()
+  await expect(move).toHaveText('')
+  await expect(move).toHaveAttribute('title', moveName)
+  await expect(move).toHaveAttribute('aria-haspopup', 'dialog')
   await unassigned.locator('summary').click()
   await expect(unassigned.getByText('New Student', { exact: true })).toBeVisible()
   await expect(destination).toHaveCount(0)
-  expect((await move.boundingBox())?.height).toBeGreaterThanOrEqual(44)
+  const moveBounds = await move.boundingBox()
+  const nameBounds = await source.getByText('Synthetic Student', { exact: true }).boundingBox()
+  if (!moveBounds || !nameBounds) throw new Error('Missing student row')
+  expect(moveBounds.height).toBeGreaterThanOrEqual(44)
+  expect(moveBounds.width).toBeGreaterThanOrEqual(44)
+  expect(
+    Math.abs(moveBounds.y + moveBounds.height / 2 - nameBounds.y - nameBounds.height / 2),
+  ).toBeLessThan(2)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     await page.evaluate(() => window.innerWidth),
   )
   if (ar) await page.screenshot({ path: '.artifacts/verification/course-groups-ar-320.png' })
 
+  await move.press('Enter')
+  await expect(dialog).toBeVisible()
+  await expect(chooseTeacher).toBeVisible()
+  await expect(
+    dialog.getByRole('button', { name: ar ? 'غير معيّن' : 'Unassigned', exact: true }),
+  ).toBeVisible()
+  await expect(dialog.getByRole('button', { name: 'Admin', exact: true })).toHaveCount(0)
+  expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  await expect(move).toBeFocused()
+  await move.press('Enter')
+  await dialog.getByRole('button', { name: ar ? 'إلغاء' : 'Cancel', exact: true }).click()
+  await expect(dialog).toBeHidden()
+  await expect(move).toBeFocused()
+  expect(assignments).toEqual([])
+
   failNextAssignment()
-  await move.selectOption(destinationId)
+  await move.click()
+  if (ar) await page.screenshot({ path: '.artifacts/verification/course-group-move-ar-320.png' })
+  await chooseTeacher.click()
+  await expect(dialog).toBeHidden()
   await expect(page.getByRole('alert').first()).toBeVisible()
   await expect(move).toBeVisible()
   expect(enrollments[0]).toEqual(original)
   await expect(destination).toHaveCount(0)
   await page.getByRole('button', { name: ar ? 'إعادة المحاولة' : 'Retry', exact: true }).click()
   await destination.locator('summary').click()
-  await expect(destination.getByRole('combobox', { name: moveName })).toBeVisible()
+  await expect(destination.getByRole('button', { name: moveName })).toBeVisible()
   await expect(move).toHaveCount(0)
   await expect(source).toHaveCount(0)
   const assignment = { kind: 'group', courseId: courseA, ids: [enrollA], teacherId: destinationId }
@@ -1490,7 +1522,7 @@ test('course group accordions move one enrollment and preserve it on failure', a
 
   await page.reload()
   await destination.locator('summary').click()
-  await expect(destination.getByRole('combobox', { name: moveName })).toBeVisible()
+  await expect(destination.getByRole('button', { name: moveName })).toBeVisible()
 })
 
 test('course groups accept a student drag onto a collapsed group', async ({ page }, testInfo) => {
