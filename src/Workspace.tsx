@@ -4,6 +4,7 @@ import { LevelInput } from './level'
 import { formatLevel } from './levelFormat'
 import { PhoneNumber } from './PhoneNumber'
 import { courseContacts, downloadContacts } from './courseContacts'
+import { downloadRosterCsv, downloadRosterExcel, rosterRows } from './rosterExport'
 import { TableHeader, TableToolbar } from './DataTable'
 import { useDataTable } from './useDataTable'
 import { matchesText } from './studentSearch'
@@ -22,7 +23,7 @@ import {
   UserRound,
 } from 'lucide-react'
 import { useLanguage, type TranslationKey } from './useLanguage'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { AttendanceRows } from './AttendanceRows'
 import { registerAttendanceReplay } from './attendanceReplayCapture'
 import { attendanceReplayMaxRows } from '../shared/attendanceReplay'
@@ -1707,7 +1708,22 @@ function RosterView({
   const ar = language === 'ar'
   const contacts = selectedCourse ? courseContacts(exportStudents) : []
   const omitted = exportStudents.length - contacts.length
-  const exportLabel = ar ? 'تصدير جهات الاتصال' : 'Export contacts'
+  const exportLabel = ar ? 'تصدير الطلاب' : 'Export students'
+  const exportId = useId()
+  const exportPopup = useRef<HTMLDivElement>(null)
+  const exportTrigger = useRef<HTMLButtonElement>(null)
+  const [exportErrorCourse, setExportErrorCourse] = useState<string | null>(null)
+  const exportRoster = async (download: () => void | Promise<void>) => {
+    if (!selectedCourse) return
+    exportPopup.current?.hidePopover()
+    exportTrigger.current?.focus()
+    setExportErrorCourse(null)
+    try {
+      await download()
+    } catch {
+      setExportErrorCourse(selectedCourse.id)
+    }
+  }
   const rosterTable = useDataTable('roster', students, [
     {
       id: 'first',
@@ -1778,26 +1794,75 @@ function RosterView({
         className={selectedCourse ? 'mb-3 flex-wrap' : 'mb-3'}
         actions={
           selectedCourse && (
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={exportLabel}
-              title={exportLabel}
-              disabled={!contacts.length}
-              onClick={() => downloadContacts(selectedCourse.name, contacts)}
-            >
-              <Download size={20} aria-hidden="true" />
-            </button>
+            <>
+              <button
+                ref={exportTrigger}
+                type="button"
+                className="icon-button"
+                aria-label={exportLabel}
+                title={exportLabel}
+                popoverTarget={exportId}
+              >
+                <Download size={20} aria-hidden="true" />
+              </button>
+              <div
+                ref={exportPopup}
+                id={exportId}
+                popover="auto"
+                role="group"
+                aria-label={exportLabel}
+                className="table-control-popup row-actions-popup"
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    void exportRoster(() =>
+                      downloadRosterCsv(
+                        selectedCourse.name,
+                        rosterRows(exportStudents, enrollments, ar),
+                      ),
+                    )
+                  }
+                >
+                  CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void exportRoster(() =>
+                      downloadRosterExcel(
+                        selectedCourse.name,
+                        rosterRows(exportStudents, enrollments, ar),
+                      ),
+                    )
+                  }
+                >
+                  Excel
+                </button>
+                <button
+                  type="button"
+                  disabled={!contacts.length}
+                  onClick={() =>
+                    void exportRoster(() => downloadContacts(selectedCourse.name, contacts))
+                  }
+                >
+                  {ar ? 'جهات الاتصال' : 'Contacts'}
+                </button>
+                <p role="status" className="px-3 pb-2 text-sm">
+                  {ar
+                    ? `${contacts.length} جهة اتصال للتصدير، ${omitted} بدون رقم صالح`
+                    : `${contacts.length} ready to export, ${omitted} without a usable number`}
+                </p>
+              </div>
+            </>
           )
         }
       >
         <h2 className="title">{t('Your students')}</h2>
       </TableToolbar>
-      {selectedCourse && (
-        <p role="status" className="mb-3">
-          {ar
-            ? `${contacts.length} جهة اتصال للتصدير، ${omitted} بدون رقم صالح`
-            : `${contacts.length} ready to export, ${omitted} without a usable number`}
+      {selectedCourse?.id === exportErrorCourse && (
+        <p role="alert" className="mb-3">
+          {ar ? 'تعذر تصدير الطلاب' : 'Could not export students'}
         </p>
       )}
       <div
