@@ -54,7 +54,7 @@ test('dashboard fits the session controls and add-student icon in both direction
   }
 })
 
-test('dashboard charts and alphabetic fuzzy attendance preserve drafts', async ({
+test('dashboard charts and alphabetic attendance reflect immediate marks', async ({
   page,
 }, testInfo) => {
   await mockSyntheticNotebook(page)
@@ -87,11 +87,6 @@ test('dashboard charts and alphabetic fuzzy attendance preserve drafts', async (
     await expect(mark.getByRole('button', { name, exact: true })).toBeVisible()
   }
   await expect(mark.getByRole('button', { pressed: true })).toHaveCount(0)
-  await absent.focus()
-  await absent.press('Space')
-  await expect(absent).toHaveAttribute('aria-pressed', 'true')
-  await absent.press('Space')
-  await expect(mark.getByRole('button', { pressed: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: /Save attendance/ })).toHaveCount(0)
   if (testInfo.project.name === 'mobile') {
     await mkdir('.artifacts/verification', { recursive: true })
@@ -117,12 +112,9 @@ test('dashboard charts and alphabetic fuzzy attendance preserve drafts', async (
     }
     await clickAccountAction(page, 'English')
   }
-  await page
-    .getByLabel('Attendance for Omar')
-    .getByRole('button', { name: 'absent', exact: true })
-    .click()
-  await expect(absent).toHaveAttribute('aria-pressed', 'true')
-  await page.getByRole('button', { name: 'Save attendance (1)' }).click()
+  await absent.press('Space')
+  await expect(mark).toHaveCount(0)
+  await expect(page.getByText('Changes accepted by Wartaq.')).toBeVisible()
   await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Omar', exact: true })).toBeVisible()
   await expect(page.getByText('2 marked, 0 unmarked')).toBeVisible()
@@ -163,13 +155,11 @@ test('follow-up uses recorded absences through the selected date', async ({ page
     .getByLabel('Attendance for Omar')
     .getByRole('button', { name: 'absent', exact: true })
     .click()
-  await page.getByRole('button', { name: 'Save attendance (1)' }).click()
   await page.getByLabel('Session date').fill(secondDate)
   await page
     .getByLabel('Attendance for Omar')
     .getByRole('button', { name: 'excused', exact: true })
     .click()
-  await page.getByRole('button', { name: 'Save attendance (1)' }).click()
   const followingDate = new Date(nextDate)
   for (let index = 0; index < 4; index += 1) {
     followingDate.setUTCDate(followingDate.getUTCDate() + 1)
@@ -178,7 +168,6 @@ test('follow-up uses recorded absences through the selected date', async ({ page
       .getByLabel('Attendance for Omar')
       .getByRole('button', { name: 'present', exact: true })
       .click()
-    await page.getByRole('button', { name: 'Save attendance (1)' }).click()
   }
   await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
   const strip = page.getByRole('list', { name: 'Recent attendance for Omar' })

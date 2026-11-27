@@ -614,10 +614,7 @@ export function useLedger(
     }
   }
 
-  async function save(
-    payloads: Payload[],
-    observedAttendance?: ReadonlyMap<string, string | null>,
-  ): Promise<boolean> {
+  async function save(payloads: Payload[], observedMark?: string | null): Promise<boolean> {
     if (storageBlocked || pending.length || !loaded || !payloads.length || locked.current)
       return false
     const session = active.current
@@ -650,9 +647,7 @@ export function useLedger(
             offlineAttendanceRecordSchema.parse({
               event: makeEvent(neon.teacher.name, payload),
               expectedEventId:
-                observedAttendance?.get(payload.studentId) === undefined
-                  ? (current?.event.id ?? null)
-                  : observedAttendance.get(payload.studentId),
+                observedMark === undefined ? (current?.event.id ?? null) : observedMark,
             }),
           )
         } else {
@@ -675,7 +670,12 @@ export function useLedger(
         if (localStorage.getItem(key))
           throw new Error('Resolve the pending online batch before saving offline.')
         try {
-          await queueNotebookOperations(neonUserId, marks, notes)
+          await queueNotebookOperations(
+            neonUserId,
+            marks,
+            notes,
+            observedMark === undefined ? cacheKey : undefined,
+          )
         } catch {
           throw new Error(
             'Could not save these changes on this device. Restore browser storage and try again.',

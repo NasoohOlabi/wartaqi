@@ -35,6 +35,7 @@ import {
   statusSchema,
   type LedgerEvent,
   type Payload,
+  type Status,
   type Student,
 } from '../shared/ledger'
 import {
@@ -268,10 +269,9 @@ function Notebook({
         setQuery({ view: 'history', tab: '' })
     }
   }, [administrator, query.view])
-  const [sessionDrafts, setSessionDrafts] = useState<
-    Record<string, { values: Record<string, string>; observed: ReadonlyMap<string, string | null> }>
-  >({})
+  const [sessionMarks, setSessionMarks] = useState<Record<string, AttendanceMarks>>({})
   const sessionKey = `${query.courseScope}:${query.date}`
+  const attendanceSaves = useRef<Promise<void>>(Promise.resolve())
   const listOrigin = useRef<{ trigger: HTMLElement; top: number; search: string } | null>(null)
   const previousView = useRef(query.view)
   useEffect(() => {
@@ -803,39 +803,50 @@ function Notebook({
               <AttendanceView
                 key={`${query.date}:${query.course}`}
                 userId={userId}
-                draft={sessionDrafts[sessionKey]?.values ?? {}}
-                observed={sessionDrafts[sessionKey]?.observed}
-                setDraft={(values) => {
-                  const displayed = new Map(
-                    scopedProjection.attendance
-                      .filter(({ value }) => value.date === query.date)
-                      .map(({ value, event }) => [value.studentId, event.id]),
+                pendingMarks={sessionMarks[sessionKey] ?? {}}
+                onMark={(studentId, status) => {
+                  const enrollment = activeEnrollments.find(
+                    (entry) => entry.studentId === studentId,
                   )
-                  setSessionDrafts((previous) => {
-                    const before = previous[sessionKey]?.observed
-                    const observed = new Map<string, string | null>()
-                    for (const [id, mark] of Object.entries(values)) {
-                      if (mark)
-                        observed.set(
-                          id,
-                          before?.has(id) ? (before.get(id) ?? null) : (displayed.get(id) ?? null),
-                        )
-                    }
-                    return { ...previous, [sessionKey]: { values, observed } }
+                  if (!enrollment) return
+                  const date = query.date
+                  const mark = { status }
+                  const observed = sessionMarks[sessionKey]?.[studentId]
+                    ? undefined
+                    : (scopedProjection.attendance.find(
+                        ({ value }) => value.studentId === studentId && value.date === date,
+                      )?.event.id ?? null)
+                  setSessionMarks((previous) => ({
+                    ...previous,
+                    [sessionKey]: { ...previous[sessionKey], [studentId]: mark },
+                  }))
+                  // Keep local commits in tap order, including taps across sessions.
+                  attendanceSaves.current = attendanceSaves.current.then(async () => {
+                    await ledger.save(
+                      [
+                        {
+                          kind: 'attendance',
+                          studentId,
+                          enrollmentId: enrollment.id,
+                          date,
+                          status,
+                        },
+                      ],
+                      observed,
+                    )
+                    setSessionMarks((previous) => {
+                      const marks = previous[sessionKey]
+                      if (marks?.[studentId] !== mark) return previous
+                      const remaining = { ...marks }
+                      delete remaining[studentId]
+                      return { ...previous, [sessionKey]: remaining }
+                    })
                   })
                 }}
                 enrollments={activeEnrollments}
                 courseSelected={!!query.course}
                 courseName={selectedCourse?.name}
                 students={students.filter(
-                  (student) =>
-                    student.active &&
-                    (!query.course ||
-                      ledger.courses.some((course) => course.id === query.course && course.open)) &&
-                    (query.course ||
-                      !ledger.enrollments.some((entry) => entry.studentId === student.studentId)),
-                )}
-                allStudents={projected.students.filter(
                   (student) =>
                     student.active &&
                     (!query.course ||
@@ -851,7 +862,7 @@ function Notebook({
                     : ''
                 }
                 date={query.date}
-                save={(payloads) => ledger.save(payloads, sessionDrafts[sessionKey]?.observed)}
+                save={ledger.save}
                 canCorrect={administrator && !ledger.offline}
                 onOpenStudent={openStudent}
               />
@@ -1404,13 +1415,13 @@ function studentLevel(
     : formatLevel(student.group)
 }
 
+type AttendanceMarks = Partial<Record<string, { status: Status }>>
+
 function AttendanceView({
   userId,
-  draft,
-  observed,
-  setDraft,
+  pendingMarks,
+  onMark,
   students,
-  allStudents,
   projected,
   date,
   save,
@@ -1423,9 +1434,8 @@ function AttendanceView({
   onOpenStudent,
 }: {
   userId: string
-  draft: Record<string, string>
-  observed?: ReadonlyMap<string, string | null>
-  setDraft: (draft: Record<string, string>) => void
+  pendingMarks: AttendanceMarks
+  onMark: (studentId: string, status: Status) => void
   canCorrect: boolean
   onOpenStudent: (studentId: string, element: HTMLElement) => void
   disabled: boolean
@@ -1434,7 +1444,6 @@ function AttendanceView({
   courseName?: string
   enrollments: import('../shared/neon').Enrollment[]
   students: Student[]
-  allStudents: Student[]
   projected: Projection
   date: string
   save: Save
@@ -1471,7 +1480,7 @@ function AttendanceView({
       choices: [t('Not marked'), t('present'), t('absent'), t('excused')],
       label: language === 'ar' ? 'الحضور' : 'Attendance',
       value: (student) => {
-        const status = draft[student.studentId] ?? current.get(student.studentId)
+        const status = pendingMarks[student.studentId]?.status ?? current.get(student.studentId)
         return status === 'present' || status === 'absent' || status === 'excused'
           ? t(status)
           : t('Not marked')
@@ -1482,21 +1491,7 @@ function AttendanceView({
     ? attendanceTable.rows.filter((student) => !current.has(student.studentId))
     : attendanceTable.rows
   const unmarked = visible.filter(
-    (student) => !current.has(student.studentId) && !draft[student.studentId],
-  )
-  const changed = allStudents.filter(
-    (student) =>
-      draft[student.studentId] && draft[student.studentId] !== current.get(student.studentId),
-  )
-  const savedVersions = new Map(
-    projected.attendance
-      .filter(({ value }) => value.date === date)
-      .map(({ value, event }) => [value.studentId, event.id]),
-  )
-  const changedDuringEdit = changed.filter(
-    ({ studentId }) =>
-      observed?.has(studentId) &&
-      observed.get(studentId) !== (savedVersions.get(studentId) ?? null),
+    (student) => !current.has(student.studentId) && !pendingMarks[student.studentId],
   )
   const replayRows = visible.map((student) => ({
     id: student.studentId,
@@ -1505,7 +1500,7 @@ function AttendanceView({
     teacherName:
       enrollments.find((entry) => entry.studentId === student.studentId)?.teacherName ?? '',
     saved: statusSchema.safeParse(current.get(student.studentId)).data ?? null,
-    draft: statusSchema.safeParse(draft[student.studentId]).data ?? null,
+    draft: pendingMarks[student.studentId]?.status ?? null,
   }))
   useLayoutEffect(() =>
     registerAttendanceReplay(userId, {
@@ -1513,7 +1508,7 @@ function AttendanceView({
       date,
       rows: replayRows.slice(0, attendanceReplayMaxRows),
       totalRows: replayRows.length,
-      pendingCount: changed.length,
+      pendingCount: Object.keys(pendingMarks).length,
       unmarkedCount: unmarked.length,
       unmarkedOnly: Boolean(query.unmarked),
       canCorrect,
@@ -1730,23 +1725,6 @@ function AttendanceView({
         />
       ) : (
         <>
-          {unmarked.length > 0 && (
-            <button
-              className="secondary mb-3"
-              data-replay-action="bulk"
-              disabled={disabled}
-              onClick={() =>
-                setDraft({
-                  ...draft,
-                  ...Object.fromEntries(unmarked.map((student) => [student.studentId, 'present'])),
-                })
-              }
-            >
-              {language === 'ar'
-                ? `\u062a\u0633\u062c\u064a\u0644 ${unmarked.length} \u063a\u064a\u0631 \u0645\u0633\u062c\u0644 \u062d\u0627\u0636\u0631\u064a\u0646`
-                : `Mark ${unmarked.length} unmarked present`}
-            </button>
-          )}
           <DirectionProvider direction={language === 'ar' ? 'rtl' : 'ltr'}>
             <AttendanceRows
               rows={replayRows}
@@ -1762,11 +1740,9 @@ function AttendanceView({
                 }
               }}
               onMark={(id, value) => {
-                if (!value.length && current.has(id)) return
-                const next = { ...draft }
-                if (!value.length || value[0] === current.get(id)) delete next[id]
-                else next[id] = value[0]
-                setDraft(next)
+                const status = statusSchema.safeParse(value[0]).data
+                if (status && status !== (pendingMarks[id]?.status ?? current.get(id)))
+                  onMark(id, status)
               }}
               onCorrect={(id) => {
                 const record = projected.attendance.find(
@@ -1780,45 +1756,6 @@ function AttendanceView({
               }}
             />
           </DirectionProvider>
-          {changed.length > 0 && (
-            <div className="attendance-save">
-              {changedDuringEdit.length > 0 && (
-                <p role="status">
-                  {language === 'ar'
-                    ? 'تغيّر الحضور المحفوظ أثناء تعديلك. ستتمكن من مراجعة القيم المتعارضة عند المزامنة.'
-                    : 'Saved attendance changed while you were editing. You can review conflicting marks when this device syncs.'}{' '}
-                  <bdi>
-                    {changedDuringEdit
-                      .map(({ name }) => name)
-                      .join(language === 'ar' ? '، ' : ', ')}
-                  </bdi>
-                </p>
-              )}
-              <button
-                className="primary"
-                data-replay-action="save"
-                disabled={disabled}
-                onClick={async () => {
-                  const payloads: Payload[] = changed.map((student) => ({
-                    kind: 'attendance',
-                    studentId: student.studentId,
-                    ...(enrollments.find((entry) => entry.studentId === student.studentId)
-                      ? {
-                          enrollmentId: enrollments.find(
-                            (entry) => entry.studentId === student.studentId,
-                          )?.id,
-                        }
-                      : {}),
-                    date,
-                    status: statusSchema.parse(draft[student.studentId]),
-                  }))
-                  if (await save(payloads)) setDraft({})
-                }}
-              >
-                {t('Save attendance')} ({changed.length})
-              </button>
-            </div>
-          )}
         </>
       )}
     </section>

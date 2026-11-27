@@ -280,8 +280,8 @@ test('the full roster, attendance, notes and profile edits survive a cold offlin
   const firstRow = offlinePage.getByRole('group', { name: `Attendance for ${names[0]}` })
   const secondRow = offlinePage.getByRole('group', { name: `Attendance for ${names[1]}` })
   await firstRow.getByRole('button', { name: /present/i }).click()
+  await expect(offlinePage.getByText(/1 pending changes/)).toBeVisible()
   await secondRow.getByRole('button', { name: /absent/i }).click()
-  await offlinePage.getByRole('button', { name: 'Save attendance (2)' }).click()
   await expect(offlinePage.getByText(/2 pending changes/)).toBeVisible()
 
   const rosterUrl = '/?page=app&tab=roster&course=all'

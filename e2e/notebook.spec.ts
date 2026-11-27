@@ -44,6 +44,11 @@ test('authenticated notebook supports attendance, notes and corrections', async 
   const absent = marks.getByRole('button', { name: 'absent', exact: true })
   const excused = marks.getByRole('button', { name: 'excused', exact: true })
   const selected = marks.getByRole('button', { pressed: true })
+  let attendancePosts = 0
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/attendance/sync')
+      attendancePosts++
+  })
   const tileBackgrounds = new Set<string>()
   const iconColors = new Set<string>()
   await expect(selected).toHaveCount(0)
@@ -60,17 +65,14 @@ test('authenticated notebook supports attendance, notes and corrections', async 
   expect(tileBackgrounds.size).toBe(3)
   expect([...tileBackgrounds]).not.toContain('rgba(0, 0, 0, 0)')
   expect(iconColors.size).toBe(3)
-  await absent.press('Space')
-  await expect(selected).toHaveCount(0)
+  await expect.poll(() => attendancePosts).toBe(3)
   await expect(absent).toBeFocused()
   await expect(absent).toHaveCSS('outline-style', 'solid')
-  const activateAbsent = () => (hasTouch ? absent.tap() : absent.click())
-  await activateAbsent()
-  await expect(absent).toHaveAttribute('aria-pressed', 'true')
-  await activateAbsent()
-  await expect(selected).toHaveCount(0)
-  await expect(absent).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
-  await absent.press('Space')
+  for (let repeat = 0; repeat < 2; repeat++) {
+    if (hasTouch) await absent.tap()
+    else await absent.click()
+    await expect(absent).toHaveAttribute('aria-pressed', 'true')
+  }
   const addNote = page.getByRole('button', { name: 'Add note for ليلى', exact: true })
   await expect(addNote).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
   await expect(addNote).toHaveCSS('border-top-width', '0px')
@@ -99,10 +101,8 @@ test('authenticated notebook supports attendance, notes and corrections', async 
     await page.screenshot({ path: '.artifacts/verification/notebook.png', fullPage: true })
   }
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: 'Save attendance (1)' }).click()
-  await expect(
-    page.getByRole('status').filter({ hasText: 'Changes accepted by Wartaq.' }),
-  ).toBeVisible()
+  expect(attendancePosts).toBe(3)
+  await expect(page.getByRole('button', { name: /Save attendance/ })).toHaveCount(0)
   await page.getByRole('button', { name: 'Summary', exact: true }).click()
   const summaryRow = page.getByRole('row', { name: /ليلى/ })
   await expect(summaryRow.locator('td[data-label="absent"]')).toHaveText('1')
@@ -137,9 +137,9 @@ test('authenticated notebook supports attendance, notes and corrections', async 
   expect(external).toEqual([])
 })
 
-test('an administrator can finish a partial session without overwriting exceptions or losing their place', async ({
+test('individual marks persist across student navigation and can be corrected', async ({
   page,
-}, testInfo) => {
+}) => {
   await mockSyntheticNotebook(page, { names: ['أحمد', 'Omar', 'Lina'] })
   await page.goto('/?page=app')
   await page.getByRole('button', { name: /Continue attendance.*2/i }).click()
@@ -160,7 +160,9 @@ test('an administrator can finish a partial session without overwriting exceptio
   await expect(
     page.getByLabel('Attendance for Omar').getByRole('button', { pressed: true }),
   ).toHaveAccessibleName('excused')
-  await page.getByRole('button', { name: /Mark 1 unmarked present/i }).click()
+  await expect(page.getByRole('button', { name: /Mark .* unmarked present/i })).toHaveCount(0)
+  const lina = roster.getByRole('row').filter({ has: page.getByLabel('Attendance for Lina') })
+  await lina.getByRole('button', { name: 'present', exact: true }).click()
   await expect(
     page.getByLabel('Attendance for Lina').getByRole('button', { pressed: true }),
   ).toHaveAccessibleName('present')
@@ -170,15 +172,8 @@ test('an administrator can finish a partial session without overwriting exceptio
   await expect(
     page.getByLabel('Attendance for أحمد').getByRole('button', { pressed: true }),
   ).toHaveAccessibleName('present')
-  const save = page.getByRole('button', { name: 'Save attendance (2)' })
-  if (testInfo.project.name === 'mobile') {
-    const bounds = await save.boundingBox()
-    const nav = await page.getByRole('navigation', { name: 'Main navigation' }).boundingBox()
-    expect(bounds && nav && bounds.y >= 0 && bounds.y + bounds.height <= nav.y).toBe(true)
-  }
-  await save.click()
   await expect(page.getByRole('button', { name: /Save attendance/ })).toHaveCount(0)
-  const lina = roster.getByRole('row').filter({ has: page.getByLabel('Attendance for Lina') })
+  await expect(page.getByText('Changes accepted by Wartaq.')).toBeVisible()
   await lina.getByRole('button', { name: 'Correct this mark: Lina', exact: true }).click()
   await page.getByLabel('Reason', { exact: true }).fill('Wrong student selected')
   await page.getByRole('button', { name: 'Append correction' }).click()

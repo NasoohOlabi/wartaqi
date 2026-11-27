@@ -2533,3 +2533,11 @@ Synthetic Chromium checks cover six recorded dates, one Arabic row at 662px, one
 The owner asked to see previous course grades, the pass decision and attendance rate when opening a student, especially for closed courses. Student information now lists those values for administrators, including withdrawn enrollments and saved result overrides. Attendance history opens on demand in All students and closed courses. It starts expanded for a selected open course.
 
 Synthetic Chromium scenarios cover the profile on desktop and emulated phones, with English and Arabic labels, a saved zero, missing scores, a closed-course override and the history disclosure. The PR records release and Railway checks. The supplied student record requires a signed-in account.
+
+## 2026-11-27 11:51 Asia/Damascus - Save attendance on tap
+
+The owner asked for each attendance tap to save without a separate button or batch marking. Each choice updates its row immediately and uses the existing durable offline queue. Repeating the selected status leaves it in place. Successive taps keep their order, and append-only corrections remain available to administrators.
+
+Verification covers individual requests, rapid updates with sync delayed, offline reload, corrections and English and Arabic layouts. The PR records release and Railway verification. Authenticated browser verification uses synthetic fixtures.
+
+The local verification gate passed against disposable Postgres. The real-server browser test confirmed that a single offline tap survives reload, creates one attendance event and reaches a separate signed-in student. The updated phone layout and profile tests passed in both Chromium projects.

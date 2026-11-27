@@ -28,7 +28,6 @@ test('administrator reconnects and syncs attendance from Settings', async ({ con
   await context.setOffline(true)
   await expect(page.getByText('Offline', { exact: true })).toBeVisible()
   await attendance.getByRole('button', { name: 'absent', exact: true }).click()
-  await page.getByRole('button', { name: 'Save attendance (1)' }).click()
   await expect(
     page.getByText('Saved on this device. Waiting to sync.', { exact: true }),
   ).toBeVisible()

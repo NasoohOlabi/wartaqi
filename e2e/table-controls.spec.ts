@@ -3,9 +3,7 @@ import { clickAccountAction } from './profileActions'
 import { expect, test } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
 
-test('table filtering limits bulk attendance and preserves hidden drafts', async ({
-  page,
-}, testInfo) => {
+test('table filtering preserves marks on hidden students', async ({ page }, testInfo) => {
   await mockSyntheticNotebook(page, { role: 'teacher' })
   await page.goto('/?page=app')
   await page.getByRole('button', { name: 'Attendance', exact: true }).click()
@@ -22,7 +20,10 @@ test('table filtering limits bulk attendance and preserves hidden drafts', async
   await expect(page.getByLabel('Attendance for Omar')).toHaveCount(0)
   await filter.fill('أحمد')
   await page.getByRole('button', { name: 'Close' }).click()
-  await page.getByRole('button', { name: /Mark 1 unmarked present/i }).click()
+  await page
+    .getByLabel('Attendance for أحمد')
+    .getByRole('button', { name: 'present', exact: true })
+    .click()
   await page.getByRole('button', { name: 'Filter options' }).first().click()
   await page.getByRole('button', { name: 'Clear filters' }).click()
   await page.getByRole('button', { name: 'Close' }).click()
