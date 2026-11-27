@@ -2461,3 +2461,9 @@ Synthetic browser checks cover Arabic and English at 320, 390 and 430px and wide
 The owner requested the same phone layout in Settings → Students and icon buttons for Edit and Add student. WhatsApp shares the number line, the pencil sits beside the name fields on phones, and the person-plus icon shares the heading toolbar.
 
 Synthetic browser checks cover English and Arabic on desktop and at 320, 390 and 430px. They check alignment, overflow, localized labels, 44px targets, form navigation and the existing student save flow. The PR records release checks and Railway verification. Native WhatsApp handoff remains unverified.
+
+## 2026-11-27 09:56 Asia/Damascus — Show birth years in notebook Students
+
+The owner requested birth years in the notebook roster to group students by age. The desktop table shows a sortable Birth year column. Phones show the year on the same row as Level and Courses. Missing years display an em dash, and the year filter matches digits literally.
+
+Focused browser checks use synthetic records to verify sorting, filtering, missing years and the compact layout in English and Arabic. The PR records release and Railway verification.
