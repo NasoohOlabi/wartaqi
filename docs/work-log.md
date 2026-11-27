@@ -2515,3 +2515,11 @@ Local verification exercised independent signed-in browsers against real Bun and
 At 10:55 Asia/Damascus, the integrated release gate passed with 167 unit and integration tests, 246 desktop and mobile browser cases, artifact checks, history scanning and dependency audit. One optional provider test and four project-specific browser cases skipped. The real two-device test completed in 3.3 seconds locally. Railway Postgres accepted migrations 019 and 020 in one transaction. Six enabled triggers and the receipt table were verified, and the existing service remained healthy before promotion.
 
 At 10:57 Asia/Damascus, integrated the new mobile app-bar return controls from main. My changes now uses the shared return destination from desktop or phone, including the previous Settings view. Invitation navigation retains connection checks. Typechecking passed after integration.
+
+At 11:06 Asia/Damascus, the mobile navigation integration passed its full release gate with 167 unit and integration tests, 247 browser passes and five project-specific browser skips. All eight PR checks passed. The next main update changed the dashboard layout and its tests; the work log was the only merge conflict.
+
+## 2026-11-27 10:48 Asia/Damascus — Fit six follow-up dates in one row
+
+The owner reported wasted space in the follow-up date cards at 662px. The dashboard sizes each card to its localized label and wraps cards when they no longer fit on a row.
+
+Synthetic Chromium checks cover six recorded dates, one Arabic row at 662px, one row in both languages at 1280px, and wrapping without overflow on narrow phones. The PR records release and Railway verification.
