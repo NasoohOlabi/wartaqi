@@ -1,6 +1,6 @@
 # Draft Rust backend migration
 
-React can stay on Vite and keep its current same-origin HTTP and Socket.IO client. Start by replacing the small workspace change relay under a synthetic workload. Decide whether to move any data endpoints after measuring where the web service and Postgres spend CPU and memory.
+The migration targets a complete local Rust backend for the existing React app and its same-origin HTTP and Socket.IO client. Performance measurement comes after the existing integration and browser suites pass against Rust. Rust currently serves the workspace relay and the native reads for `/api/me`, `/api/notebook`, `/api/student/attendance`, and `/api/admin`. Bun's existing session endpoint supplies the signed-in identity for those reads. Rust checks the requested identity, current role, scope, and expiry against Postgres inside the read transaction.
 
 ## What the repository does today
 
@@ -23,7 +23,7 @@ Use a disposable local Postgres and apply `railway/*.sql` then `neon/*.sql` in f
 cargo build --locked --release --manifest-path rust-sync/Cargo.toml
 $env:TEST_RAILWAY_DATABASE_URL = 'postgres://postgres@127.0.0.1:5432/notebook_test'
 $env:TEST_RUST_SYNC_BINARY = (Resolve-Path rust-sync/target/release/wartaq-workspace-relay.exe).Path
-bun test tests/sync-transport.test.ts
+bun test tests/sync-transport.test.ts tests/rust-reads-parity.test.ts
 ```
 
 On Windows, use `cargo +stable-x86_64-pc-windows-gnu` if your Rust toolchain uses MinGW instead of the MSVC linker. On Linux, omit `.exe` from the binary path.
@@ -32,13 +32,15 @@ Both cases exercise the official JavaScript client against a real Bun instance a
 
 Raw malformed Engine.IO requests can differ. For example, Rust checks for a cookie before the transport library validates an invalid query, while Bun validates the query first. The pilot's `/health` checks process liveness. The test independently waits for and verifies the live Postgres subscription. Before a Railway trial, run the real browser scenario through the planned same-origin ingress and verify readiness and rollback with the relay disconnected.
 
+The HTTP comparison uses the same sessions and fixtures for both backends. It checks statuses, response headers and JSON for all three roles, including rejected requests, enrollment visibility, hidden notes, legacy marks and a malformed ledger record. Staff course sorting uses Postgres's `en-US-x-icu` collation. Canonically equivalent names and differences between Postgres and Bun's ICU versions need additional parity coverage.
+
 For a standalone launch, set `PORT` (defaults to `3001`), `WORKSPACE_ORIGIN` to the browser-facing origin, `BUN_ORIGIN` to a fixed, trusted Bun origin, and `DATABASE_URL` to the disposable database. For a container build use `docker build -t wartaq-rust-sync rust-sync`. The relay's Postgres connection uses plaintext, so use loopback or an isolated private network. A later Railway trial would use an isolated environment, private Bun and Postgres addresses, and a same-origin ingress that forwards only `/socket.io/` to Rust. All other paths go to Bun. Keep the same ingress for the baseline, and route `/socket.io/` back to Bun for rollback.
 
-## Decide whether to port more
+## Complete the local port before measuring
 
-1. Collect a Bun baseline covering quiet periods, active classrooms and reconnect bursts. Track total vCPU-minutes and GB-minutes across the web app, relay, ingress and Postgres, plus query counts, bytes and p95 time from a committed mutation to the updated view. Track errors, reconnects and missed updates. Include the auth callback in the Rust measurements.
-2. Replay the same synthetic workload in the isolated environment with the Bun relay and with the Rust relay, one at a time. Run the existing real-browser scenario against both routes before a longer trial. Fail the trial on any authorization, visibility, retry or recovery regression. Compare combined resource usage before running both services longer.
-3. If data reads dominate, count which invalidations and periodic repairs cause full projection reads and measure the expensive SQL and serialization. Optimize those first. If the application runtime still dominates, port the hottest read endpoint with an Axum handler, a Postgres pool, Serde types and the Bun session check. Use the same SQL and domain rules initially. Keep the protocol and storage format stable while simplifying the Rust implementation.
-4. Before moving writes, run the existing integration cases against both backends on separate fixtures seeded identically. Given identical requests, compare status, relevant headers, decoded JSON (including array order and null/omitted fields), and resulting database state. Exercise exact and conflicting retries, legacy data, role scope, membership changes and concurrent edits. Run the existing browser suite against both backends, then move one write path at a time with one authoritative writer per request.
+1. Port notebook writes, offline reconciliation, grades, courses, and roster management in transactions. Use separate fixtures seeded identically for each backend. Given identical requests, compare status, response headers, decoded JSON including array order and null or omitted fields, and database state. Exercise exact and conflicting retries, legacy data, role scope, membership changes, and concurrent edits.
+2. Port the session and account lifecycle, diagnostics and replay, and application endpoints used by MCP and Telegram. Test existing sessions, hash compatibility, invitation setup, account switching, and revocation through normal client paths.
+3. Run the same real-browser and integration cases against both backends locally. Verify offline writes, recovery, access scope, the same-origin HTTP and Socket.IO paths, and rollback. Keep one authority for each write.
+4. After local parity, replay the same workload against Bun and Rust one at a time. Track total vCPU-minutes and GB-minutes across the app, ingress and Postgres, plus query counts, bytes, p95 time from a committed mutation to the updated view, errors, and reconnects.
 
 Railway charges for runtime CPU and memory, and service builds are free. A second always-on process adds its own memory use and a Postgres connection. The empty Socket.IO hint is cheap to send. A full role projection or a periodic refresh can cost more, so measure both application and database work before making a savings estimate. Railway can collect CPU and memory metrics per service, while application latency and parity need workload instrumentation. [Railway pricing](https://docs.railway.com/pricing/plans) · [Railway metrics](https://docs.railway.com/observability/metrics)

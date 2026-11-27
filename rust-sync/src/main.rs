@@ -1,3 +1,8 @@
+mod access;
+mod ledger;
+mod reads;
+mod staff_reads;
+
 use std::{env, time::Duration};
 
 use axum::{
@@ -131,12 +136,15 @@ async fn shutdown_signal() {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port: u16 = env::var("PORT").unwrap_or_else(|_| "3001".into()).parse()?;
     let origin = env::var("WORKSPACE_ORIGIN")?;
-    let upstream = url::Url::parse(&env::var("BUN_ORIGIN")?)?.join("/api/me")?;
+    let bun_origin = url::Url::parse(&env::var("BUN_ORIGIN")?)?;
+    let upstream = bun_origin.join("/api/me")?;
     let database_url = env::var("DATABASE_URL")?;
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
         .build()?;
+    let reads = reads::router(&database_url, origin.clone(), &bun_origin, http.clone())?;
     let (layer, io) = SocketIo::builder().max_payload(4096).build_layer();
     io.ns(
         "/",
@@ -185,6 +193,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/health",
             get(|| async { axum::Json(serde_json::json!({"ok": true})) }),
         )
+        .merge(reads)
         .layer(layer)
         .layer(middleware::from_fn(move |req, next| {
             gate(req, next, origin.clone())

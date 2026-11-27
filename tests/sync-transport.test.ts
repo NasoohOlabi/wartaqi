@@ -4,6 +4,7 @@ import { io, type Socket } from 'socket.io-client'
 import { z } from 'zod'
 import { createIdentity } from './integration-identity'
 import { startIntegrationServer } from './integration-server'
+import { startRustBackend } from './rust-backend-server'
 
 // Only use a disposable, migrated database.
 const databaseUrl = process.env.TEST_RAILWAY_DATABASE_URL
@@ -11,46 +12,6 @@ const rustBinary = process.env.TEST_RUST_SYNC_BINARY
 const implementations = rustBinary ? ['Bun', 'Rust'] : ['Bun']
 if (rustBinary && !databaseUrl) throw new Error('Rust parity requires TEST_RAILWAY_DATABASE_URL')
 const integration = (databaseUrl ? test : test.skip).each(implementations)
-
-async function startRustRelay(binary: string, databaseUrl: string, bunOrigin: string) {
-  const child = Bun.spawn([binary], {
-    env: {
-      ...process.env,
-      PORT: '0',
-      BUN_ORIGIN: bunOrigin,
-      WORKSPACE_ORIGIN: bunOrigin,
-      DATABASE_URL: databaseUrl,
-    },
-    stdout: 'pipe',
-    stderr: 'inherit',
-  })
-  const deadline = AbortSignal.timeout(10000)
-  try {
-    const ready = async () => {
-      let output = ''
-      for await (const chunk of child.stdout.pipeThrough(new TextDecoderStream())) {
-        output += chunk
-        const match = /^Listening on (http:\/\/127\.0\.0\.1:\d+)\r?$/m.exec(output)
-        if (match) return match[1]
-      }
-      throw new Error('Rust relay exited before publishing its address')
-    }
-    const origin = await Promise.race([
-      ready(),
-      new Promise<never>((_, reject) => {
-        deadline.addEventListener('abort', () => reject(deadline.reason), { once: true })
-      }),
-    ])
-    const response = await fetch(`${origin}/health`, { signal: deadline })
-    expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ ok: true })
-    return { origin, child }
-  } catch (error) {
-    child.kill()
-    await child.exited
-    throw error
-  }
-}
 
 async function connect(socket: Socket) {
   const result = Promise.withResolvers<string>()
@@ -72,7 +33,7 @@ integration(
     const phone = '+12025550419'
     const sockets: Socket[] = []
     let server: Awaited<ReturnType<typeof startIntegrationServer>> | undefined
-    let relay: Awaited<ReturnType<typeof startRustRelay>> | undefined
+    let relay: Awaited<ReturnType<typeof startRustBackend>> | undefined
     let userId: string | undefined
     try {
       userId = await createIdentity(pool, 'Synthetic Sync Teacher', password)
@@ -100,7 +61,7 @@ integration(
       server = await startIntegrationServer(implementation === 'Bun' ? target.href : databaseUrl)
       const { origin } = server
       if (implementation === 'Rust' && rustBinary) {
-        relay = await startRustRelay(rustBinary, target.href, origin)
+        relay = await startRustBackend(rustBinary, target.href, origin)
       }
       const socketOrigin = relay?.origin ?? origin
       async function listenerId() {
