@@ -320,6 +320,7 @@ parity(
       const grade = {
         kind: 'grade-edit',
         requestId: firstReceipt,
+        editTime: new Date().toISOString(),
         id: enrollmentIds[0],
         grant: { id: adminId, expiresAt: null },
         fields: {
@@ -470,24 +471,24 @@ parity(
       await same(`/api/diagnostics/events?actor=${users[0]}&journey=${journeyId}`, 200, {
         headers: admin,
       })
-      const frame = {
-        kind: 'click',
-        step: 1,
-        timeMs: 200,
-        screen: 'attendance',
-        width: 320,
-        height: 600,
-        theme: 'light',
-        language: 'en',
-        click: { x: 90, y: 180 },
-        boxes: [{ x: 20, y: 160, w: 150, h: 40, kind: 'control', label: 'attendance' }],
-      }
-      await same('/api/diagnostics/replay', 200, post(teacher, { journeyId, frames: [frame] }))
-      const replay = `/api/diagnostics/replay?actor=${users[0]}&journey=${journeyId}`
-      await same(replay, 403, { headers: teacher })
-      expect(await same(replay, 200, { headers: admin })).toEqual({
-        items: [frame],
-        nextAfter: null,
+      expect(await same('/api/diagnostics/replay', 400, post(teacher, {}))).toEqual({
+        error: 'Session replay retired',
+      })
+      await same('/api/diagnostics/replay', 404, { headers: admin })
+      const settings = post(admin, {
+        id: courseIds[0],
+        attendanceMinimum: 60,
+        practicalMinimum: 75,
+        theoryMinimum: 75,
+      })
+      await same('/api/admin/courses/settings', 409, {
+        ...settings,
+        headers: {
+          ...admin,
+          'content-type': 'application/json',
+          'x-edit-time': '2000-01-01T00:00:00.000Z',
+          'x-edit-id': uuid(),
+        },
       })
       await pool.query(
         "INSERT INTO events (id,teacher_id,student_id,actor,client_time,payload) VALUES ($1,$2,$3,'Synthetic teacher',now(),$4)",

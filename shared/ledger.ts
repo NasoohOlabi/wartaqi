@@ -47,6 +47,7 @@ export const eventSchema = z.object({
   id,
   actor: z.string().trim().min(1).max(100),
   clientTime: z.iso.datetime(),
+  editTime: z.iso.datetime().optional(),
   receivedAt: z.string(),
   payload: payloadSchema,
 })
@@ -70,11 +71,15 @@ export function normalizedNoteTags(value: string) {
   ]
   return tags.length ? tags : ['attendance']
 }
+let lastEditTime = 0
 export function makeEvent(actor: string, payload: Payload): LedgerEvent {
+  lastEditTime = Math.max(Date.now(), lastEditTime + 1)
+  const editTime = new Date(lastEditTime).toISOString()
   return eventSchema.parse({
     id: crypto.randomUUID(),
     actor,
-    clientTime: new Date().toISOString(),
+    clientTime: editTime,
+    editTime,
     receivedAt: '',
     payload,
   })

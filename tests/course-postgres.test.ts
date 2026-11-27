@@ -144,6 +144,30 @@ integration(
       expect(
         (await call('/api/admin/enrollments/membership', subjects.admin, teacherMembership)).status,
       ).toBe(200)
+      const explicitLevel = await call('/api/admin/enrollments/save', subjects.admin, {
+        ...teacherMembership,
+        level: '3',
+      })
+      expect(await explicitLevel.json()).toEqual({ saved: true })
+      const readLevel = async () => {
+        const snapshot = neonSnapshotSchema.parse(
+          await (await call('/api/notebook', subjects.admin)).json(),
+        )
+        return snapshot.enrollments.find((entry) => entry.id === enrollmentIds[0])?.level
+      }
+      expect(await readLevel()).toBe('3')
+      expect(
+        (await call('/api/admin/enrollments/membership', subjects.admin, teacherMembership)).status,
+      ).toBe(200)
+      expect(await readLevel()).toBe('3')
+      expect(
+        (
+          await call('/api/admin/enrollments/save', subjects.admin, {
+            ...teacherMembership,
+            level: '',
+          })
+        ).status,
+      ).toBe(200)
       const assignedTeacher = neonSnapshotSchema.parse(
         await (await call('/api/notebook', subjects.admin)).json(),
       )
@@ -885,6 +909,82 @@ integration(
           .status,
       ).toBe(200)
       expect((await call('/api/events', subjects.teacher, { events: [stale] })).status).toBe(200)
+
+      // Timestamped edits converge on the later edit in either delivery order.
+      const editBase = Date.now() + 10_000
+      for (const [date, reverse] of [
+        ['2026-12-18', false],
+        ['2026-12-19', true],
+      ] as const) {
+        const older = makeEvent('Synthetic course teacher', {
+          kind: 'attendance',
+          studentId,
+          enrollmentId: enrollmentIds[0],
+          date,
+          status: 'absent',
+        })
+        const newer = makeEvent('Synthetic course teacher', {
+          kind: 'attendance',
+          studentId,
+          enrollmentId: enrollmentIds[0],
+          date,
+          status: 'present',
+        })
+        const records = [
+          { event: older, editTime: new Date(editBase).toISOString(), expectedEventId: null },
+          {
+            event: newer,
+            editTime: new Date(editBase + 1000).toISOString(),
+            expectedEventId: null,
+          },
+        ]
+        if (reverse) records.reverse()
+        const kinds = []
+        for (const record of records) {
+          const response = await call('/api/attendance/sync', subjects.teacher, {
+            accountId: subjects.teacher,
+            records: [record],
+          })
+          expect(response.status).toBe(200)
+          kinds.push(offlineAttendanceResponseSchema.parse(await response.json()).outcomes[0]?.kind)
+        }
+        expect(kinds).toEqual(reverse ? ['saved', 'conflict'] : ['saved', 'saved'])
+        const board = neonStudentAttendanceSchema.parse(
+          await (await call('/api/student/attendance', subjects.student)).json(),
+        )
+        expect(board.attendance.find((entry) => entry.date === date)?.status).toBe('present')
+      }
+
+      const rawMark = makeEvent('Synthetic course teacher', {
+        kind: 'attendance',
+        studentId,
+        enrollmentId: enrollmentIds[0],
+        date: '2026-12-20',
+        status: 'present',
+      })
+      rawMark.editTime = new Date(editBase).toISOString()
+      expect((await call('/api/events', subjects.teacher, { events: [rawMark] })).status).toBe(200)
+      const rawCorrection = makeEvent('Synthetic course teacher', {
+        kind: 'reversal',
+        targetId: rawMark.id,
+        reason: 'Correction',
+      })
+      rawCorrection.editTime = new Date(editBase + 2000).toISOString()
+      expect(
+        (await call('/api/events', subjects.teacher, { events: [rawCorrection] })).status,
+      ).toBe(200)
+      const delayed = makeEvent('Synthetic course teacher', {
+        kind: 'attendance',
+        studentId,
+        enrollmentId: enrollmentIds[0],
+        date: '2026-12-20',
+        status: 'absent',
+      })
+      delayed.editTime = new Date(editBase + 1000).toISOString()
+      expect((await call('/api/events', subjects.teacher, { events: [delayed] })).status).toBe(409)
+      expect(
+        (await call('/api/events', subjects.teacher, { events: [rawCorrection] })).status,
+      ).toBe(200)
 
       const offlineDate = '2026-12-02'
       const race = await Promise.all(

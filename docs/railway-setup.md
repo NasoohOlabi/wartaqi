@@ -1,10 +1,12 @@
 # Railway setup and migration
 
-Railway replaces Neon hosting, managed Auth and Postgres. A Bun server serves React, Better Auth at `/api/auth`, and the notebook API on one HTTPS origin. The six application tables retain all role/assignment restrictions and store courses and student enrollments. See [courses](courses.md) for enrollment fields and attendance scope. Better Auth uses separate tables in the retained `neon_auth` schema; the name preserves queries without contacting Neon. Source filenames containing `neon` remain for compatibility.
+Railway replaces Neon hosting, managed Auth and Postgres. The web container serves React, Better Auth at `/api/auth`, the notebook API and Socket.IO on one HTTPS origin. The six application tables retain all role/assignment restrictions and store courses and student enrollments. See [courses](courses.md) for enrollment fields and attendance scope. Better Auth uses separate tables in the retained `neon_auth` schema; the name preserves queries without contacting Neon. Source filenames containing `neon` remain for compatibility.
 
 ## Deployment
 
 Before deploying workspace sync, apply `neon/019-workspace-invalidation.sql` and `neon/020-grade-sync-receipts.sql` to the application database using the private Railway connection and a single transaction with psql's ON_ERROR_STOP. The web service needs one additional PostgreSQL connection per instance for LISTEN. Full database backups and selective backup version 14 preserve grade receipts, so a retry after restore retains its identity. Older selective backups can restore into a migrated empty target. Comparison rejects a target with receipts if the backup predates version 14. Check the six enabled domain triggers and verify an authenticated client can reconnect through the public Socket.IO path.
+
+Before deploying stale-write rejection, apply `neon/021-edit-versions.sql` using the same private connection and transaction. It adds nullable edit versions without rewriting existing values. Verify that all three version triggers are enabled and `/health` passes after deployment. Selective backup version 15 preserves edit times and operation IDs. Older backups can restore into a migrated empty target, and comparison rejects a target with edit versions that the backup cannot represent. Preserve these versions on rollback and restore. See [stale edits](stale-writes.md).
 
 Use the `wartaqi` project in the AppSuite Hobby workspace, the `production` environment, and the service linked to `NasoohOlabi/wartaqi`. The [production origin](https://wartaqi.up.railway.app/) also serves Auth and MCP OAuth.
 
@@ -16,15 +18,19 @@ Standard releases use the existing GitHub connection and deployment records. Thi
 
 During the v0.1.0 development release, all changes deploy from `main`. Nightly builds and deployments remain disabled until the owner explicitly requests them. The production project contains the web application, Postgres and the independently deployed [Telegram worker](telegram.md).
 
-`Dockerfile` builds the frontend and installs frozen production dependencies. Its allowlisted context excludes private inputs and Git history. Configure Docker builds, health path `/health`, and port 3000 on the Railway service. Health verifies database tables. Set server-only `DATABASE_URL` to the private Railway Postgres connection, `BETTER_AUTH_SECRET` to a random value of at least 32 characters, `BETTER_AUTH_URL` to the public HTTPS origin, and `PORT=3000`. No browser endpoint variables are needed. Deploy verified `main` only. Legacy Pages publishing is retired.
+`Dockerfile` builds the React assets, the Rust web executable and the frozen Bun production dependencies. Its allowlisted context excludes private inputs and Git history. Configure Docker builds, health path `/health`, and port 3000 on the Railway service. Health verifies database tables. Set server-only `DATABASE_URL` to the private Railway Postgres connection, `BETTER_AUTH_SECRET` to a random value of at least 32 characters, `BETTER_AUTH_URL` to the public HTTPS origin, and `PORT=3000`. No browser endpoint variables are needed. Deploy verified `main` only. Legacy Pages publishing is retired.
+
+### Web runtime and rollback
+
+Use the Dockerfile start command on the existing web service. Rust serves assets, database readiness, Socket.IO and the GET routes for sessions, current accounts, staff notebooks, administration and student attendance. Other API requests, including grade saves, authentication changes and MCP, start a Bun process on loopback inside the same container. It exits after 90 seconds without an active request. Postgres, the public origin and the independently deployed Bun Telegram worker keep their existing configuration.
+
+Record the successful production web deployment ID before switching. To roll back, use Railway's rollback action on that web deployment. Keep the existing database, signing secrets and Telegram volume. Verify the deployed SHA in GitHub, open the homepage, check `/health`, the anonymous session and OAuth resource metadata. Compare per-service Railway memory and CPU over equivalent quiet windows and account for the 90-second worker lifetime. The local container benchmark in [the migration plan](rust-backend-pilot.md) covers a different workload.
 
 Apply the ordered `railway/*.sql` authentication migrations, then ordered `neon/*.sql` application migrations to the new database. These are repeatable; preserve the Neon source data and record any access pause separately. Run `bun run verify:release` before stable promotion. The service's main deployment trigger has **Wait for CI** enabled.
 
 Apply `neon/015-website-diagnostics.sql` against the private Railway Postgres connection before deploying website diagnostics. Use `psql` with `ON_ERROR_STOP=1` and a single transaction. `/health` checks for the table. The selective notebook transfer omits this 30-day diagnostic stream. See [Website diagnostics](website-diagnostics.md).
 
-Apply `neon/016-session-replay.sql` using the same private migration procedure before deploying session replay. The separate replay table uses a three-day read cutoff and hourly cleanup. The health check verifies the table and the selective notebook transfer omits its contents.
-
-Apply `neon/017-attendance-replay-data.sql` before deploying the data-backed Attendance player. It adds a nullable typed-payload column to the existing three-day replay table. The health check requires the column. Backups containing this table can include recorded student names and marks.
+The retired session recorder's historical migrations 016 and 017 remain in sequence. The web service rejects old recording uploads and removes expired frames at startup and hourly. The original three-day retention applies. Infrastructure backups can still contain historical names and marks.
 
 Apply `neon/018-telegram-conversations.sql` using the same private migration procedure before deploying Telegram conversation diagnostics. The health check verifies the table. Use the existing shared `TELEGRAM_WORKER_SECRET` for ingestion, and keep full infrastructure backups containing conversations private. The selective notebook transfer omits the three-day transcript table.
 

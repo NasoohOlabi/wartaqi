@@ -1,8 +1,12 @@
 import { createServer, type ProxyOptions } from 'vite'
+import { startRustBackend } from './rust-backend-server'
 
-export async function startRustBrowserProxy() {
+export async function startRustBrowserProxy(
+  binary: string,
+  databaseUrl: string,
+  authSecret: string,
+) {
   let rustProxy: ProxyOptions | undefined
-  let bunProxy: ProxyOptions | undefined
   const proxy = await createServer({
     configFile: false,
     server: {
@@ -11,18 +15,11 @@ export async function startRustBrowserProxy() {
       hmr: false,
       watch: null,
       proxy: {
-        '^/(socket\\.io/|api/(auth/(sign-in/phone|get-session|sign-out)|device-accounts(/switch)?|me|notebook|student/attendance|attendance/sync))(?=\\?|$)':
-          {
-            target: 'http://127.0.0.1:1',
-            ws: true,
-            configure(_proxy, options) {
-              rustProxy = options
-            },
-          },
         '/': {
           target: 'http://127.0.0.1:1',
+          ws: true,
           configure(_proxy, options) {
-            bunProxy = options
+            rustProxy = options
           },
         },
       },
@@ -31,19 +28,17 @@ export async function startRustBrowserProxy() {
   try {
     await proxy.listen()
     const address = proxy.httpServer?.address()
-    if (!address || typeof address === 'string' || !rustProxy || !bunProxy) {
+    if (!address || typeof address === 'string' || !rustProxy) {
       throw new Error('Local browser proxy could not bind')
     }
     const origin = 'http://127.0.0.1:' + address.port
-    const rust = rustProxy
-    const bun = bunProxy
+    const rust = await startRustBackend(binary, databaseUrl, { hybridOrigin: origin }, authSecret)
+    rustProxy.target = rust.origin
     return {
       origin,
-      connect(bunOrigin: string, rustOrigin: string) {
-        rust.target = rustOrigin
-        bun.target = bunOrigin
+      async close() {
+        await Promise.all([proxy.close(), rust.close()])
       },
-      close: () => proxy.close(),
     }
   } catch (error) {
     await proxy.close()

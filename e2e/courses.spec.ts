@@ -722,6 +722,29 @@ test('student profiles explain missing enrollment and open general information',
   expect(events).toHaveLength(1)
 })
 
+test('course assignment sends a second edit while readback is slow', async ({ page }) => {
+  const { assignments, holdNextNotebook, savedToast } = await setupCourses(page)
+  await page.goto(`/?page=app&view=courses&courseView=students&course=${courseA}`)
+  const teacher = page.getByLabel('Teacher: Synthetic Student')
+  await expect(teacher).toHaveValue('')
+
+  const readback = holdNextNotebook()
+  try {
+    await teacher.selectOption(teacherId)
+    await readback.captured
+    const response = page.waitForResponse('**/api/admin/enrollments/assignment', { timeout: 3_000 })
+    await teacher.selectOption('')
+    expect((await response).ok()).toBe(true)
+    expect(assignments.map((assignment) => assignment.teacherId)).toEqual([teacherId, null])
+  } finally {
+    readback.release()
+  }
+
+  await expect(savedToast).toBeVisible()
+  await page.reload()
+  await expect(teacher).toHaveValue('')
+})
+
 test('threshold saves refresh after an older grade read', async ({ page }) => {
   const { events, holdNextNotebook } = await setupCourses(page)
   for (const [day, status] of [
@@ -2558,4 +2581,93 @@ test('administrator no-course Students includes the complete inactive register',
   await expect(page.getByRole('heading', { name: 'السجل والتصحيحات' })).toBeVisible()
   await expect(page).toHaveURL(/view=history/)
   await expect(page).toHaveURL(new RegExp(`course=${courseB}`))
+})
+
+test('membership switch shows pending changes and retries safely', async ({ page }, testInfo) => {
+  const { assignments, enrollments, holdNextAssignment, failNextAssignment, holdNextNotebook } =
+    await setupCourses(page)
+  const mobile = testInfo.project.name === 'mobile'
+  if (mobile)
+    await page.addInitScript(() => localStorage.setItem('halaqa-language-preference', 'ar'))
+  const captured = Promise.withResolvers<void>()
+  const release = Promise.withResolvers<void>()
+  let writes = 0
+  const assignmentEdits: { time: string | undefined; id: string | undefined }[] = []
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/admin/enrollments/assignment') {
+      const headers = request.headers()
+      assignmentEdits.push({ time: headers['x-edit-time'], id: headers['x-edit-id'] })
+    }
+  })
+  await page.route('**/api/admin/enrollments/membership', async (route) => {
+    writes += 1
+    captured.resolve()
+    await release.promise
+    await route.fallback()
+  })
+  await page.goto(`/?page=app&view=courses&courseView=students&course=${courseA}`)
+  const membership = page.getByRole('switch', {
+    name: `${mobile ? 'مسجل' : 'Enrolled'}: New Student`,
+  })
+  const activate = () => (mobile ? membership.tap() : membership.click())
+  try {
+    await activate()
+    await captured.promise
+    await expect(membership).toBeChecked()
+    await expect(membership).toBeDisabled()
+    const box = await membership.boundingBox()
+    if (!box) throw new Error('Membership switch is not visible')
+    const x = box.x + box.width / 2
+    const y = box.y + box.height / 2
+    if (mobile) await page.touchscreen.tap(x, y)
+    else await page.mouse.click(x, y)
+    expect(writes).toBe(1)
+    const refresh = holdNextNotebook()
+    try {
+      release.resolve()
+      await refresh.captured
+      await expect(membership).toBeChecked()
+      await expect(membership).toBeDisabled()
+    } finally {
+      refresh.release()
+    }
+  } finally {
+    release.resolve()
+  }
+  await expect(membership).toBeEnabled()
+  const id = enrollments.find(
+    (entry) => entry.studentId === secondStudentId && entry.courseId === courseA,
+  )?.id
+  expect(id).toBeTruthy()
+  await activate()
+  await expect(membership).not.toBeChecked()
+  await expect(membership).toBeEnabled()
+  failNextAssignment()
+  await activate()
+  await expect(
+    page.getByText(
+      mobile ? 'تعذر تأكيد حفظ تغييرات الطلاب.' : 'Could not confirm the student changes.',
+    ),
+  ).toBeVisible()
+  await expect(membership).not.toBeChecked()
+  const releaseRetry = holdNextAssignment()
+  try {
+    await page.getByRole('button', { name: mobile ? 'إعادة المحاولة' : 'Retry' }).click()
+    await expect(membership).toBeChecked()
+    await expect(membership).toBeDisabled()
+  } finally {
+    releaseRetry()
+  }
+  await expect(membership).toBeEnabled()
+  expect(writes).toBe(1)
+  expect(assignments.map((item) => item.kind === 'edit' && [item.id, item.active])).toEqual([
+    [id, false],
+    [id, true],
+    [id, true],
+  ])
+  expect(assignmentEdits).toHaveLength(3)
+  expect(assignmentEdits[1].time).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/)
+  expect(assignmentEdits[1].id).toBeTruthy()
+  expect(assignmentEdits[1].id).not.toBe(assignmentEdits[0].id)
+  expect(assignmentEdits[2]).toEqual(assignmentEdits[1])
 })

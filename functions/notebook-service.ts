@@ -560,7 +560,11 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
     )
     if (result.rowCount !== ids.length) throw new HttpError(409)
     return { saved: true }
-  } else if (path === '/api/admin/enrollments' || path === '/api/admin/enrollments/membership') {
+  } else if (
+    path === '/api/admin/enrollments' ||
+    path === '/api/admin/enrollments/membership' ||
+    path === '/api/admin/enrollments/save'
+  ) {
     const legacy = path === '/api/admin/enrollments'
     const enrollment = legacy
       ? enrollmentSchema
@@ -572,7 +576,8 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
       enrollment.studentId,
     ])
     if (!student.rows.length) throw new HttpError(400)
-    const level = enrollmentSchema.shape.level.parse(student.rows[0].group_name)
+    const explicitLevel = path === '/api/admin/enrollments/save' ? enrollment.level : undefined
+    const level = explicitLevel ?? enrollmentSchema.shape.level.parse(student.rows[0].group_name)
     const course = await db.query('SELECT id FROM courses WHERE id = $1 FOR SHARE', [
       enrollment.courseId,
     ])
@@ -617,7 +622,7 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
       await db.query(
         `INSERT INTO course_enrollments (id, course_id, student_id, level, active, teacher_id)
         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (course_id, student_id)
-        DO UPDATE SET active = EXCLUDED.active, teacher_id = CASE WHEN $7 THEN EXCLUDED.teacher_id ELSE course_enrollments.teacher_id END`,
+        DO UPDATE SET active = EXCLUDED.active, teacher_id = CASE WHEN $7 THEN EXCLUDED.teacher_id ELSE course_enrollments.teacher_id END, level = COALESCE($8, course_enrollments.level)`,
         [
           enrollment.id,
           enrollment.courseId,
@@ -626,6 +631,7 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
           enrollment.active,
           enrollment.teacherId ?? null,
           enrollment.teacherId !== undefined,
+          explicitLevel ?? null,
         ],
       )
     }
@@ -857,6 +863,7 @@ export function createHandler(
         '/api/admin/enrollments',
         '/api/admin/enrollments/assignment',
         '/api/admin/enrollments/membership',
+        '/api/admin/enrollments/save',
         '/api/admin/enrollments/grades',
         '/api/admin/enrollments/decision',
         '/api/admin/enrollments/handbook',
@@ -885,6 +892,7 @@ export function createHandler(
         '/api/admin/enrollments',
         '/api/admin/enrollments/assignment',
         '/api/admin/enrollments/membership',
+        '/api/admin/enrollments/save',
         '/api/admin/enrollments/grades',
         '/api/admin/enrollments/decision',
         '/api/admin/enrollments/handbook',
@@ -912,6 +920,7 @@ export function createHandler(
         '/api/admin/enrollments',
         '/api/admin/enrollments/assignment',
         '/api/admin/enrollments/membership',
+        '/api/admin/enrollments/save',
         '/api/admin/enrollments/grades',
         '/api/admin/enrollments/decision',
         '/api/admin/enrollments/handbook',
@@ -957,6 +966,19 @@ export function createHandler(
           return reply(response)
         }
         await db.query('BEGIN')
+        const editTime = request.headers.get('x-edit-time')
+        const editId = request.headers.get('x-edit-id')
+        if (editTime !== null || editId !== null) {
+          const edit = z.strictObject({ time: z.iso.datetime(), id: z.uuid() }).parse({
+            time: editTime,
+            id: editId,
+          })
+          if (Date.parse(edit.time) > Date.now() + 5 * 60 * 1000) throw new HttpError(409)
+          await db.query(
+            "SELECT set_config('wartaq.edit_time', $1, true), set_config('wartaq.edit_id', $2, true)",
+            [edit.time, edit.id],
+          )
+        }
         if (
           [
             '/api/me/invitation-profile',
@@ -1153,6 +1175,7 @@ export function createHandler(
           if (!current.rows.length) throw new HttpError(403)
           const currentStudent = studentProfileVersionSchema.parse(current.rows[0])
           if (
+            editTime === null &&
             studentProfileVersionSchema
               .keyof()
               .options.some((field) => currentStudent[field] !== student.expected[field])
@@ -1196,6 +1219,19 @@ export function createHandler(
               path === gradePath && !gradeEdit?.success
                 ? gradeRecoverySchema.safeParse(body)
                 : undefined
+            const timedGrade = gradeEdit?.success
+              ? gradeEdit.data
+              : recovery?.success
+                ? recovery.data.operation
+                : undefined
+            if (timedGrade?.editTime) {
+              if (Date.parse(timedGrade.editTime) > Date.now() + 5 * 60 * 1000)
+                throw new HttpError(409)
+              await db.query(
+                "SELECT set_config('wartaq.edit_time', $1, true), set_config('wartaq.edit_id', $2, true)",
+                [timedGrade.editTime, timedGrade.requestId],
+              )
+            }
             if (gradeEdit?.success)
               response = await saveGradeEdit(db, subject, teacher, gradeEdit.data)
             else if (recovery?.success)
@@ -1250,16 +1286,33 @@ export function createHandler(
           await db.query("SELECT pg_advisory_xact_lock(hashtextextended('attendance-ledger', 0))")
         if (studentSync) {
           const operation = studentSync.operation
+          if (operation.kind === 'profile-v1' && operation.editTime) {
+            if (Date.parse(operation.editTime) > Date.now() + 5 * 60 * 1000)
+              throw new HttpError(409)
+            await db.query(
+              "SELECT set_config('wartaq.edit_time', $1, true), set_config('wartaq.edit_id', $2, true)",
+              [operation.editTime, operation.id],
+            )
+          }
           const studentId =
             operation.kind === 'note' ? operation.event.payload.studentId : operation.studentId
           const id = operation.kind === 'note' ? operation.event.id : operation.id
           const { rows } = await db.query(
             operation.kind === 'profile-v1'
               ? `SELECT COALESCE(first_name, name) AS "firstName", COALESCE(last_name, '') AS "lastName",
-                 whatsapp, location, birth_year AS "birthYear"
+                 whatsapp, location, birth_year AS "birthYear",
+                 COALESCE((edit_time, edit_id) >= ($4::timestamptz, $5::uuid), false) AS stale
                FROM students WHERE id = $1 AND active AND ($2::boolean OR teacher_id = $3) FOR UPDATE`
               : 'SELECT whatsapp FROM students WHERE id = $1 AND active AND ($2::boolean OR teacher_id = $3) FOR UPDATE',
-            [studentId, teacher.role === 'administrator', teacher.id],
+            operation.kind === 'profile-v1'
+              ? [
+                  studentId,
+                  teacher.role === 'administrator',
+                  teacher.id,
+                  operation.editTime ?? null,
+                  operation.id,
+                ]
+              : [studentId, teacher.role === 'administrator', teacher.id],
           )
           const student = z.object({ whatsapp: z.string().nullable() }).optional().parse(rows[0])
           if (!student) {
@@ -1268,7 +1321,11 @@ export function createHandler(
           }
           const currentWhatsapp = student.whatsapp?.trim() || null
           const currentProfile =
-            operation.kind === 'profile-v1' ? editableProfileSchema.parse(rows[0]) : null
+            operation.kind === 'profile-v1'
+              ? editableProfileSchema.parse(
+                  Object.fromEntries(profileFields.map((field) => [field, rows[0][field]])),
+                )
+              : null
           const clientTime =
             operation.kind === 'note' ? operation.event.clientTime : operation.clientTime
           const payload =
@@ -1296,7 +1353,11 @@ export function createHandler(
           }
           let savedProfile = currentProfile
           if (operation.kind === 'profile-v1' && currentProfile) {
-            const fields = profileConflicts(currentProfile, operation)
+            const fields = operation.editTime
+              ? rows[0].stale
+                ? profileFields.filter((field) => operation.changes[field] !== undefined)
+                : []
+              : profileConflicts(currentProfile, operation)
             const nextProfile = { ...currentProfile, ...operation.changes }
             savedProfile = nextProfile
             const name = [nextProfile.firstName, nextProfile.lastName].filter(Boolean).join(' ')
@@ -1321,7 +1382,7 @@ export function createHandler(
             const changed = profileFields.filter(
               (field) => currentProfile[field] !== nextProfile[field],
             )
-            if (changed.length) {
+            if (changed.length || operation.editTime) {
               const columns = {
                 firstName: 'first_name',
                 lastName: 'last_name',
@@ -1330,6 +1391,7 @@ export function createHandler(
                 birthYear: 'birth_year',
               }
               const updates = changed.map((field, index) => `${columns[field]} = $${index + 2}`)
+              if (!updates.length) updates.push('id = id')
               const values = changed.map((field) => nextProfile[field])
               if (changed.includes('firstName') || changed.includes('lastName')) {
                 values.push(name)
@@ -1370,7 +1432,7 @@ export function createHandler(
         const current = await snapshot(db, teacher, !batch && !sync)
         if (sync) {
           const outcomes = []
-          for (const { event, expectedEventId, expectedRevision } of sync.records) {
+          for (const { event, expectedEventId, expectedRevision, editTime } of sync.records) {
             const payload = event.payload
             const latest = projectEvents(current.events).attendanceVersions.get(
               attendanceScopeKey(payload),
@@ -1393,13 +1455,14 @@ export function createHandler(
             const existing = await db.query('SELECT 1 FROM events WHERE id = $1', [event.id])
             if (existing.rowCount) {
               const same = await db.query(
-                'SELECT 1 FROM events WHERE id = $1 AND teacher_id = $2 AND student_id = $3 AND client_time = $4 AND payload = $5::jsonb',
+                'SELECT 1 FROM events WHERE id = $1 AND teacher_id = $2 AND student_id = $3 AND client_time = $4 AND payload = $5::jsonb AND edit_time IS NOT DISTINCT FROM $6::timestamptz',
                 [
                   event.id,
                   teacher.id,
                   payload.studentId,
                   event.clientTime,
                   JSON.stringify(payload),
+                  editTime ?? null,
                 ],
               )
               outcomes.push({
@@ -1409,7 +1472,29 @@ export function createHandler(
               })
               continue
             }
+            if (editTime) {
+              if (Date.parse(editTime) > Date.now() + 5 * 60 * 1000) {
+                outcomes.push({ id: event.id, kind: 'conflict', current: version })
+                continue
+              }
+              const newer = await db.query(
+                `SELECT 1 FROM events e
+                 LEFT JOIN events target ON e.payload->>'kind' = 'reversal' AND target.id::text = e.payload->>'targetId'
+                 WHERE e.student_id = $1
+                   AND e.enrollment_id IS NOT DISTINCT FROM $2
+                   AND COALESCE(target.payload, e.payload)->>'kind' = 'attendance'
+                   AND COALESCE(target.payload, e.payload)->>'date' = $3
+                   AND (COALESCE(e.edit_time, e.received_at), e.id) >= ($4::timestamptz, $5::uuid)
+                 LIMIT 1`,
+                [payload.studentId, payload.enrollmentId, payload.date, editTime, event.id],
+              )
+              if (newer.rowCount) {
+                outcomes.push({ id: event.id, kind: 'conflict', current: version })
+                continue
+              }
+            }
             if (
+              !editTime &&
               (expectedRevision === 'unknown'
                 ? version !== null
                 : (version?.eventId ?? null) !== expectedEventId) &&
@@ -1419,7 +1504,7 @@ export function createHandler(
               continue
             }
             await db.query(
-              'INSERT INTO events (id, teacher_id, student_id, actor, client_time, payload, enrollment_id) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)',
+              'INSERT INTO events (id, teacher_id, student_id, actor, client_time, payload, enrollment_id, edit_time) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)',
               [
                 event.id,
                 teacher.id,
@@ -1428,6 +1513,7 @@ export function createHandler(
                 event.clientTime,
                 JSON.stringify(payload),
                 payload.enrollmentId,
+                editTime ?? null,
               ],
             )
             current.events.push(event)
@@ -1462,8 +1548,28 @@ export function createHandler(
                 ? current.events.find((e) => e.id === payload.targetId)?.payload
                 : payload
             if (!studentId || !('studentId' in studentId)) throw new HttpError(403)
+            if (event.editTime && studentId.kind === 'attendance' && !existingIds.has(event.id)) {
+              if (Date.parse(event.editTime) > Date.now() + 5 * 60 * 1000) throw new HttpError(409)
+              const newer = await db.query(
+                `SELECT 1 FROM events e
+                 LEFT JOIN events target ON e.payload->>'kind' = 'reversal' AND target.id::text = e.payload->>'targetId'
+                 WHERE e.student_id = $1 AND e.enrollment_id IS NOT DISTINCT FROM $2
+                   AND COALESCE(target.payload, e.payload)->>'kind' = 'attendance'
+                   AND COALESCE(target.payload, e.payload)->>'date' = $3
+                   AND (COALESCE(e.edit_time, e.received_at), e.id) >= ($4::timestamptz, $5::uuid)
+                 LIMIT 1`,
+                [
+                  studentId.studentId,
+                  studentId.enrollmentId ?? null,
+                  studentId.date,
+                  event.editTime,
+                  event.id,
+                ],
+              )
+              if (newer.rowCount) throw new HttpError(409)
+            }
             const inserted = await db.query(
-              'INSERT INTO events (id, teacher_id, student_id, actor, client_time, payload, enrollment_id) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) ON CONFLICT (id) DO NOTHING RETURNING id',
+              'INSERT INTO events (id, teacher_id, student_id, actor, client_time, payload, enrollment_id, edit_time) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8) ON CONFLICT (id) DO NOTHING RETURNING id',
               [
                 event.id,
                 teacher.id,
@@ -1472,11 +1578,12 @@ export function createHandler(
                 event.clientTime,
                 JSON.stringify(payload),
                 studentId.kind === 'attendance' ? (studentId.enrollmentId ?? null) : null,
+                event.editTime ?? null,
               ],
             )
             if (!inserted.rowCount) {
               const same = await db.query(
-                'SELECT 1 FROM events WHERE id = $1 AND teacher_id = $2 AND student_id = $3 AND actor = $4 AND client_time = $5 AND payload = $6::jsonb',
+                'SELECT 1 FROM events WHERE id = $1 AND teacher_id = $2 AND student_id = $3 AND actor = $4 AND client_time = $5 AND payload = $6::jsonb AND (edit_time IS NULL OR edit_time IS NOT DISTINCT FROM $7::timestamptz)',
                 [
                   event.id,
                   teacher.id,
@@ -1484,6 +1591,7 @@ export function createHandler(
                   teacher.name,
                   event.clientTime,
                   JSON.stringify(payload),
+                  event.editTime ?? null,
                 ],
               )
               if (!same.rowCount) throw new HttpError(409)
@@ -1510,7 +1618,9 @@ export function createHandler(
           ? error.status
           : error instanceof z.ZodError
             ? 400
-            : error instanceof Error && 'code' in error && error.code === '23505'
+            : error instanceof Error &&
+                'code' in error &&
+                ['23505', 'W0001'].includes(String(error.code))
               ? 409
               : 500
       return reply(

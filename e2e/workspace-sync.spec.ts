@@ -5,12 +5,50 @@ import { spawn } from 'node:child_process'
 import { once } from 'node:events'
 import { z } from 'zod'
 import { createIdentity } from '../tests/integration-identity'
-import { startRustBackend } from '../tests/rust-backend-server'
 import { startRustBrowserProxy } from '../tests/rust-browser-proxy'
 
 // Requires a migrated disposable database, a production build and Playwright Chromium.
 const databaseUrl = process.env.TEST_RAILWAY_DATABASE_URL
 const rustBinary = process.env.TEST_RUST_BROWSER_BINARY
+
+async function startBunBrowserServer(databaseUrl: string, authSecret: string) {
+  const server = spawn('bun', ['tests/integration-server.ts'], {
+    env: {
+      ...process.env,
+      DATABASE_URL: databaseUrl,
+      BETTER_AUTH_SECRET: authSecret,
+      TEST_WORKSPACE_ORIGIN: undefined,
+    },
+    stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
+    serialization: 'json',
+  })
+  async function close() {
+    if (server.connected) {
+      const closed = once(server, 'exit', { signal: AbortSignal.timeout(5000) })
+      server.send('close')
+      await closed.catch(() => server.kill())
+    } else {
+      server.kill()
+    }
+  }
+  try {
+    const [address] = await Promise.race([
+      once(server, 'message', { signal: AbortSignal.timeout(12000) }),
+      once(server, 'exit').then(() => {
+        throw new Error('Fixture server exited during startup')
+      }),
+    ])
+    const origin = z
+      .string()
+      .regex(/^http:\/\/127\.0\.0\.1:\d+$/)
+      .parse(address)
+    return { origin, close }
+  } catch (error) {
+    await close()
+    throw error
+  }
+}
+
 test.use({ trace: 'off' })
 test('offline teacher edits reach a second signed-in student over live sync', async ({
   browser,
@@ -32,34 +70,11 @@ test('offline teacher edits reach a second signed-in student over live sync', as
   const studentPhone = phonePrefix + '2'
   const identities: string[] = []
   const authSecret = randomBytes(32).toString('hex')
-  const proxy = rustBinary ? await startRustBrowserProxy() : undefined
-  let rust: Awaited<ReturnType<typeof startRustBackend>> | undefined
-  const server = spawn('bun', ['tests/integration-server.ts'], {
-    env: {
-      ...process.env,
-      DATABASE_URL: databaseUrl,
-      BETTER_AUTH_SECRET: authSecret,
-      TEST_WORKSPACE_ORIGIN: proxy?.origin,
-    },
-    stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
-    serialization: 'json',
-  })
+  const server = rustBinary
+    ? await startRustBrowserProxy(rustBinary, databaseUrl, authSecret)
+    : await startBunBrowserServer(databaseUrl, authSecret)
   try {
-    const [address] = await Promise.race([
-      once(server, 'message', { signal: AbortSignal.timeout(12000) }),
-      once(server, 'exit').then(() => {
-        throw new Error('Fixture server exited during startup')
-      }),
-    ])
-    const bunOrigin = z
-      .string()
-      .regex(/^http:\/\/127\.0\.0\.1:\d+$/)
-      .parse(address)
-    if (rustBinary && proxy) {
-      rust = await startRustBackend(rustBinary, databaseUrl, bunOrigin, authSecret, proxy.origin)
-      proxy.connect(bunOrigin, rust.origin)
-    }
-    const origin = proxy?.origin ?? bunOrigin
+    const { origin } = server
     identities.push(await createIdentity(db, 'Sync Teacher', password))
     identities.push(await createIdentity(db, 'Sync Student', password))
     await db.query(
@@ -100,6 +115,13 @@ test('offline teacher edits reach a second signed-in student over live sync', as
     ])
     const teacher = await staff.newPage()
     const student = await learner.newPage()
+    const replayRequests: string[] = []
+    for (const context of [staff, learner]) {
+      context.on('request', (request) => {
+        if (new URL(request.url()).pathname === '/api/diagnostics/replay')
+          replayRequests.push(request.method())
+      })
+    }
     const attendanceUrl = '/?page=app&tab=attendance&course=' + courseId + '&date=2026-11-18'
     await Promise.all([teacher.goto(attendanceUrl), student.goto('/?page=app')])
     await expect(student.getByRole('heading', { name: 'My attendance' })).toBeVisible()
@@ -171,17 +193,10 @@ test('offline teacher edits reach a second signed-in student over live sync', as
     await expect(student.getByRole('cell', { name: 'present', exact: true })).toBeVisible({
       timeout: 12000,
     })
+    expect(replayRequests).toEqual([])
     await Promise.all([staff.close(), learner.close()])
   } finally {
-    rust?.child.kill()
-    await Promise.all([rust?.exited, proxy?.close()])
-    if (server.connected) {
-      const closed = once(server, 'exit', { signal: AbortSignal.timeout(5000) })
-      server.send('close')
-      await closed.catch(() => server.kill())
-    } else {
-      server.kill()
-    }
+    await server.close()
     await db.query('DELETE FROM events WHERE student_id=$1', [studentId])
     await db.query('DELETE FROM app_accounts WHERE auth_user_id=ANY($1::text[])', [identities])
     await db.query('DELETE FROM course_enrollments WHERE id=$1', [enrollmentId])

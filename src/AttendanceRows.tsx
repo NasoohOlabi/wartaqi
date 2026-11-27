@@ -3,8 +3,7 @@ import { Toggle } from '@base-ui/react/toggle'
 import { ToggleGroup } from '@base-ui/react/toggle-group'
 import { Check, X, CircleMinus, Pencil, StickyNote } from 'lucide-react'
 import { useLayoutEffect, useRef, type ReactNode } from 'react'
-import { statuses } from '../shared/ledger'
-import type { AttendanceReplayAction, AttendanceReplayRow } from '../shared/attendanceReplay'
+import { statuses, type Status } from '../shared/ledger'
 import { useLanguage } from './useLanguage'
 
 export const attendanceExitDuration = 260
@@ -12,12 +11,10 @@ export const attendanceExitDuration = 260
 function AttendanceRow({
   id,
   exiting,
-  highlighted,
   children,
 }: {
   id: string
   exiting: boolean
-  highlighted: boolean
   children: ReactNode
 }) {
   const element = useRef<HTMLTableRowElement>(null)
@@ -30,9 +27,8 @@ function AttendanceRow({
         (sibling) => sibling && !sibling.hasAttribute('data-attendance-exiting'),
       )
       const nextFocus =
-        neighbor?.querySelector<HTMLButtonElement>(
-          'button[data-replay-action="mark"][tabindex="0"]',
-        ) ?? row.closest('section')?.querySelector<HTMLButtonElement>('.unmarked-toggle')
+        neighbor?.querySelector<HTMLButtonElement>('.attendance-segment[tabindex="0"]') ??
+        row.closest('section')?.querySelector<HTMLButtonElement>('.unmarked-toggle')
       nextFocus?.focus({ preventScroll: true })
     }
     row.inert = true
@@ -54,12 +50,7 @@ function AttendanceRow({
     }
   }, [exiting])
   return (
-    <tr
-      ref={element}
-      data-student-id={id}
-      data-attendance-exiting={exiting ? 'true' : undefined}
-      data-replay-highlight={highlighted ? 'true' : undefined}
-    >
+    <tr ref={element} data-student-id={id} data-attendance-exiting={exiting ? 'true' : undefined}>
       {children}
     </tr>
   )
@@ -74,18 +65,23 @@ export function AttendanceRows({
   onNote,
   onMark,
   onCorrect,
-  highlight,
   exitingRows,
 }: {
-  rows: AttendanceReplayRow[]
+  rows: {
+    id: string
+    name: string
+    level: string
+    teacherName: string
+    saved: Status | null
+    draft: Status | null
+  }[]
   header?: ReactNode
   canCorrect: boolean
   disabled?: boolean
-  onOpenStudent?: (id: string, element: HTMLElement) => void
-  onNote?: (id: string) => void
-  onMark?: (id: string, value: string[]) => void
-  onCorrect?: (id: string) => void
-  highlight?: AttendanceReplayAction
+  onOpenStudent: (id: string, element: HTMLElement) => void
+  onNote: (id: string) => void
+  onMark: (id: string, value: string[]) => void
+  onCorrect: (id: string) => void
   exitingRows?: ReadonlySet<string>
 }) {
   const { t, language } = useLanguage()
@@ -115,34 +111,23 @@ export function AttendanceRows({
                 <button
                   type="button"
                   className="attendance-note-button"
-                  data-replay-action="note"
                   aria-label={`${t('Add note for')} ${row.name}`}
                   title={t('Add note')}
                   aria-haspopup="dialog"
-                  disabled={!onNote}
-                  onClick={() => onNote?.(row.id)}
+                  onClick={() => onNote(row.id)}
                 >
                   <StickyNote size={18} aria-hidden="true" />
                 </button>
               )
               return (
-                <AttendanceRow
-                  key={row.id}
-                  id={row.id}
-                  exiting={exitingRows?.has(row.id) ?? false}
-                  highlighted={
-                    !!highlight && 'studentId' in highlight && highlight.studentId === row.id
-                  }
-                >
+                <AttendanceRow key={row.id} id={row.id} exiting={exitingRows?.has(row.id) ?? false}>
                   <td className="record-title" data-label={t('Student')}>
                     <div className="attendance-cell">
                       <div>
                         <button
                           type="button"
                           className="student-name-link"
-                          data-replay-action="student"
-                          disabled={!onOpenStudent}
-                          onClick={(event) => onOpenStudent?.(row.id, event.currentTarget)}
+                          onClick={(event) => onOpenStudent(row.id, event.currentTarget)}
                         >
                           <bdi>{row.name}</bdi>
                         </button>
@@ -172,8 +157,8 @@ export function AttendanceRows({
                             className="attendance-segments"
                             aria-label={`${t('Attendance for')} ${row.name}`}
                             value={[row.draft ?? row.saved ?? ''].filter(Boolean)}
-                            disabled={disabled || !onMark}
-                            onValueChange={(value) => onMark?.(row.id, value)}
+                            disabled={disabled}
+                            onValueChange={(value) => onMark(row.id, value)}
                           >
                             {statuses.map((status) => {
                               const Icon =
@@ -183,8 +168,6 @@ export function AttendanceRows({
                                   key={status}
                                   value={status}
                                   className={`attendance-segment attendance-segment-${status}`}
-                                  data-replay-action="mark"
-                                  data-replay-status={status}
                                   aria-label={t(status)}
                                   title={t(status)}
                                 >
@@ -198,20 +181,16 @@ export function AttendanceRows({
                             <button
                               type="button"
                               className="attendance-correct-button"
-                              data-replay-action="correction"
                               aria-label={`${language === 'ar' ? 'تصحيح العلامة' : 'Correct this mark'}: ${row.name}`}
                               title={language === 'ar' ? 'تصحيح العلامة' : 'Correct this mark'}
                               aria-haspopup="dialog"
-                              disabled={disabled || !onCorrect}
-                              onClick={() => onCorrect?.(row.id)}
+                              disabled={disabled}
+                              onClick={() => onCorrect(row.id)}
                             >
                               <Pencil size={16} aria-hidden="true" />
                             </button>
                           )}
                         </div>
-                        {!onMark && row.draft && row.draft !== row.saved && (
-                          <span className="muted">{language === 'ar' ? 'مسودة' : 'Draft'}</span>
-                        )}
                       </div>
                     </div>
                   </td>

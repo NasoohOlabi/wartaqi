@@ -38,6 +38,9 @@ test('authenticated notebook supports attendance, notes and corrections', async 
   await page.goto('/?page=app')
   await page.getByRole('button', { name: 'Attendance', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Notes', exact: true })).toHaveCount(0)
+  const existingNote = 'Review the last two pages together next session.'
+  const newNote = 'راجعت السورة اليوم'
+  await expect(page.getByText(existingNote)).toHaveCount(0)
   const sessionDate = await page.getByLabel('Session date').inputValue()
   const marks = page.getByLabel('Attendance for ليلى')
   const present = marks.getByRole('button', { name: 'present', exact: true })
@@ -59,11 +62,17 @@ test('authenticated notebook supports attendance, notes and corrections', async 
   for (const mark of [present, excused, absent]) {
     await mark.press('Space')
     await expect(mark).toHaveAttribute('aria-pressed', 'true')
-    tileBackgrounds.add(await mark.evaluate((button) => getComputedStyle(button).backgroundColor))
+    await expect
+      .poll(async () => {
+        const color = await mark.evaluate((button) => getComputedStyle(button).backgroundColor)
+        if (color === 'rgba(0, 0, 0, 0)') return false
+        tileBackgrounds.add(color)
+        return true
+      })
+      .toBe(true)
     iconColors.add(await mark.locator('svg').evaluate((icon) => getComputedStyle(icon).color))
   }
   expect(tileBackgrounds.size).toBe(3)
-  expect([...tileBackgrounds]).not.toContain('rgba(0, 0, 0, 0)')
   expect(iconColors.size).toBe(3)
   await expect.poll(() => attendancePosts).toBe(3)
   await expect(absent).toBeFocused()
@@ -88,19 +97,15 @@ test('authenticated notebook supports attendance, notes and corrections', async 
   await addNote.click()
   await expect(dialog.getByLabel('Note', { exact: true })).toHaveValue('')
   await dialog.getByLabel('Tags, separated by commas').fill('مراجعة, قراءة')
-  await dialog.getByLabel('Note', { exact: true }).fill('راجعت السورة اليوم')
+  await dialog.getByLabel('Note', { exact: true }).fill(newNote)
   await dialog.getByRole('button', { name: 'Save note' }).click()
   await expect(dialog).toBeHidden()
   await expect(
     page.getByLabel('Attendance for ليلى').getByRole('button', { pressed: true }),
   ).toHaveAccessibleName('absent')
+  await expect(page.getByText(newNote)).toHaveCount(0)
   await addNote.click()
-  await expect(dialog.getByText('راجعت السورة اليوم')).toBeVisible()
-  await expect(dialog.getByText('Review the last two pages together next session.')).toHaveCount(0)
-  if (testInfo.project.name === 'chromium') {
-    await mkdir('.artifacts/verification', { recursive: true })
-    await page.screenshot({ path: '.artifacts/verification/notebook.png', fullPage: true })
-  }
+  await expect(dialog.getByText(newNote)).toHaveCount(0)
   await page.keyboard.press('Escape')
   expect(attendancePosts).toBe(5)
   await expect(page.getByRole('button', { name: /Save attendance/ })).toHaveCount(0)
@@ -110,15 +115,36 @@ test('authenticated notebook supports attendance, notes and corrections', async 
   await page.getByRole('button', { name: 'Attendance', exact: true }).click()
   await page.getByLabel('Session date').fill('2001-01-01')
   await addNote.click()
-  await expect(dialog.getByText('راجعت السورة اليوم')).toHaveCount(0)
   await dialog.getByLabel('Note', { exact: true }).fill('Earlier session note')
   await dialog.getByRole('button', { name: 'Save note' }).click()
   await expect(dialog).toBeHidden()
-  await addNote.click()
-  await expect(dialog.getByText('Earlier session note')).toBeVisible()
-  await page.keyboard.press('Escape')
+  await expect(page.getByText('Earlier session note')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Students', exact: true }).click()
+  await expect(page.getByText(newNote)).toHaveCount(0)
+  const openStudent = (name: string) =>
+    page
+      .getByRole('row')
+      .filter({ hasText: name })
+      .getByRole('button', { name: /^Open student/ })
+  const notes = page.getByRole('list', { name: 'Student notes' })
+  await openStudent('أحمد').click()
+  await expect(notes.getByText(existingNote)).toBeVisible()
+  await expect(page.getByText(newNote)).toHaveCount(0)
+  await page.goBack()
+  await openStudent('ليلى').click()
+  const newRecord = notes.getByRole('listitem').filter({ hasText: newNote })
+  await expect(newRecord.getByText('#مراجعة', { exact: true })).toBeVisible()
+  await expect(newRecord.getByText('#قراءة', { exact: true })).toBeVisible()
+  await expect(newRecord.locator('time')).toHaveAttribute('datetime', sessionDate)
+  const earlierRecord = notes.getByRole('listitem').filter({ hasText: 'Earlier session note' })
+  await expect(earlierRecord.locator('time')).toHaveAttribute('datetime', '2001-01-01')
+  await expect(page.getByText(existingNote)).toHaveCount(0)
+  if (testInfo.project.name === 'chromium') {
+    await mkdir('.artifacts/verification', { recursive: true })
+    await page.screenshot({ path: '.artifacts/verification/notebook.png', fullPage: true })
+  }
   await openNotebookHistory(page)
-  const note = page.locator('li').filter({ hasText: 'راجعت السورة اليوم' })
+  const note = page.locator('li').filter({ hasText: newNote })
   await clickRecordAction(note, 'Undo')
   await page.getByLabel('Reason').fill('تصحيح')
   await page.getByRole('button', { name: 'Append correction' }).click()
@@ -126,15 +152,13 @@ test('authenticated notebook supports attendance, notes and corrections', async 
   await expect(page.getByText('Correction: تصحيح')).toBeVisible()
   await page.getByRole('button', { name: 'Attendance', exact: true }).click()
   await page.getByLabel('Session date').fill(sessionDate)
-  await addNote.click()
-  await expect(dialog.getByText('راجعت السورة اليوم')).toHaveCount(0)
-  await page.reload()
-  await addNote.click()
-  await expect(dialog.getByText('راجعت السورة اليوم')).toHaveCount(0)
-  await page.keyboard.press('Escape')
   await expect(
     page.getByLabel('Attendance for ليلى').getByRole('button', { pressed: true }),
   ).toHaveAccessibleName('absent')
+  await page.getByRole('button', { name: 'ليلى', exact: true }).click()
+  await page.reload()
+  await expect(earlierRecord).toBeVisible()
+  await expect(page.getByText(newNote)).toHaveCount(0)
   expect(external).toEqual([])
 })
 

@@ -2601,3 +2601,60 @@ Local HTTP parity used synthetic Postgres data and checked sign-in and revocatio
 `bun run verify` passed with 170 tests and one live-provider skip. The Rust app passed 25 tests, the Telegram crate passed four, and Clippy passed for both. Chromium signed in through Rust and passed the offline teacher edit and live student sync scenario against the disposable database. The Chromium fixture served static assets through Bun.
 
 The cutover plan is in [Draft Rust backend migration](rust-backend-pilot.md). Account administration, complete Telegram paths, native MCP transport and OAuth, and standalone parity are still in progress. The Teloxide port still needs parity for update IDs outside its signed 32-bit offset and HTTP 5xx timing. This increment stays local. No Railway traffic or benchmark rerun.
+
+## 2026-11-27 15:58 Asia/Damascus — Keep notes on the student profile
+
+The owner reported that a student note appeared in the attendance sidebar without context. Staff now read saved student notes on the student's profile with their dates, authors and tags. The attendance row still opens the form for adding a note to that student and date. The attendance sidebar shows the student and recorded-attendance counts. Day-level notes were deferred.
+
+Synthetic Chromium checks cover saving from Attendance, reading from the correct profile across dates, hiding a corrected note after reload, and English and Arabic desktop and phone layouts. `bun run verify:release` passed with 155 local tests and 256 browser cases. Optional provider suites were skipped locally. The browser checks use intercepted Auth and notebook routes. The PR records Railway verification.
+
+## 2026-11-27 16:01 Asia/Damascus — Show course membership changes on the first tap
+
+The owner reported that a slow enrollment save left the switch looking off. A second tap after the save could undo the enrollment. The switch now displays the requested state during the save and accepts another tap after it settles. A failed confirmation restores the last confirmed state. Retry uses the original operation and displays its pending change.
+
+Four focused Chromium checks passed on desktop English and mobile Arabic. They cover a held enrollment write and refresh, a blocked second tap, later withdrawal, failed rejoin and retry with the original enrollment ID, and the earlier inactive roster regression. The course suite passed against disposable PostgreSQL. The PR records the release checks and Railway verification.
+
+## 2026-11-27 16:03 Asia/Damascus — Keep online writes moving during readback
+
+The owner reported that an edit made on a connected phone committed late and asked to fix delivery before changing conflict policy. Two production attendance records showed about 13 seconds between their device timestamps and database receipt. The available telemetry could not tie the reported edit to a particular client stall.
+
+Holding a post-save notebook read reproduced a second write stalling in attendance and course teacher assignment on desktop and emulated iPhone. The attendance drain now releases after upload and schedules readback independently. Course requests still send in submission order, while readback and retry handling run separately. Both browser regressions require the second write to succeed before releasing the held read and verify the result after reload. The PR records broader checks and Railway delivery. A physical phone and the original incident remain unverified.
+
+The sync design records the next phases: compare reliable user edit times for the same field, retain field history, and show automatic and manual conflict resolutions from the last seven days in Settings.
+
+At 16:30 Asia/Damascus, merged main `4b687e0` into PR #219. The course switch shows the pending membership during save and retry alongside the separate write and readback queues. All 10 focused desktop and emulated-phone cases passed, including the switch, course assignments and attendance under delayed readback. `bun run verify` passed. Fresh CI and Railway verification remain pending.
+
+At 16:37 Asia/Damascus, merged main `3c8e1ee` into PR #219 and kept both work-log entries. The browser code matches the earlier verified branch, and the MCP enrollment changes match main. `bun run verify` passed with 155 tests and 14 opt-in skips. The new branch requires fresh CI before release.
+
+At 16:56 Asia/Damascus, merged main `f0927e3` after it moved student notes to profiles. The earlier release run passed 261 browser cases and had one mobile account-switch timeout. That case passed three consecutive reruns, and the separate history and dependency checks passed. All 10 focused desktop and emulated-phone cases passed on the combined tree, including profile notes, account switching and the delayed-read regressions. The deployed browser also reproduced both delays using synthetic API responses before the fix shipped.
+
+At 17:07 Asia/Damascus, merged main `cf5a66e` after the removal of session recording. The failed mobile CI trace showed a transparent color sample with Absent selected in the surrounding snapshots. The test still checks immediate selection and now waits for each selected background before comparing the three colors. All 24 focused desktop and emulated-phone repetitions and `bun run verify` passed.
+
+## 2026-11-27 16:06 Asia/Damascus — Retire session recordings
+
+The owner requested removal of session replay while preserving notebook sync. Removed browser capture, attendance snapshots, the administrator player and frame ingestion. Older clients receive a terminal response to uploads, and the hourly cleanup still expires historical recordings after three days. Website journey diagnostics and Web Vitals continue. Attendance row focus now uses the mark control's own class.
+
+Two signed-in synthetic Chromium sessions against a disposable Postgres verified offline attendance, reload, reconnection, propagation to the student and clearing the mark. Neither browser requested the replay endpoint. A separate database integration test verified rejection of legacy uploads, retirement of playback and independent three-day recording and 30-day diagnostics retention. Production verification is tracked on the PR.
+
+## 2026-11-27 16:24 Asia/Damascus ? MCP enrollment levels
+
+- Investigated repeated successful saves followed by old levels in the notebook. The membership handler ignored the supplied level and returned success. PR #219 addresses client readback scheduling.
+- Route explicit MCP levels through the administrator enrollment write and keep legacy membership payloads from replacing them. The disposable PostgreSQL regression covers write, readback and stale membership replay. Local bun run verify passed with 155 tests and 14 opt-in skips. Production readback requires deployment and authorized access.
+
+## 2026-11-27 16:45 Asia/Damascus — Expand the website README
+
+The owner asked for a fuller description of Wartaq and diagrams. The README explains the public Qur’an course homepage, role permissions, attendance and follow-up, offline sync, and Telegram and MCP access. Two Mermaid diagrams show the session workflow and the path from a local mark to the notebook and student portal.
+
+All 12 relative links resolved. Both diagrams rendered in Chromium at 375 px and 920 px with accessible titles and descriptions. `bun run verify` passed on the updated base. `bun run verify:release` passed before the base update, with 155 unit tests and 258 browser tests passing. Fourteen database-dependent unit-suite cases and six browser cases were skipped locally. The PR records CI and the public checks after Railway deploys the merged commit.
+
+## 2026-11-27 17:22 Asia/Damascus — Reject stale edits by client timestamp
+
+The owner requested that later-made edits survive reordered arrival across devices. Added PostgreSQL record versions for students, courses and enrollments, plus edit times on append-only attendance events. HTTP, browser queues and MCP can preserve edit time through delivery. Legacy clients retain their expected-value checks and use server time. Equal times use the operation UUID. See [stale edits](stale-writes.md).
+
+Disposable PostgreSQL tests exercised both arrival orders, enrollment teacher and level, grades, a stale correction and backup round-trips. Chromium verified offline delivery between signed-in browsers and stable membership retry headers on desktop English and mobile Arabic. On Windows the real-server browser case required launching Playwright with Node and placing the real Bun binary first on PATH. Production release and provider verification are tracked on the PR.
+
+## 2026-11-27 19:06 Asia/Damascus - Run Rust in the existing web service
+
+The owner requested a production measurement within the existing Railway budget. Merged the current frontend and its timestamped grade protocol into the Rust branch. The web Dockerfile runs Rust for the React assets, selected reads, database health and Socket.IO. The existing Bun HTTP handler starts on demand in the same container for writes, account actions and MCP. The Telegram worker still uses Bun. The web-only rollback target is deployment `be8017dd-c082-497a-98bc-2e2d3a974a7e` at `e904a1a`.
+
+Local Postgres parity covered timestamped grade saves and stale writes. Chromium verified that a teacher could mark and clear attendance offline and the student saw the changes after reconnection. The test caught a Rust polling-session bug and now exercises one shared Socket.IO service across requests. Two seeded functional runs signed in a teacher, saved notes and verified both Rust reads and Postgres records. The private Bun process exited after 91 idle seconds and restarted on demand. Railway's pre-rollout snapshot showed 166.711 MB for the web service, 62.365 MB for Telegram and 64.991 MB for Postgres. Deployment status, public checks and subsequent measurements are tracked on the release PR.

@@ -39,6 +39,7 @@ import { registerNotebookWorkflows } from './mcp-notebook'
 const eventInput = z.object({
   id: z.uuid(),
   clientTime: z.iso.datetime(),
+  editTime: z.iso.datetime().optional(),
   payload: payloadSchema,
 })
 const offlineEvent = eventInput.extend({
@@ -101,7 +102,17 @@ const courseReport = z
     },
   )
 
-export type McpOperation = { path: string; method: 'GET' | 'POST'; body?: unknown }
+const editVersionSchema = z.strictObject({
+  time: z.iso.datetime().describe('UTC time when the user made the edit.'),
+  id: z.uuid().describe('Stable operation UUID. Reuse it with the original time on retry.'),
+})
+type EditVersion = z.infer<typeof editVersionSchema>
+export type McpOperation = {
+  path: string
+  method: 'GET' | 'POST'
+  body?: unknown
+  edit?: EditVersion
+}
 
 export function registerMcpTools(
   server: McpServer,
@@ -122,8 +133,18 @@ export function registerMcpTools(
     content: [{ type: 'text' as const, text: value }],
     ...(isError ? { isError: true } : {}),
   })
-  const result = async (path: string, method: 'GET' | 'POST', body?: unknown) => {
-    const response = await call({ path, method, ...(body === undefined ? {} : { body }) })
+  const result = async (
+    path: string,
+    method: 'GET' | 'POST',
+    body?: unknown,
+    edit?: EditVersion,
+  ) => {
+    const response = await call({
+      path,
+      method,
+      ...(body === undefined ? {} : { body }),
+      ...(edit ? { edit } : {}),
+    })
     return text(await response.text(), !response.ok)
   }
   const get = (name: string, description: string, path: string) =>
@@ -131,8 +152,13 @@ export function registerMcpTools(
       result(path, 'GET'),
     )
   const post = <T extends z.ZodType>(name: string, description: string, path: string, schema: T) =>
-    server.registerTool(name, { description, inputSchema: z.object({ input: schema }) }, (args) =>
-      result(path, 'POST', schema.parse(z.record(z.string(), z.unknown()).parse(args).input)),
+    server.registerTool(
+      name,
+      { description, inputSchema: z.object({ input: schema, edit: editVersionSchema.optional() }) },
+      (args) => {
+        const { input, edit } = z.record(z.string(), z.unknown()).parse(args)
+        return result(path, 'POST', schema.parse(input), editVersionSchema.optional().parse(edit))
+      },
     )
 
   registerAccountHandoffs(server, call, scopes, account, origin)
@@ -208,9 +234,9 @@ export function registerMcpTools(
       'update_student',
       {
         description: 'Update an active assigned student’s name and contact details.',
-        inputSchema: teacherStudentUpdateSchema,
+        inputSchema: teacherStudentUpdateSchema.extend({ edit: editVersionSchema.optional() }),
       },
-      (student) => result('/api/student/update', 'POST', student),
+      ({ edit, ...student }) => result('/api/student/update', 'POST', student, edit),
     )
     server.registerTool(
       'append_events',
@@ -245,6 +271,7 @@ export function registerMcpTools(
                   event: offlineEvent,
                   expectedEventId: z.uuid().nullable(),
                   expectedRevision: z.literal('unknown').optional(),
+                  editTime: z.iso.datetime().optional(),
                 }),
               )
               .min(1)
@@ -438,8 +465,8 @@ export function registerMcpTools(
   )
   post(
     'save_enrollment',
-    'Set course membership and teacher. First enrollment records the student’s current level. Withdrawal preserves level, history and grades.',
-    '/api/admin/enrollments/membership',
+    'Set membership, teacher and optional course level. Omit level to preserve it or copy the roster level on first enrollment. Withdrawal preserves history and grades.',
+    '/api/admin/enrollments/save',
     enrollmentMembershipSchema,
   )
   post(

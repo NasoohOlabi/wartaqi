@@ -39,18 +39,18 @@ export async function syncOfflineAttendance(
       if (snapshotKey(userId) !== cacheKey) break
       const key = attendanceKey(item)
       if (item.outcome && !(retryForbidden && item.outcome.kind === 'forbidden')) {
-        blocked.add(key)
+        if (!item.editTime || item.outcome?.kind !== 'conflict') blocked.add(key)
         continue
       }
       if (blocked.has(key)) continue
-      const { event, expectedRevision } = item
+      const { event, expectedRevision, editTime } = item
       const expectedEventId =
         item.expectedEventId && accepted.has(item.expectedEventId)
           ? (accepted.get(item.expectedEventId) ?? null)
           : item.expectedEventId
       const result = await sendQueuedOperation('/api/attendance/sync', userId, {
         accountId: userId,
-        records: [{ event, expectedEventId, expectedRevision }],
+        records: [{ event, expectedEventId, expectedRevision, editTime }],
       })
       const response = syncResponseSchema.parse(result)
       if (response.outcomes.length !== 1 || response.outcomes[0]?.id !== item.event.id)
@@ -63,7 +63,12 @@ export async function syncOfflineAttendance(
         outcome.kind === 'saved' || outcome.kind === 'unchanged' ? 'synced' : 'failed',
       )
       outcomes.push(outcome)
-      if (outcome.kind !== 'saved' && outcome.kind !== 'unchanged') blocked.add(key)
+      if (
+        outcome.kind !== 'saved' &&
+        outcome.kind !== 'unchanged' &&
+        !(item.editTime && outcome.kind === 'conflict')
+      )
+        blocked.add(key)
       else if (outcome.kind === 'unchanged')
         accepted.set(item.event.id, outcome.current?.eventId ?? null)
     }
@@ -88,7 +93,12 @@ export async function syncOfflineStudent(
       const key = operation.kind === 'note' ? operation.event.id : operation.studentId
       if (blocked.has(key)) continue
       if (item.outcome && !(retryForbidden && item.outcome.kind === 'forbidden')) {
-        blocked.add(key)
+        if (!(
+          operation.kind === 'profile-v1' &&
+          operation.editTime &&
+          item.outcome?.kind === 'conflict'
+        ))
+          blocked.add(key)
         continue
       }
       const result = await sendQueuedOperation('/api/student/sync', userId, {
@@ -111,7 +121,11 @@ export async function syncOfflineStudent(
         outcome.kind === 'saved' ? 'synced' : 'failed',
       )
       outcomes.push(outcome)
-      if (outcome.kind !== 'saved') blocked.add(key)
+      if (
+        outcome.kind !== 'saved' &&
+        !(operation.kind === 'profile-v1' && operation.editTime && outcome.kind === 'conflict')
+      )
+        blocked.add(key)
     }
     return outcomes
   })

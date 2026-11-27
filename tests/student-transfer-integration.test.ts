@@ -9,12 +9,12 @@ const url = process.env.TEST_STUDENT_TRANSFER_DATABASE_URL
 const integration = url ? test : test.skip
 
 integration(
-  'versioned backups round-trip students, courses, enrollments, events and grade receipts',
+  'versioned backups round-trip domain records, grade receipts and edit versions',
   async () => {
     if (!url) throw new Error('Disposable database required')
     const admin = new Pool({ connectionString: url })
     const names = Array.from(
-      { length: 15 },
+      { length: 16 },
       () => `transfer_${crypto.randomUUID().replaceAll('-', '')}`,
     )
     const pools: Pool[] = []
@@ -27,8 +27,8 @@ integration(
       !localPath.startsWith('transfer-test-')
     )
       throw new Error('Refusing cleanup outside the disposable transfer directory')
-    const files = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((version) =>
-      resolve(directory, `v${version}.json`),
+    const files = Array.from({ length: names.length - 1 }, (_, index) =>
+      resolve(directory, `v${index + 1}.json`),
     )
     const run = (command: string, file: string, dbUrl: string, succeeds = true) => {
       const result = Bun.spawnSync(
@@ -228,6 +228,12 @@ integration(
       ])
       run('compare', files[12], urls[0], false)
       run('export', files[13], urls[0])
+      await migrate(source, 'neon/021-edit-versions.sql')
+      await migrate(source, 'neon/021-edit-versions.sql')
+      run('compare', files[13], urls[0])
+      await source.query('UPDATE course_enrollments SET level = level WHERE id = $1', [enrollmentA])
+      run('compare', files[13], urls[0], false)
+      run('export', files[14], urls[0])
       for (let index = 0; index < targets.length; index++) {
         await migrate(targets[index], 'neon/003-courses.sql')
         await migrate(targets[index], 'neon/004-student-names.sql')
@@ -258,8 +264,12 @@ integration(
           await migrate(targets[index], 'neon/014-verified-phone.sql')
         }
         if (index >= 12) {
-          if (index === 13) run('import', files[index], urls[index + 1], false)
+          if (index >= 13) run('import', files[index], urls[index + 1], false)
           await migrate(targets[index], 'neon/020-grade-sync-receipts.sql')
+        }
+        if (index >= 13) {
+          if (index === 14) run('import', files[index], urls[index + 1], false)
+          await migrate(targets[index], 'neon/021-edit-versions.sql')
         }
         run('import', files[index], urls[index + 1])
         run('compare', files[index], urls[index + 1])
@@ -272,7 +282,7 @@ integration(
                 .version,
           ),
         ),
-      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14])
+      ).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
       expect((await targets[12].query('SELECT * FROM grade_sync_receipts')).rows).toEqual([])
       expect((await targets[13].query('SELECT * FROM grade_sync_receipts')).rows).toEqual([receipt])
       run('compare', files[12], urls[14], false)

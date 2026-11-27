@@ -18,8 +18,7 @@ use url::Url;
 use crate::{
     access, auth_browser, auth_get_session, auth_invitation_profile, auth_profile, catalog,
     catalog_legacy, diagnostics, grade_sync, ledger, ledger_writes, roster_admin, session_identity,
-    session_replay, staff_reads, student_writes, telegram_conversations, telegram_student,
-    writes::Error,
+    staff_reads, student_writes, telegram_conversations, telegram_student, writes::Error,
 };
 
 const WRITE_PATHS: &[&str] = &[
@@ -100,6 +99,10 @@ pub(crate) fn create(
 }
 
 impl Api {
+    pub(crate) fn pool(&self) -> &Pool {
+        &self.pool
+    }
+
     pub(crate) fn router(&self) -> Router {
         let mut router = Router::new()
             .route("/api/me", any(handle))
@@ -231,7 +234,6 @@ enum Route {
     StudentAttendance,
     Admin,
     Write,
-    Replay,
     Diagnostics,
 }
 
@@ -249,21 +251,23 @@ async fn handle(State(state): State<Api>, request: Request) -> Response {
     if from.is_some_and(|value| value != state.origin) {
         return error(StatusCode::FORBIDDEN, "Forbidden");
     }
+    if path == REPLAY_PATH {
+        let status = if *method == Method::POST {
+            StatusCode::BAD_REQUEST
+        } else {
+            StatusCode::NOT_FOUND
+        };
+        return error(status, "Session replay retired");
+    }
     if matches!(
         path,
-        REPLAY_PATH
-            | DIAGNOSTICS_PATH
+        DIAGNOSTICS_PATH
             | JOURNEYS_PATH
             | DIAGNOSTIC_EVENTS_PATH
             | TELEGRAM_CONVERSATIONS_PATH
             | TELEGRAM_TURNS_PATH
     ) {
-        let route = if path == REPLAY_PATH {
-            Route::Replay
-        } else {
-            Route::Diagnostics
-        };
-        return match authorized(&state, &parts, route, body).await {
+        return match authorized(&state, &parts, Route::Diagnostics, body).await {
             Ok(response) => response,
             Err(Error::Forbidden) => write_error(Error::Forbidden),
             Err(Error::Invalid | Error::TooLarge) => write_error(Error::Invalid),
@@ -420,7 +424,7 @@ async fn authorized(
         .await
         .map_err(|error| Error::Other(error.into()))?;
     let Some(subject) = subject(state, &client, headers, expected).await else {
-        let message = if matches!(route, Route::Replay | Route::Diagnostics) {
+        let message = if matches!(route, Route::Diagnostics) {
             "Forbidden"
         } else {
             "Unauthorized"
@@ -428,30 +432,36 @@ async fn authorized(
         return Ok(error(StatusCode::UNAUTHORIZED, message));
     };
     let tx = client.transaction().await?;
+    if headers.contains_key("x-edit-time") || headers.contains_key("x-edit-id") {
+        let field = |name| {
+            headers
+                .get(name)
+                .and_then(|h| h.to_str().ok())
+                .ok_or(Error::Invalid)
+        };
+        let time = field("x-edit-time")?;
+        let id = field("x-edit-id")?;
+        if !ledger::iso_datetime(time) || !ledger::valid_uuid(id) {
+            return Err(Error::Invalid);
+        }
+        if tx
+            .query_one(
+                "SELECT $1::text::timestamptz > clock_timestamp() + interval '5 minutes'",
+                &[&time],
+            )
+            .await?
+            .get::<_, bool>(0)
+        {
+            return Err(Error::Conflict);
+        }
+        tx.query_one("SELECT set_config('wartaq.edit_time', $1, true), set_config('wartaq.edit_id', $2, true)", &[&time, &id]).await?;
+    }
     let Some(grant) = access::load(&tx, &subject).await? else {
         return Ok(error(StatusCode::FORBIDDEN, "Forbidden"));
     };
     let response: Value = match route {
         Route::Me => grant.me(),
         _ if grant.requires_setup() => return Err(Error::Forbidden),
-        Route::Replay => {
-            tx.commit().await?;
-            let bytes = if parts.method == Method::POST {
-                bounded_body(body, 48 * 1024).await?
-            } else {
-                Vec::new()
-            };
-            return Ok(session_replay::handle(
-                &**client,
-                &subject,
-                grant.role(),
-                &parts.method,
-                &parts.uri,
-                headers,
-                &bytes,
-            )
-            .await?);
-        }
         Route::Diagnostics => {
             // The diagnostic insert takes a foreign-key lock on the actor. Release the
             // access check's row lock before competing with another writer for this event ID.

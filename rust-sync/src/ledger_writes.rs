@@ -69,6 +69,7 @@ async fn insert(
     event: &Value,
     student: &Value,
     batch: bool,
+    edit_time: Option<&str>,
 ) -> Result<u64, Error> {
     let id = event["id"].as_str().unwrap();
     let teacher = grant.id();
@@ -87,7 +88,7 @@ async fn insert(
         ""
     };
     let sql = format!(
-        "INSERT INTO events (id, teacher_id, student_id, actor, client_time, payload, enrollment_id) VALUES ($1::text::uuid,$2::text::uuid,$3::text::uuid,$4,$5::text::timestamptz,$6,$7::text::uuid){conflict}"
+        "INSERT INTO events (id, teacher_id, student_id, actor, client_time, payload, enrollment_id, edit_time) VALUES ($1::text::uuid,$2::text::uuid,$3::text::uuid,$4,$5::text::timestamptz,$6,$7::text::uuid,$8::text::timestamptz){conflict}"
     );
     Ok(tx
         .execute(
@@ -100,6 +101,7 @@ async fn insert(
                 &time,
                 &payload,
                 &enrollment,
+                &edit_time,
             ],
         )
         .await?)
@@ -111,6 +113,7 @@ async fn same_event(
     event: &Value,
     student: &Value,
     actor_check: bool,
+    edit_time: Option<&str>,
 ) -> Result<bool, Error> {
     let id = event["id"].as_str().ok_or(Error::Invalid)?;
     let teacher = grant.id();
@@ -118,8 +121,20 @@ async fn same_event(
     let time = event["clientTime"].as_str().ok_or(Error::Invalid)?;
     let payload = &event["payload"];
     let name = grant.name();
-    let same = tx.query_opt("SELECT 1 FROM events WHERE id=$1::text::uuid AND teacher_id=$2::text::uuid AND student_id=$3::text::uuid AND client_time=$4::text::timestamptz AND payload=$5 AND (NOT $6::boolean OR actor=$7)", &[&id,&teacher,&student_id,&time,&payload,&actor_check,&name]).await?;
+    let same = tx.query_opt("SELECT 1 FROM events WHERE id=$1::text::uuid AND teacher_id=$2::text::uuid AND student_id=$3::text::uuid AND client_time=$4::text::timestamptz AND payload=$5 AND (NOT $6::boolean OR actor=$7) AND (($6::boolean AND edit_time IS NULL) OR edit_time IS NOT DISTINCT FROM $8::text::timestamptz)", &[&id,&teacher,&student_id,&time,&payload,&actor_check,&name,&edit_time]).await?;
     Ok(same.is_some())
+}
+async fn stale_edit(
+    tx: &Transaction<'_>,
+    event: &Value,
+    student: &Value,
+    edit_time: &str,
+) -> Result<bool, Error> {
+    let id = event["id"].as_str().unwrap();
+    let student_id = student["studentId"].as_str().unwrap();
+    let enrollment = student.get("enrollmentId").and_then(Value::as_str);
+    let date = student["date"].as_str().unwrap();
+    Ok(tx.query_one("SELECT $1::text::timestamptz > clock_timestamp() + interval '5 minutes' OR EXISTS (SELECT 1 FROM events e LEFT JOIN events target ON e.payload->>'kind' = 'reversal' AND target.id::text = e.payload->>'targetId' WHERE e.student_id = $2::text::uuid AND e.enrollment_id IS NOT DISTINCT FROM $3::text::uuid AND COALESCE(target.payload, e.payload)->>'kind' = 'attendance' AND COALESCE(target.payload, e.payload)->>'date' = $4 AND (COALESCE(e.edit_time, e.received_at), e.id) >= ($1::text::timestamptz, $5::text::uuid))", &[&edit_time, &student_id, &enrollment, &date, &id]).await?.get(0))
 }
 pub(crate) async fn apply(
     tx: &Transaction<'_>,
@@ -141,6 +156,12 @@ pub(crate) async fn apply(
             .map_err(|_| Error::Invalid)?;
         if sync {
             let p = &event["payload"];
+            if record
+                .get("editTime")
+                .is_some_and(|v| !v.as_str().is_some_and(crate::ledger::iso_datetime))
+            {
+                return Err(Error::Invalid);
+            }
             if p["kind"] != "attendance"
                 || p.get("enrollmentId").is_none()
                 || matches!(p["status"].as_str(), Some("early" | "late"))
@@ -178,6 +199,7 @@ pub(crate) async fn apply(
         for (event, record) in parsed.iter().zip(records) {
             let p = &event["payload"];
             let current = version(snap["events"].as_array().unwrap(), p);
+            let edit_time = record.get("editTime").and_then(Value::as_str);
             if !allowed(p, &snap) {
                 outcomes.push(json!({"id":event["id"],"kind":"forbidden","current":null}));
                 continue;
@@ -188,7 +210,7 @@ pub(crate) async fn apply(
                 .await?
                 .is_some();
             if exists {
-                let same = same_event(tx, grant, event, p, false).await?;
+                let same = same_event(tx, grant, event, p, false, edit_time).await?;
                 outcomes.push(json!({"id":id,"kind":if same {"saved"} else {"id_conflict"},"current":current}));
                 continue;
             }
@@ -197,11 +219,20 @@ pub(crate) async fn apply(
             } else {
                 current.get("eventId").unwrap_or(&Value::Null) != &record["expectedEventId"]
             };
-            if stale && current.get("status").unwrap_or(&Value::Null) != &p["status"] {
+            if let Some(time) = edit_time
+                && stale_edit(tx, event, p, time).await?
+            {
                 outcomes.push(json!({"id":id,"kind":"conflict","current":current}));
                 continue;
             }
-            insert(tx, grant, event, p, false).await?;
+            if edit_time.is_none()
+                && stale
+                && current.get("status").unwrap_or(&Value::Null) != &p["status"]
+            {
+                outcomes.push(json!({"id":id,"kind":"conflict","current":current}));
+                continue;
+            }
+            insert(tx, grant, event, p, false, edit_time).await?;
             snap["events"].as_array_mut().unwrap().push(event.clone());
             outcomes.push(
                 json!({"id":id,"kind":"saved","current":{"eventId":id,"status":p["status"]}}),
@@ -235,8 +266,21 @@ pub(crate) async fn apply(
         } else {
             p
         };
-        if insert(tx, grant, event, student, true).await? == 0
-            && !same_event(tx, grant, event, student, true).await?
+        let edit_time = event.get("editTime").and_then(Value::as_str);
+        let exists = snap["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["id"] == event["id"]);
+        if !exists
+            && student["kind"] == "attendance"
+            && let Some(time) = edit_time
+            && stale_edit(tx, event, student, time).await?
+        {
+            return Err(Error::Conflict);
+        }
+        if insert(tx, grant, event, student, true, edit_time).await? == 0
+            && !same_event(tx, grant, event, student, true, edit_time).await?
         {
             return Err(Error::Conflict);
         }

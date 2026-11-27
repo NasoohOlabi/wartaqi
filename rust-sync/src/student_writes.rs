@@ -107,7 +107,14 @@ pub(crate) async fn apply(
     }
     let row = tx.query_opt("SELECT COALESCE(first_name, name), COALESCE(last_name, ''), group_name, whatsapp, location, birth_year FROM students WHERE id = $1::text::uuid AND active AND ($2::boolean OR teacher_id = $3::text::uuid) FOR UPDATE", &[&id, &grant.is_admin(), &grant.id()]).await?.ok_or(Error::Forbidden)?;
     let current = json!({"firstName":row.get::<_, String>(0), "lastName":row.get::<_, String>(1), "group":row.get::<_, String>(2), "whatsapp":row.get::<_, Option<String>>(3), "location":row.get::<_, Option<String>>(4), "birthYear":row.get::<_, Option<i32>>(5)});
-    if profile(&current, false, year)? != expected {
+    let timed: bool = tx
+        .query_one(
+            "SELECT NULLIF(current_setting('wartaq.edit_time', true), '') IS NOT NULL",
+            &[],
+        )
+        .await?
+        .get(0);
+    if !timed && profile(&current, false, year)? != expected {
         return Err(Error::Conflict);
     }
     let whatsapp = next["whatsapp"].as_str();
@@ -377,7 +384,7 @@ fn profile_input(subject: &str, op: &Value, year: i32) -> Result<(Value, Value, 
         "expected",
         "changes",
     ];
-    if o.len() != keys.len()
+    if (o.len() != keys.len() && !(o.len() == keys.len() + 1 && o.contains_key("editTime")))
         || keys.iter().any(|k| !o.contains_key(*k))
         || op["kind"] != "profile-v1"
     {
@@ -394,6 +401,11 @@ fn profile_input(subject: &str, op: &Value, year: i32) -> Result<(Value, Value, 
     {
         return Err(Error::Invalid);
     }
+    if let Some(edit_time) = o.get("editTime")
+        && !edit_time.as_str().is_some_and(crate::ledger::iso_datetime)
+    {
+        return Err(Error::Invalid);
+    }
     let expected = profile_patch(&op["expected"], false, year)?;
     let changes = profile_patch(&op["changes"], true, year)?;
     if changes.as_object().unwrap().is_empty()
@@ -405,8 +417,11 @@ fn profile_input(subject: &str, op: &Value, year: i32) -> Result<(Value, Value, 
     }
     let encode = |v: &Value| serde_json::to_string(v).unwrap();
     let serialized = format!(
-        "{{\"subject\":{},\"operation\":{{\"kind\":\"profile-v1\",\"id\":{},\"studentId\":{},\"clientTime\":{},\"expected\":{{{}}},\"changes\":{{{}}}}}}}",
+        "{{\"subject\":{},\"operation\":{{\"kind\":\"profile-v1\",{}\"id\":{},\"studentId\":{},\"clientTime\":{},\"expected\":{{{}}},\"changes\":{{{}}}}}}}",
         encode(&json!(subject)),
+        o.get("editTime")
+            .map(|v| format!("\"editTime\":{},", encode(v)))
+            .unwrap_or_default(),
         encode(&op["id"]),
         encode(&op["studentId"]),
         encode(&op["clientTime"]),
@@ -450,7 +465,21 @@ pub(crate) async fn sync_profile(
         &[],
     )
     .await?;
-    let Some(row) = tx.query_opt("SELECT COALESCE(first_name, name), COALESCE(last_name, ''), whatsapp, location, birth_year FROM students WHERE id = $1::text::uuid AND active AND ($2::boolean OR teacher_id = $3::text::uuid) FOR UPDATE", &[&student_id, &grant.is_admin(), &grant.id()]).await? else {
+    let edit_time = op.get("editTime").and_then(Value::as_str);
+    if let Some(edit_time) = edit_time {
+        let future: bool = tx
+            .query_one(
+                "SELECT $1::text::timestamptz > clock_timestamp() + interval '5 minutes'",
+                &[&edit_time],
+            )
+            .await?
+            .get(0);
+        if future {
+            return Err(Error::Conflict);
+        }
+        tx.query_one("SELECT set_config('wartaq.edit_time', $1, true), set_config('wartaq.edit_id', $2, true)", &[&edit_time, &id]).await?;
+    }
+    let Some(row) = tx.query_opt("SELECT COALESCE(first_name, name), COALESCE(last_name, ''), whatsapp, location, birth_year, COALESCE((edit_time, edit_id) >= ($4::text::timestamptz, $5::text::uuid), false) FROM students WHERE id = $1::text::uuid AND active AND ($2::boolean OR teacher_id = $3::text::uuid) FOR UPDATE", &[&student_id, &grant.is_admin(), &grant.id(), &edit_time, &id]).await? else {
         return Ok(Some(json!({"id":id,"kind":"forbidden","currentWhatsapp":null})));
     };
     let raw = json!({"firstName":row.get::<_,String>(0),"lastName":row.get::<_,String>(1),"whatsapp":row.get::<_,Option<String>>(2),"location":row.get::<_,Option<String>>(3),"birthYear":row.get::<_,Option<i32>>(4)});
@@ -468,11 +497,16 @@ pub(crate) async fn sync_profile(
         let same: Option<bool> = row.get(0);
         return Ok(Some(json!({"id":id,"kind":if same == Some(true) {"saved"} else {"id_conflict"},"currentWhatsapp":whatsapp,"profile":current})));
     }
+    let stale: bool = row.get(5);
     let mut next = current.clone();
     let mut conflicts = Vec::new();
     for key in EDITABLE {
         if let Some(value) = changes.get(key) {
-            if current[key] != expected[key] && current[key] != *value {
+            if if edit_time.is_some() {
+                stale
+            } else {
+                current[key] != expected[key] && current[key] != *value
+            } {
                 conflicts.push(key);
             }
             next[key] = value.clone();
@@ -505,7 +539,13 @@ pub(crate) async fn sync_profile(
     let phone = next["whatsapp"].as_str();
     let location = next["location"].as_str();
     let birth = next["birthYear"].as_i64().map(|n| n as i32);
-    if first_changed || last_changed || phone_changed || location_changed || year_changed {
+    if first_changed
+        || last_changed
+        || phone_changed
+        || location_changed
+        || year_changed
+        || edit_time.is_some()
+    {
         tx.execute("UPDATE students SET first_name = CASE WHEN $2 THEN $3 ELSE first_name END, last_name = CASE WHEN $4 THEN $5 ELSE last_name END, name = CASE WHEN $2 OR $4 THEN $6 ELSE name END, whatsapp = CASE WHEN $7 THEN $8 ELSE whatsapp END, location = CASE WHEN $9 THEN $10 ELSE location END, birth_year = CASE WHEN $11 THEN $12 ELSE birth_year END WHERE id = $1::text::uuid", &[&student_id,&first_changed,&first,&last_changed,&last,&name,&phone_changed,&phone,&location_changed,&location,&year_changed,&birth]).await?;
     }
     tx.execute("INSERT INTO events (id, teacher_id, student_id, actor, client_time, payload, enrollment_id) VALUES ($1::text::uuid, $2::text::uuid, $3::text::uuid, $4, $5::text::timestamptz, $6::jsonb, NULL)", &[&id, &grant.id(), &student_id, &grant.name(), &time, &payload]).await?;
@@ -517,6 +557,15 @@ pub(crate) async fn sync_profile(
 #[cfg(test)]
 mod profile_sync_tests {
     use super::*;
+    #[test]
+    fn timed_receipt_preserves_edit_time() {
+        let op = json!({"kind":"profile-v1","editTime":"2026-01-01T00:00:00Z","id":"123e4567-e89b-42d3-a456-426614174000","studentId":"123e4567-e89b-42d3-a456-426614174001","clientTime":"2026-01-01T00:00:00Z","expected":{"firstName":" A "},"changes":{"firstName":" B "}});
+        let (_, _, serialized) = profile_input("subject", &op, 2026).unwrap();
+        assert_eq!(
+            serialized,
+            r#"{"subject":"subject","operation":{"kind":"profile-v1","editTime":"2026-01-01T00:00:00Z","id":"123e4567-e89b-42d3-a456-426614174000","studentId":"123e4567-e89b-42d3-a456-426614174001","clientTime":"2026-01-01T00:00:00Z","expected":{"firstName":"A"},"changes":{"firstName":"B"}}}"#
+        );
+    }
     #[test]
     fn normalized_receipt_matches_bun() {
         let op = json!({"kind":"profile-v1","id":"123e4567-e89b-42d3-a456-426614174000","studentId":"123e4567-e89b-42d3-a456-426614174001","clientTime":"2026-01-01T00:00:00Z","expected":{"location":" old ","firstName":" A ","whatsapp":" "},"changes":{"location":" new ","firstName":" B ","whatsapp":" 123 "}});

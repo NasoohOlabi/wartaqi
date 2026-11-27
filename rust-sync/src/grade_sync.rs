@@ -14,12 +14,16 @@ fn grant(v: &Value) -> bool {
                 .is_some_and(crate::ledger::iso_datetime))
 }
 fn operation(v: &Value) -> bool {
-    if !keys(v, &["kind", "requestId", "id", "grant", "fields"])
-        || v["kind"] != "grade-edit"
+    if !keys(
+        v,
+        &["kind", "requestId", "editTime", "id", "grant", "fields"],
+    ) || v["kind"] != "grade-edit"
         || !v["requestId"]
             .as_str()
             .is_some_and(crate::ledger::valid_uuid)
         || !v["id"].as_str().is_some_and(crate::ledger::valid_uuid)
+        || v.get("editTime")
+            .is_some_and(|t| !t.as_str().is_some_and(crate::ledger::iso_datetime))
         || !grant(&v["grant"])
     {
         return false;
@@ -64,9 +68,13 @@ fn fingerprint_input(subject: &str, op: &Value) -> String {
         }
     }
     format!(
-        "[{},{{\"kind\":\"grade-edit\",\"requestId\":{},\"id\":{},\"grant\":{{\"id\":{},\"expiresAt\":{}}},\"fields\":{{{}}}}}]",
+        "[{},{{\"kind\":\"grade-edit\",\"requestId\":{},{}\"id\":{},\"grant\":{{\"id\":{},\"expiresAt\":{}}},\"fields\":{{{}}}}}]",
         encoded(&json!(subject)),
         encoded(&op["requestId"]),
+        op.get("editTime").map_or_else(String::new, |time| format!(
+            "\"editTime\":{},",
+            encoded(time)
+        )),
         encoded(&op["id"]),
         encoded(&g["id"]),
         encoded(&g["expiresAt"]),
@@ -91,13 +99,27 @@ pub(crate) async fn apply(
     } else {
         return Ok(None);
     };
+    let edit_time = op.get("editTime").and_then(Value::as_str);
+    let request = op["requestId"].as_str().unwrap();
+    if let Some(time) = edit_time {
+        let future: bool = tx
+            .query_one(
+                "SELECT $1::text::timestamptz > clock_timestamp() + interval '5 minutes'",
+                &[&time],
+            )
+            .await?
+            .get(0);
+        if future {
+            return Err(Error::Conflict);
+        }
+        tx.query_one("SELECT set_config('wartaq.edit_time', $1, true), set_config('wartaq.edit_id', $2, true)", &[&time, &request]).await?;
+    }
     if op["grant"]["id"].as_str() != Some(access.id())
         || submitted["id"].as_str() != Some(access.id())
         || submitted["expiresAt"].as_str() != access.expires_at()
     {
         return Ok(Some(json!({"status":"blocked"})));
     }
-    let request = op["requestId"].as_str().unwrap();
     let id = op["id"].as_str().unwrap();
     let serialized = fingerprint_input(subject, op);
     let fingerprint: String = tx
@@ -124,11 +146,14 @@ pub(crate) async fn apply(
             json!({"status": if existing == fingerprint { "accepted" } else { "blocked" }}),
         ));
     }
-    let Some(row) = tx.query_opt("SELECT practical::float8, theory::float8, notes FROM course_enrollments WHERE id = $1::text::uuid FOR UPDATE", &[&id]).await? else { return Ok(Some(json!({"status":"blocked"}))) };
+    let Some(row) = tx.query_opt("SELECT practical::float8, theory::float8, notes, COALESCE((edit_time, edit_id) >= ($2::text::timestamptz, $3::text::uuid), false) FROM course_enrollments WHERE id = $1::text::uuid FOR UPDATE", &[&id, &edit_time, &request]).await? else { return Ok(Some(json!({"status":"blocked"}))) };
     let practical: Option<f64> = row.get(0);
     let theory: Option<f64> = row.get(1);
     let notes: String = row.get(2);
     let current = json!({"practical": practical, "theory": theory, "notes": notes});
+    if edit_time.is_some() && row.get::<_, bool>(3) {
+        return Ok(Some(json!({"status":"conflict", "current":current})));
+    }
     let mut next = current.clone();
     let mut changed = false;
     for name in ["practical", "theory", "notes"] {
@@ -140,7 +165,8 @@ pub(crate) async fn apply(
                     a.as_f64() == b.as_f64()
                 }
             };
-            if !equal(&current[name], &change["previous"])
+            if edit_time.is_none()
+                && !equal(&current[name], &change["previous"])
                 && !equal(&current[name], &change["next"])
             {
                 return Ok(Some(json!({"status":"conflict", "current":current})));
@@ -151,7 +177,7 @@ pub(crate) async fn apply(
             }
         }
     }
-    if changed {
+    if changed || edit_time.is_some() {
         let p = next["practical"]
             .as_f64()
             .map(|_| encoded(&next["practical"]));
@@ -165,4 +191,26 @@ pub(crate) async fn apply(
     )
     .await?;
     Ok(Some(json!({"status":"accepted"})))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timestamped_fingerprint_matches_parsed_typescript_operation() {
+        let mut op = json!({
+            "kind": "grade-edit", "requestId": "00000000-0000-4000-8000-000000000001",
+            "editTime": "2026-11-27T12:00:00.000Z", "id": "00000000-0000-4000-8000-000000000002",
+            "grant": {"id": "00000000-0000-4000-8000-000000000003", "expiresAt": null},
+            "fields": {"notes": {"previous": "old", "next": "new"}, "practical": {"previous": 1, "next": 2}}
+        });
+        assert!(operation(&op));
+        assert_eq!(
+            fingerprint_input("subject", &op),
+            "[\"subject\",{\"kind\":\"grade-edit\",\"requestId\":\"00000000-0000-4000-8000-000000000001\",\"editTime\":\"2026-11-27T12:00:00.000Z\",\"id\":\"00000000-0000-4000-8000-000000000002\",\"grant\":{\"id\":\"00000000-0000-4000-8000-000000000003\",\"expiresAt\":null},\"fields\":{\"practical\":{\"previous\":1,\"next\":2},\"notes\":{\"previous\":\"old\",\"next\":\"new\"}}}]"
+        );
+        op["editTime"] = Value::Null;
+        assert!(!operation(&op));
+    }
 }

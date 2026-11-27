@@ -13,10 +13,9 @@ import {
   telegramRosterSubjectPrefix,
   telegramTeacherGrantBinding,
 } from '../shared/telegram-grants'
-import { diagnostics, pruneDiagnostics } from './diagnostics'
+import { diagnostics, pruneDiagnostics, pruneExpiredRecordings } from './diagnostics'
 import { ingestTelegramConversation, pruneTelegramConversations } from './telegramConversations'
 import { telegramConversationIngestPath } from '../shared/telegram-conversations'
-import { pruneSessionReplay } from './sessionReplay'
 import { createMcpHandler } from './mcp'
 import { invitationReceipts } from './mcp-invitation'
 import { mcpConsentPage } from './mcp-consent'
@@ -237,7 +236,12 @@ function notebookAsUser(
   )(
     new Request(new URL(operation.path, origin), {
       method: operation.method,
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        ...(operation.edit
+          ? { 'X-Edit-Time': operation.edit.time, 'X-Edit-Id': operation.edit.id }
+          : {}),
+      },
       ...(operation.body === undefined ? {} : { body: JSON.stringify(operation.body) }),
     }),
   )
@@ -520,7 +524,7 @@ export async function handle(request: Request): Promise<Response> {
   if (url.pathname === '/health' && request.method === 'GET') {
     try {
       await pool.query(
-        'SELECT course_enrollments.teacher_id, course_enrollments.active, course_enrollments.handbook_received, course_enrollments.notes, course_enrollments.grade_decisions, app_accounts.invitation_request_id, app_accounts.invitation_username, app_accounts.verified_phone, app_accounts.invitation_phone, app_accounts.invitation_birth_date, app_accounts.invitation_requires_setup, students.whatsapp, students.location, students.birth_year, courses.open, courses.attendance_minimum, courses.practical_minimum, courses.theory_minimum, website_session_replay.attendance_payload, telegram_conversation_turns.turn FROM app_accounts, teachers, students, courses, course_enrollments, events, website_diagnostics, website_session_replay, telegram_conversation_turns, neon_auth."user", neon_auth.account, neon_auth.session, neon_auth.verification LIMIT 0',
+        'SELECT course_enrollments.teacher_id, course_enrollments.active, course_enrollments.handbook_received, course_enrollments.notes, course_enrollments.grade_decisions, app_accounts.invitation_request_id, app_accounts.invitation_username, app_accounts.verified_phone, app_accounts.invitation_phone, app_accounts.invitation_birth_date, app_accounts.invitation_requires_setup, students.whatsapp, students.location, students.birth_year, courses.open, courses.attendance_minimum, courses.practical_minimum, courses.theory_minimum, telegram_conversation_turns.turn FROM app_accounts, teachers, students, courses, course_enrollments, events, website_diagnostics, telegram_conversation_turns, neon_auth."user", neon_auth.account, neon_auth.session, neon_auth.verification LIMIT 0',
       )
       await authPool.query(
         'SELECT 1 FROM "oauthClient", "oauthClientResource", "oauthResource", "oauthAccessToken", "oauthRefreshToken", "oauthConsent", "oauthClientAssertion" LIMIT 0',
@@ -547,6 +551,14 @@ export async function handle(request: Request): Promise<Response> {
            AND to_regclass('public.grade_sync_receipts') IS NOT NULL`,
       )
       if (sync.rows[0]?.triggers !== 6) throw new Error('Workspace sync migrations required')
+      const versions = await pool.query(
+        `SELECT count(*)::int AS triggers
+         FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+         WHERE c.relnamespace = 'public'::regnamespace AND t.tgname = 'wartaq_edit_version'
+           AND t.tgenabled IN ('O','A') AND c.relname IN ('students','courses','course_enrollments')`,
+      )
+      if (versions.rows[0]?.triggers !== 3) throw new Error('Edit version migration required')
+      await pool.query('SELECT edit_time FROM public.events LIMIT 0')
       return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } })
     } catch {
       return Response.json({ ok: false }, { status: 503, headers: { 'Cache-Control': 'no-store' } })
@@ -773,6 +785,12 @@ export async function handle(request: Request): Promise<Response> {
   })
 }
 
+export const publicOrigin = origin
+
+export async function closeHttpResources() {
+  await Promise.all([pool.end(), authPool.end()])
+}
+
 export function workspaceServer() {
   return createWorkspaceSync({
     databaseUrl: config.DATABASE_URL,
@@ -798,7 +816,7 @@ export function workspaceServer() {
 if (import.meta.main) {
   const cleanup = () => {
     void pruneDiagnostics(pool).catch(() => console.warn('Diagnostics cleanup failed'))
-    void pruneSessionReplay(pool).catch(() => console.warn('Replay cleanup failed'))
+    void pruneExpiredRecordings(pool).catch(() => console.warn('Replay cleanup failed'))
     void pruneTelegramConversations(pool).catch(() =>
       console.warn('Telegram conversation cleanup failed'),
     )
@@ -813,7 +831,7 @@ if (import.meta.main) {
     shuttingDown = true
     clearInterval(cleanupTimer)
     await Promise.all([server.stop(true), workspace.close()])
-    await Promise.all([pool.end(), authPool.end()])
+    await closeHttpResources()
   }
   process.once('SIGINT', () => void shutdown())
   process.once('SIGTERM', () => void shutdown())

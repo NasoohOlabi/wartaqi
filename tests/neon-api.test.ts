@@ -113,7 +113,9 @@ function setup(
           return { rows: found ? [{}] : [], rowCount: found ? 1 : 0 }
         }
         const [actor, time, payload] =
-          values.length === 5 ? [undefined, ...values.slice(3)] : values.slice(3)
+          values.length === 5 || values.length === 6
+            ? [undefined, ...values.slice(3)]
+            : values.slice(3)
         const found = rows.some(
           (row) =>
             row.id === values[0] &&

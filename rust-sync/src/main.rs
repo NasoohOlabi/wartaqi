@@ -8,6 +8,8 @@ mod auth_profile;
 mod auth_sign_in;
 mod catalog;
 mod catalog_legacy;
+mod compat_http;
+mod compat_process;
 mod credentials;
 mod device_sessions;
 mod diagnostics;
@@ -18,9 +20,9 @@ mod ledger_writes;
 mod mcp_discovery;
 #[cfg(test)]
 mod mcp_tools;
+mod production_db;
 mod roster_admin;
 mod session_identity;
-mod session_replay;
 mod staff_reads;
 mod student_writes;
 mod telegram_conversations;
@@ -140,7 +142,13 @@ async fn shutdown_signal() {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port: u16 = env::var("PORT").unwrap_or_else(|_| "3001".into()).parse()?;
-    let origin = env::var("WORKSPACE_ORIGIN")?;
+    let hybrid = env::var("WARTAQ_WEB_RUNTIME").as_deref() == Ok("hybrid");
+    let origin = if hybrid {
+        let url = url::Url::parse(&env::var("BETTER_AUTH_URL")?)?;
+        url.origin().ascii_serialization()
+    } else {
+        env::var("WORKSPACE_ORIGIN")?
+    };
     let bun_origin = env::var("BUN_ORIGIN")
         .ok()
         .map(|origin| url::Url::parse(&origin))
@@ -160,7 +168,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env::var("TELEGRAM_WORKER_SECRET").ok(),
     )?;
     let routes = api.router();
-    let (layer, io) = SocketIo::builder().max_payload(4096).build_layer();
+    let pool = api.pool().clone();
+    let (socket_service, io) = SocketIo::builder().max_payload(4096).build_svc();
     io.ns(
         "/",
         (async || {}).with(move |socket: SocketRef, TryData(auth): TryData<Auth>| {
@@ -183,12 +192,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
     let address = listener.local_addr()?;
     let task = tokio::spawn(listen(database_url, io.clone()));
-    let mut app = Router::new()
-        .route(
+    let mut app = Router::new().merge(routes);
+    if hybrid {
+        tokio::spawn(production_db::maintain(pool.clone()));
+        app = app.route(
+            "/health",
+            get(move || async move { production_db::health(&pool).await }),
+        );
+    } else {
+        app = app.route(
             "/health",
             get(|| async { axum::Json(serde_json::json!({"ok": true})) }),
-        )
-        .merge(routes);
+        );
+    }
     if let Some(root) = env::var_os("ASSET_DIR") {
         let root = Arc::new(PathBuf::from(root).canonicalize()?);
         if !root.is_dir() {
@@ -213,11 +229,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         });
     }
+    if hybrid {
+        let supervisor = compat_process::CompatProcess::new();
+        let client = compat_http::client()?;
+        app = app.layer(middleware::from_fn(move |request: Request, next: Next| {
+            let supervisor = supervisor.clone();
+            let client = client.clone();
+            async move {
+                let path = request.uri().path();
+                let api = path.starts_with("/api/")
+                    || path == "/mcp"
+                    || path.starts_with("/mcp/")
+                    || path.starts_with("/.well-known/");
+                let native_read = request.method() == axum::http::Method::GET
+                    && matches!(
+                        path,
+                        "/api/me"
+                            | "/api/notebook"
+                            | "/api/admin"
+                            | "/api/student/attendance"
+                            | "/api/auth/get-session"
+                    );
+                if api && !native_read {
+                    compat_http::forward(&client, &supervisor, request).await
+                } else {
+                    next.run(request).await
+                }
+            }
+        }));
+    }
     let app = app
-        .layer(layer)
+        .route_service("/socket.io/", socket_service)
         .layer(middleware::from_fn(move |req, next| {
             gate(req, next, origin.clone())
         }));
+    if hybrid {
+        eprintln!("Rust web runtime ready with on-demand Bun compatibility");
+    }
     println!("Listening on http://127.0.0.1:{}", address.port());
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {

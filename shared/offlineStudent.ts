@@ -32,6 +32,7 @@ const profilePatchSchema = editableProfileSchema
 export const offlineProfileOperationSchema = z
   .strictObject({
     kind: z.literal('profile-v1'),
+    editTime: z.iso.datetime().optional(),
     id: z.uuid(),
     studentId: z.uuid(),
     clientTime: z.iso.datetime(),

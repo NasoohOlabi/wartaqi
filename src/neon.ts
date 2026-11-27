@@ -1,6 +1,6 @@
 ﻿import { createAuthClient } from 'better-auth/react'
 import { z } from 'zod'
-import { accountFetch } from './accountRequest'
+import { accountFetch, newEditVersion } from './accountRequest'
 import { recordDiagnosticAction } from './diagnostics'
 import { localGrant } from './offlineAccess'
 import type { DiagnosticsAction } from '../shared/diagnostics'
@@ -82,6 +82,7 @@ export async function request(
   userId: string,
   body?: unknown,
   reportDenial = true,
+  edit = body !== undefined ? newEditVersion() : undefined,
 ): Promise<unknown> {
   const generation = localGrant(userId)?.generation
   const deny = (status: 401 | 403) => {
@@ -108,7 +109,7 @@ export async function request(
   const action = body !== undefined ? diagnosticWrites[path] : undefined
   let response: Response
   try {
-    response = await accountFetch(path, userId, body)
+    response = await accountFetch(path, userId, body, false, edit)
   } catch (error) {
     if (action) recordDiagnosticAction(userId, action, 'failed')
     throw error

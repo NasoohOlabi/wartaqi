@@ -174,13 +174,21 @@ pub(crate) fn decode_input(input: &Value) -> Result<Value, InvalidData> {
     if !iso_datetime(client_time) {
         return Err(InvalidData);
     }
-    Ok(json!({
+    let edit_time = input.get("editTime");
+    if edit_time.is_some_and(|v| !v.as_str().is_some_and(iso_datetime)) {
+        return Err(InvalidData);
+    }
+    let mut event = json!({
         "id": id(input, "id")?,
         "actor": clean(input, "actor", 1, 100)?,
         "clientTime": client_time,
         "receivedAt": str_field(input, "receivedAt")?,
         "payload": payload(input.get("payload").ok_or(InvalidData)?)?,
-    }))
+    });
+    if let Some(edit_time) = edit_time {
+        event["editTime"] = edit_time.clone();
+    }
+    Ok(event)
 }
 
 pub(crate) fn decode_event(row: &Row) -> Result<Value, Error> {

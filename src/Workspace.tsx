@@ -23,10 +23,8 @@ import {
   UserRound,
 } from 'lucide-react'
 import { useLanguage, type TranslationKey } from './useLanguage'
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { attendanceExitDuration, AttendanceRows } from './AttendanceRows'
-import { registerAttendanceReplay } from './attendanceReplayCapture'
-import { attendanceReplayMaxRows } from '../shared/attendanceReplay'
 import {
   attendanceScopeKey,
   projectEvents,
@@ -389,10 +387,6 @@ function Notebook({
   const markedToday = projected.attendance.filter(
     ({ value }) => value.date === query.date && visibleIds.has(value.studentId),
   ).length
-  const visibleNotes = projected.notes.filter(
-    ({ value }) => !value.studentId || visibleIds.has(value.studentId),
-  )
-  const latestNote = visibleNotes[visibleNotes.length - 1]
   const disabled =
     (ledger.busy && !ledger.offline) ||
     !!ledger.pending.length ||
@@ -813,7 +807,6 @@ function Notebook({
             {tab === 'attendance' && query.course && !closedCourse && (
               <AttendanceView
                 key={`${query.date}:${query.course}`}
-                userId={userId}
                 pendingMarks={sessionMarks[sessionKey] ?? {}}
                 onMark={async (studentId, status) => {
                   const enrollment = activeEnrollments.find(
@@ -928,19 +921,8 @@ function Notebook({
                     <strong>{markedToday}</strong>
                     <span>{language === 'ar' ? 'تم تسجيل الحضور' : 'Marked on this date'}</span>
                   </div>
-                  <div>
-                    <strong>{visibleNotes.length}</strong>
-                    <span>{t('Notes')}</span>
-                  </div>
                 </div>
               </section>
-              {latestNote && (
-                <section className="panel workspace-recent">
-                  <h2>{language === 'ar' ? 'آخر ملاحظة' : 'Latest note'}</h2>
-                  <small>{latestNote.value.date}</small>
-                  <p dir="auto">{latestNote.value.text}</p>
-                </section>
-              )}
             </aside>
           )}
         </div>
@@ -1369,6 +1351,14 @@ function StudentDetails({
                   <p className="whitespace-pre-wrap">
                     <bdi>{value.text}</bdi>
                   </p>
+                  <p className="muted flex flex-wrap gap-x-2">
+                    <bdi>{event.actor}</bdi>
+                    {[...new Set(value.tags)].map((tag) => (
+                      <bdi key={tag} dir="ltr">
+                        #{tag}
+                      </bdi>
+                    ))}
+                  </p>
                 </li>
               ))}
             </ul>
@@ -1434,7 +1424,6 @@ function studentLevel(
 type AttendanceMarks = Partial<Record<string, { status: Status | null }>>
 
 function AttendanceView({
-  userId,
   pendingMarks,
   onMark,
   students,
@@ -1449,7 +1438,6 @@ function AttendanceView({
   canCorrect,
   onOpenStudent,
 }: {
-  userId: string
   pendingMarks: AttendanceMarks
   onMark: (studentId: string, status: Status | null) => Promise<boolean>
   canCorrect: boolean
@@ -1569,10 +1557,7 @@ function AttendanceView({
           retainedRows[student.studentId],
       )
     : attendanceTable.rows
-  const unmarked = visible.filter(
-    (student) => !current.has(student.studentId) && !pendingMarks[student.studentId],
-  )
-  const replayRows = visible.map((student) => ({
+  const attendanceRows = visible.map((student) => ({
     id: student.studentId,
     name: student.name,
     level: level(student),
@@ -1582,28 +1567,9 @@ function AttendanceView({
       pendingMarks[student.studentId]?.status === null
         ? null
         : (current.get(student.studentId) ?? null),
-    draft: pendingMarks[student.studentId]?.status ?? null,
+    draft:
+      retainedRows[student.studentId]?.status ?? pendingMarks[student.studentId]?.status ?? null,
   }))
-  const recordedRows = query.unmarked
-    ? replayRows.filter((row) => !current.has(row.id))
-    : replayRows
-  useLayoutEffect(() =>
-    registerAttendanceReplay(userId, {
-      courseName: courseName ?? '',
-      date,
-      rows: recordedRows.slice(0, attendanceReplayMaxRows),
-      totalRows: recordedRows.length,
-      pendingCount: Object.keys(pendingMarks).length,
-      unmarkedCount: unmarked.length,
-      unmarkedOnly: Boolean(query.unmarked),
-      canCorrect,
-      dialog: noteStudent
-        ? { kind: 'note', name: noteStudent.name }
-        : correction
-          ? { kind: 'correction', name: correction.name }
-          : null,
-    }),
-  )
   return (
     <section className="panel attendance-session">
       <dialog
@@ -1749,19 +1715,6 @@ function AttendanceView({
             </button>
           </div>
         </form>
-        {projected.notes
-          .filter(({ value }) => value.studentId === noteStudent?.studentId && value.date === date)
-          .toReversed()
-          .map(({ event, value }) => (
-            <article key={event.id} className="mt-4 border-t pt-3">
-              <p dir="auto" className="whitespace-pre-wrap">
-                {value.text}
-              </p>
-              <p className="muted">
-                <bdi>{event.actor}</bdi> {value.tags.map((tag) => `#${tag}`).join(' ')}
-              </p>
-            </article>
-          ))}
       </dialog>
       <TableToolbar model={candidates.length ? attendanceTable : undefined}>
         <h2 className="title">
@@ -1779,7 +1732,6 @@ function AttendanceView({
           {t('Session date')}
           <input
             type="date"
-            data-replay-action="date"
             required
             value={date}
             onChange={(event) => {
@@ -1790,7 +1742,6 @@ function AttendanceView({
         {candidates.length > 0 && (
           <button
             className="secondary unmarked-toggle"
-            data-replay-action="unmarked"
             aria-pressed={query.unmarked}
             onClick={() => setQuery({ unmarked: query.unmarked ? '' : '1' }, true)}
           >
@@ -1812,10 +1763,7 @@ function AttendanceView({
         <>
           <DirectionProvider direction={language === 'ar' ? 'rtl' : 'ltr'}>
             <AttendanceRows
-              rows={replayRows.map((row) => {
-                const held = retainedRows[row.id]
-                return held ? { ...row, draft: held.status } : row
-              })}
+              rows={attendanceRows}
               exitingRows={exitingRows}
               header={<TableHeader model={attendanceTable} />}
               canCorrect={canCorrect}

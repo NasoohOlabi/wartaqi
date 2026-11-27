@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { z } from 'zod'
 
 const health = z.object({ ok: z.literal(true) })
@@ -6,16 +6,19 @@ const health = z.object({ ok: z.literal(true) })
 export async function startRustBackend(
   binary: string,
   databaseUrl: string,
-  bunOrigin: string,
+  fixtureOrigin: string | { hybridOrigin: string },
   authSecret: string,
-  workspaceOrigin = bunOrigin,
+  workspaceOrigin = typeof fixtureOrigin === 'string' ? fixtureOrigin : fixtureOrigin.hybridOrigin,
   telegramWorkerSecret?: string,
 ) {
+  const hybrid = typeof fixtureOrigin !== 'string'
   const child = spawn(binary, [], {
     env: {
       ...process.env,
       PORT: '0',
       BUN_ORIGIN: undefined,
+      WARTAQ_WEB_RUNTIME: hybrid ? 'hybrid' : undefined,
+      ...(hybrid && { ASSET_DIR: 'dist', BETTER_AUTH_URL: workspaceOrigin }),
       WORKSPACE_ORIGIN: workspaceOrigin,
       DATABASE_URL: databaseUrl,
       BETTER_AUTH_SECRET: authSecret,
@@ -24,6 +27,20 @@ export async function startRustBackend(
     stdio: ['ignore', 'pipe', 'inherit'],
   })
   const exited = new Promise<void>((resolve) => child.once('close', () => resolve()))
+  async function close() {
+    if (child.pid && child.exitCode === null && child.signalCode === null) {
+      if (hybrid && process.platform === 'win32') {
+        // Windows terminates the parent immediately, leaving its compatibility worker behind.
+        execFileSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], {
+          windowsHide: true,
+          stdio: 'ignore',
+        })
+      } else {
+        child.kill()
+      }
+    }
+    await exited
+  }
   const deadline = AbortSignal.timeout(10000)
   try {
     const ready = async () => {
@@ -46,10 +63,9 @@ export async function startRustBackend(
     const response = await fetch(`${origin}/health`, { signal: deadline })
     if (!response.ok) throw new Error(`Rust backend health check returned ${response.status}`)
     health.parse(await response.json())
-    return { origin, child, exited }
+    return { origin, child, exited, close }
   } catch (error) {
-    child.kill()
-    await exited
+    await close()
     throw error
   }
 }

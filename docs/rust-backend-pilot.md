@@ -1,6 +1,6 @@
 # Draft Rust backend migration
 
-The migration targets a complete local Rust backend for the existing React app and its same-origin HTTP and Socket.IO client. The current candidate serves the workspace relay, notebook reads and writes, browser phone sign-in and device accounts, profile and password updates, diagnostics and replay, and student Telegram API. Bun and Rust share the existing Postgres session format and private signing key. The full-backend performance comparison follows complete local behavior parity. The early container comparison below covers the routes both backends supported at the time.
+The migration targets a complete local Rust backend for the existing React app and its same-origin HTTP and Socket.IO client. The current candidate serves the workspace relay, notebook reads and writes, browser phone sign-in and device accounts, profile and password updates, diagnostics and the student Telegram API. Bun and Rust share the existing Postgres session format and private signing key. The full-backend performance comparison follows complete local behavior parity. The early container comparison below covers the routes both backends supported at the time.
 
 ## What the repository does today
 
@@ -58,6 +58,6 @@ Build both candidates from recorded commits. Start the Rust app on an alternate 
 
 After the switch, check phone sign-in, one permission-scoped write and its socket delivery, reconnect repair, MCP discovery and one token exchange, and a Telegram reply. For rollback, restore ingress to the recorded Bun build and switch the Telegram poller back in the same stop-then-start order. Preserve all committed Postgres writes, OAuth state and the latest Telegram offset during rollback. Record recovery time and any duplicate or missing events observed in the rehearsal.
 
-Production cutover remains pending local parity, a stable load comparison, and an isolated staging rehearsal with its own database, bot and OAuth clients. The existing Railway deployment is outside this exercise.
+The first production rollout uses the existing web service. Rust serves the React assets, sockets and selected GET routes, while a local Bun process handles the remaining requests, including all grade writes and MCP. The Telegram worker continues to run Bun. The earlier container figures describe the standalone candidates. Measure the deployed combination separately and complete the local parity steps above before retiring Bun. See the [web runtime and rollback procedure](railway-setup.md#web-runtime-and-rollback).
 
 Railway charges for runtime CPU and memory, and service builds are free. A second always-on process adds its own memory use and a Postgres connection. The empty Socket.IO hint is cheap to send. A full role projection or a periodic refresh can cost more, so measure both application and database work before making a savings estimate. Railway can collect CPU and memory metrics per service, while application latency and parity need workload instrumentation. [Railway pricing](https://docs.railway.com/pricing/plans) · [Railway metrics](https://docs.railway.com/observability/metrics)

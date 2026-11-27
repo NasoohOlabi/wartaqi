@@ -17,6 +17,11 @@
 !functions/
 !functions/notebook-service.ts
 !Dockerfile
+!rust-sync/
+!rust-sync/Cargo.toml
+!rust-sync/Cargo.lock
+!rust-sync/src/
+!rust-sync/src/**
 !telegram/
 !telegram/**/
 !telegram/**/*.ts
