@@ -723,6 +723,29 @@ test('student profiles explain missing enrollment and open general information',
   expect(events).toHaveLength(1)
 })
 
+test('course assignment sends a second edit while readback is slow', async ({ page }) => {
+  const { assignments, holdNextNotebook, savedToast } = await setupCourses(page)
+  await page.goto(`/?page=app&view=courses&courseView=students&course=${courseA}`)
+  const teacher = page.getByLabel('Teacher: Synthetic Student')
+  await expect(teacher).toHaveValue('')
+
+  const readback = holdNextNotebook()
+  try {
+    await teacher.selectOption(teacherId)
+    await readback.captured
+    const response = page.waitForResponse('**/api/admin/enrollments/assignment', { timeout: 3_000 })
+    await teacher.selectOption('')
+    expect((await response).ok()).toBe(true)
+    expect(assignments.map((assignment) => assignment.teacherId)).toEqual([teacherId, null])
+  } finally {
+    readback.release()
+  }
+
+  await expect(savedToast).toBeVisible()
+  await page.reload()
+  await expect(teacher).toHaveValue('')
+})
+
 test('threshold saves refresh after an older grade read', async ({ page }) => {
   const { events, holdNextNotebook } = await setupCourses(page)
   for (const [day, status] of [
