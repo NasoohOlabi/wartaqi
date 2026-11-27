@@ -2424,6 +2424,12 @@ The owner asked to see which weekday each absence fell on and to fit each card i
 
 The dashboard browser scenario checked date order, two-line layout and overflow at 320, 390, 430 and 1280px in English and Arabic. It used synthetic attendance records. The PR records release checks and Railway verification.
 
+## 2026-11-27 09:47 Asia/Damascus — Fit dashboard attendance cards on one line
+
+The owner asked to remove the visible status words from the follow-up cards. Each card shows the weekday and date on one line, with a red top border for Absent and a green top border for Present. Excused uses amber and unmarked uses a dashed border. Screen readers retain the localized status.
+
+The dashboard and theme browser checks passed with synthetic records. They cover date order, single-line fit at 320, 360, 390, 430 and 1280px in English and Arabic, status colors, and screen-reader text. The PR records the full release checks and Railway verification.
+
 ## 2026-11-27 08:43 Asia/Damascus — Move mobile student Back into the top app bar
 
 The owner asked for Android-standard placement on the Arabic student profile. The mobile top app bar now shows a 48px Back control at the leading edge, on the right in Arabic and the left in English. Its direction, accessible label, tooltip and return destination follow the current language and student entry path. The desktop profile keeps its labelled Back control.

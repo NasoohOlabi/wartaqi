@@ -157,6 +157,8 @@ test('follow-up uses recorded absences through the selected date', async ({ page
   const daysUntilWednesday = (3 - nextDate.getUTCDay() + 7) % 7 || 7
   nextDate.setUTCDate(nextDate.getUTCDate() + daysUntilWednesday)
   const secondDate = nextDate.toISOString().slice(0, 10)
+  const followingDate = new Date(nextDate)
+  followingDate.setUTCDate(nextDate.getUTCDate() + 1)
 
   await page.getByRole('button', { name: /Continue attendance/i }).click()
   await page
@@ -170,11 +172,26 @@ test('follow-up uses recorded absences through the selected date', async ({ page
     .getByRole('button', { name: 'excused', exact: true })
     .click()
   await page.getByRole('button', { name: 'Save attendance (1)' }).click()
+  await page.getByLabel('Session date').fill(followingDate.toISOString().slice(0, 10))
+  await page
+    .getByLabel('Attendance for Omar')
+    .getByRole('button', { name: 'present', exact: true })
+    .click()
+  await page.getByRole('button', { name: 'Save attendance (1)' }).click()
   await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
   const strip = page.getByRole('list', { name: 'Recent attendance for Omar' })
-  await expect(strip.locator('li')).toHaveCount(2)
-  await expect(strip.locator('li').nth(0)).toContainText('absent')
-  await expect(strip.locator('li').nth(1)).toContainText('excused')
+  const cards = strip.getByRole('listitem')
+  await expect(cards).toHaveCount(3)
+  for (const [index, [status, color]] of [
+    ['absent', 'rgb(220, 38, 38)'],
+    ['excused', 'rgb(161, 98, 7)'],
+    ['present', 'rgb(22, 128, 60)'],
+  ].entries()) {
+    const card = cards.nth(index)
+    await expect(card).toHaveCSS('border-block-start-color', color)
+    await expect(card.locator('span')).toHaveCSS('width', '1px')
+    expect(await card.ariaSnapshot()).toContain(status)
+  }
   await expect(page.getByText('1 absence', { exact: true })).toBeVisible()
 
   const dateLabel = page.locator(`.dashboard-strip time[datetime="${secondDate}"]`)
@@ -189,24 +206,23 @@ test('follow-up uses recorded absences through the selected date', async ({ page
       )
     }
     await page.evaluate(() => document.fonts.ready)
-    for (const width of [320, 390, 430, 1280]) {
+    for (const width of [320, 360, 390, 430, 1280]) {
       await page.setViewportSize({ width, height: 844 })
-      const card = dateLabel.locator('..')
       expect(
-        await card.evaluate((element) => {
-          const [date, status] = element.children
-          const cardBounds = element.getBoundingClientRect()
+        await page.locator('.dashboard-strip time').evaluateAll((dates) => {
           const range = document.createRange()
           return {
-            stacked: date.getBoundingClientRect().bottom <= status.getBoundingClientRect().top,
-            lines: [date, status].map((line) => {
-              range.selectNodeContents(line)
+            lines: dates.map((date) => {
+              const cardBounds = date.parentElement?.getBoundingClientRect()
+              range.selectNodeContents(date)
               const rects = Array.from(range.getClientRects())
               return {
                 rows: new Set(rects.map((rect) => rect.top)).size,
-                fits: rects.every(
-                  (rect) => rect.left >= cardBounds.left && rect.right <= cardBounds.right,
-                ),
+                fits:
+                  !!cardBounds &&
+                  rects.every(
+                    (rect) => rect.left >= cardBounds.left && rect.right <= cardBounds.right,
+                  ),
               }
             }),
             viewportFits: document.documentElement.scrollWidth <= innerWidth,
@@ -214,8 +230,8 @@ test('follow-up uses recorded absences through the selected date', async ({ page
         }),
         `${language} at ${width}px`,
       ).toEqual({
-        stacked: true,
         lines: [
+          { rows: 1, fits: true },
           { rows: 1, fits: true },
           { rows: 1, fits: true },
         ],
