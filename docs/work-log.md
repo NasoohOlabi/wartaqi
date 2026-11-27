@@ -2437,3 +2437,9 @@ The owner reported that the Export contacts label squeezed the Arabic Students h
 The contact export scenario passed in desktop and emulated phone Chromium at 320, 360, 390, 430 and 1624px in English and Arabic. It checked the heading, toolbar and filtered-roster vCard download using synthetic records. The PR records release checks and deployment verification.
 
 At 08:58 Asia/Damascus, the full browser suite caught the narrower All students toolbar wrapping when it could share a row with the heading. Scoped wrapping to courses, where the export icon appears. Both course export checks and the mobile All students scenario passed on rerun.
+
+## 2026-11-27 09:01 Asia/Damascus — Compact Student information profile
+
+The owner approved a two-row profile. The first row combines the full name and level badge, with WhatsApp at the far left in Arabic and far right in English. The next row combines the dial link, location pin, birth year and courses. Longer details wrap, and WhatsApp and dialing keep separate targets.
+
+Synthetic browser checks cover Arabic and English at 320, 390 and 430px and wide desktop. They exercise both link targets, profile and history geometry, and course-specific level display. The PR records release and Railway checks. Native WhatsApp handoff requires a physical device.
