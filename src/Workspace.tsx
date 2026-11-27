@@ -9,10 +9,12 @@ import { useDataTable } from './useDataTable'
 import { matchesText } from './studentSearch'
 import {
   ArrowLeft,
+  Cake,
   ChevronRight,
   CircleCheck,
   CircleMinus,
   ClipboardCheck,
+  MapPin,
   Pencil,
   RefreshCw,
   StickyNote,
@@ -983,88 +985,88 @@ function StudentDetails({
           />
         )}
         <div className="student-detail-profile">
-          <dl className="student-detail-fields">
-            <div>
-              <dt>{ar ? 'الاسم الأول' : 'First name'}</dt>
-              <dd>
-                <bdi>{student.firstName ?? student.name}</bdi>
-              </dd>
-            </div>
-            <div>
-              <dt>{ar ? 'اسم العائلة' : 'Last name'}</dt>
-              <dd>
-                <bdi>{student.lastName || '—'}</bdi>
-              </dd>
-            </div>
-            <div>
-              <dt>{ar ? 'رقم الهاتف' : 'Phone'}</dt>
-              <dd>
-                {student.whatsapp ? (
-                  <PhoneNumber value={student.whatsapp} />
-                ) : ar ? (
-                  'غير متوفر'
-                ) : (
-                  'Not provided'
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>{ar ? 'المستوى' : 'Level'}</dt>
-              <dd>
-                <bdi>
-                  {formatLevel(courseId ? (courseMembership?.level ?? '') : student.group) || '—'}
-                </bdi>
-              </dd>
-            </div>
-            <div>
-              <dt>{ar ? '\u0627\u0644\u0645\u0646\u0637\u0642\u0629' : 'Location'}</dt>
-              <dd>
-                <bdi>{student.location || '—'}</bdi>
-              </dd>
-            </div>
-            <div>
-              <dt>
+          <div className="student-detail-top">
+            <strong className="student-detail-name">
+              <bdi>
+                {student.firstName
+                  ? [student.firstName, student.lastName].filter(Boolean).join(' ')
+                  : student.name}
+              </bdi>
+            </strong>
+            <span className="student-detail-level">
+              {ar ? 'المستوى' : 'Level'}{' '}
+              <bdi>
+                {formatLevel(courseId ? (courseMembership?.level ?? '') : student.group) ||
+                  '\u2014'}
+              </bdi>
+            </span>
+            {student.whatsapp && <PhoneNumber value={student.whatsapp} part="whatsapp" />}
+          </div>
+          <div className="student-detail-meta">
+            <span>
+              <span className="sr-only">
+                {ar ? '\u0631\u0642\u0645 \u0627\u0644\u0647\u0627\u062a\u0641' : 'Phone'}:{' '}
+              </span>
+              {student.whatsapp ? (
+                <PhoneNumber value={student.whatsapp} part="dial" />
+              ) : ar ? (
+                '\u063a\u064a\u0631 \u0645\u062a\u0648\u0641\u0631'
+              ) : (
+                'Not provided'
+              )}
+            </span>
+            <span className="student-detail-meta-item">
+              <MapPin size={14} aria-hidden="true" />
+              <span className="sr-only">
+                {ar ? '\u0627\u0644\u0645\u0646\u0637\u0642\u0629' : 'Location'}:{' '}
+              </span>
+              <bdi>{student.location || '\u2014'}</bdi>
+            </span>
+            <span className="student-detail-meta-item">
+              <Cake size={14} aria-hidden="true" />
+              <span className="sr-only">
                 {ar
                   ? '\u0633\u0646\u0629 \u0627\u0644\u0645\u064a\u0644\u0627\u062f'
                   : 'Birth year'}
-              </dt>
-              <dd>{student.birthYear ?? '\u2014'}</dd>
-            </div>
-          </dl>
-          <div className="student-detail-courses">
-            <h2>{ar ? 'الدورات' : 'Courses'}</h2>
-            {activeCourses.length ? (
-              <ul>
-                {activeCourses.map((course) => (
-                  <li key={course.id}>
-                    {administrator ? (
-                      <a
-                        className="course-name-link"
-                        href={`?${new URLSearchParams({ page: 'app', view: 'courses', course: course.id, courseView: 'students' })}`}
-                        onClick={(event) => {
-                          event.preventDefault()
-                          setQuery(
-                            {
-                              view: 'courses',
-                              course: course.id,
-                              courseView: 'students',
-                              student: '',
-                            },
-                            true,
-                          )
-                        }}
-                      >
+                :{' '}
+              </span>
+              <bdi>{student.birthYear ?? '\u2014'}</bdi>
+            </span>
+            <div className="student-detail-courses">
+              <h2 className="sr-only">{ar ? 'الدورات' : 'Courses'}</h2>
+              {activeCourses.length ? (
+                <ul>
+                  {activeCourses.map((course) => (
+                    <li key={course.id}>
+                      {administrator ? (
+                        <a
+                          className="course-name-link"
+                          href={`?${new URLSearchParams({ page: 'app', view: 'courses', course: course.id, courseView: 'students' })}`}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            setQuery(
+                              {
+                                view: 'courses',
+                                course: course.id,
+                                courseView: 'students',
+                                student: '',
+                              },
+                              true,
+                            )
+                          }}
+                        >
+                          <bdi>{course.name}</bdi>
+                        </a>
+                      ) : (
                         <bdi>{course.name}</bdi>
-                      </a>
-                    ) : (
-                      <bdi>{course.name}</bdi>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="muted">{ar ? 'لا يوجد' : 'None'}</p>
-            )}
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">{ar ? 'لا يوجد' : 'None'}</p>
+              )}
+            </div>
           </div>
         </div>
       </section>

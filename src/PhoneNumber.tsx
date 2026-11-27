@@ -1,34 +1,42 @@
 import { internationalPhone, phoneNumber } from './phoneFormat'
 import { useLanguage } from './useLanguage'
 
-export function PhoneNumber({ value }: { value: string }) {
+export function PhoneNumber({ value, part }: { value: string; part?: 'dial' | 'whatsapp' }) {
   const { display, href } = phoneNumber(value)
   const { language } = useLanguage()
   const international = internationalPhone(value)
+  if (part === 'whatsapp' && !international) return null
   return (
-    <span className="inline-flex max-w-full flex-wrap items-center gap-x-2">
-      {href ? (
-        <a
-          href={href}
-          dir="ltr"
-          className="items-center"
-          style={{
-            display: 'inline-flex',
-            minHeight: 44,
-            minWidth: 44,
-            maxWidth: '100%',
-            overflowWrap: 'anywhere',
-            wordBreak: 'break-all',
-            textDecoration: 'underline',
-            unicodeBidi: 'isolate',
-          }}
-        >
-          {display}
-        </a>
-      ) : (
-        <bdi dir="ltr">{display}</bdi>
-      )}
-      {international && (
+    <span
+      className={
+        part === 'whatsapp'
+          ? 'student-detail-whatsapp'
+          : 'inline-flex max-w-full flex-wrap items-center gap-x-2'
+      }
+    >
+      {part !== 'whatsapp' &&
+        (href ? (
+          <a
+            href={href}
+            dir="ltr"
+            className="items-center"
+            style={{
+              display: 'inline-flex',
+              minHeight: 44,
+              minWidth: 44,
+              maxWidth: '100%',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-all',
+              textDecoration: 'underline',
+              unicodeBidi: 'isolate',
+            }}
+          >
+            {display}
+          </a>
+        ) : (
+          <bdi dir="ltr">{display}</bdi>
+        ))}
+      {part !== 'dial' && international && (
         <a
           href={`https://wa.me/${international.slice(1)}`}
           target="_blank"

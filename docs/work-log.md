@@ -2423,3 +2423,9 @@ The course roster browser scenario passed for All columns, Groups and Books in E
 The owner asked to tighten the attendance panel and replace the Add student text button with a person-plus icon. The date and attendance counts share a row. The attendance action and the icon share a second row on phones and fit alongside the date on desktop. The icon opens the existing Administrator creation form and uses a localized accessible label.
 
 Synthetic browser checks exercise the icon and check layout and overflow at 320, 360 and 1280px in Arabic and English. Browser emulation covers these widths. The PR records release checks and Railway verification.
+
+## 2026-11-27 09:01 Asia/Damascus — Compact Student information profile
+
+The owner approved a two-row profile. The first row combines the full name and level badge, with WhatsApp at the far left in Arabic and far right in English. The next row combines the dial link, location pin, birth year and courses. Longer details wrap, and WhatsApp and dialing keep separate targets.
+
+Synthetic browser checks cover Arabic and English at 320, 390 and 430px and wide desktop. They exercise both link targets, profile and history geometry, and course-specific level display. The PR records release and Railway checks. Native WhatsApp handoff requires a physical device.
