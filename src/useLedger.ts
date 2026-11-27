@@ -640,7 +640,7 @@ export function useLedger(
       validateAssignedPayloads(payloads, roster, events, enrollments, courses)
       for (const payload of payloads) {
         if (payload.kind === 'attendance') {
-          const current = projection.attendance.find(
+          const current = projection.attendanceVersions.find(
             ({ value }) =>
               value.studentId === payload.studentId &&
               value.enrollmentId === payload.enrollmentId &&

@@ -22,7 +22,7 @@ const attendanceSchema = z.object({
   studentId: id,
   enrollmentId: id.optional(),
   date,
-  status: persistedStatusSchema,
+  status: persistedStatusSchema.nullable(),
 })
 const projectedAttendanceSchema = attendanceSchema.extend({ status: statusSchema })
 const noteSchema = z.object({
@@ -55,6 +55,7 @@ export type Payload = z.infer<typeof payloadSchema>
 export type Student = z.infer<typeof studentSchema>
 export type Attendance = z.infer<typeof projectedAttendanceSchema>
 export type Status = z.infer<typeof statusSchema>
+type AttendanceVersion = Omit<Attendance, 'status'> & { status: Status | null }
 export function normalizedNoteTags(value: string) {
   const tags = [
     ...new Set(
@@ -104,7 +105,7 @@ export function projectEvents(events: LedgerEvent[]) {
     (event) => event.payload.kind !== 'reversal' && !reversed.has(event.id),
   )
   const students = new Map<string, Student>()
-  const attendance = new Map<string, { event: LedgerEvent; value: Attendance }>()
+  const attendanceVersions = new Map<string, { event: LedgerEvent; value: AttendanceVersion }>()
   const notes: { event: LedgerEvent; value: z.infer<typeof noteSchema> }[] = []
   for (const event of live) {
     const value = event.payload
@@ -113,9 +114,9 @@ export function projectEvents(events: LedgerEvent[]) {
         students.set(value.studentId, value)
         break
       case 'attendance':
-        attendance.set(`${value.studentId}:${value.enrollmentId ?? ''}:${value.date}`, {
+        attendanceVersions.set(`${value.studentId}:${value.enrollmentId ?? ''}:${value.date}`, {
           event,
-          value: { ...value, status: normalizeStatus(value.status) },
+          value: { ...value, status: value.status === null ? null : normalizeStatus(value.status) },
         })
         break
       case 'note':
@@ -131,7 +132,10 @@ export function projectEvents(events: LedgerEvent[]) {
   }
   return {
     students: [...students.values()],
-    attendance: [...attendance.values()],
+    attendance: [...attendanceVersions.values()].flatMap(({ event, value }) =>
+      value.status === null ? [] : [{ event, value: { ...value, status: value.status } }],
+    ),
+    attendanceVersions: [...attendanceVersions.values()],
     notes,
     reversed,
     events: [...unique.values()],

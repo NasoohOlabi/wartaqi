@@ -17,12 +17,17 @@ test.beforeEach(async ({ context, page }) => {
   watch(page)
   context.on('page', watch)
 })
-test.afterEach(async ({ context }, testInfo) => {
+test.afterEach(async ({ context, hasTouch }, testInfo) => {
   const errors = browserErrors.get(context) ?? []
   // The synthetic lost-response test deliberately aborts one network request.
-  const unexpected = testInfo.title.includes('lost response')
-    ? errors.filter((error) => !error.includes('net::ERR_FAILED'))
-    : errors
+  const unexpected = errors.filter((error) => {
+    if (testInfo.title.includes('lost response') && error.includes('net::ERR_FAILED')) return false
+    return !(
+      hasTouch &&
+      testInfo.title.includes('pressing saved attendance') &&
+      error === 'Failed to load resource: net::ERR_INTERNET_DISCONNECTED'
+    )
+  })
   expect(unexpected).toEqual([])
 })
 
@@ -135,6 +140,68 @@ test('authenticated notebook supports attendance, notes and corrections', async 
     page.getByLabel('Attendance for ليلى').getByRole('button', { pressed: true }),
   ).toHaveAccessibleName('absent')
   expect(external).toEqual([])
+})
+
+test('pressing saved attendance again clears the record after sync and reload', async ({
+  context,
+  hasTouch,
+  page,
+}) => {
+  await mockSyntheticNotebook(page, {
+    names: ['Lina'],
+    role: hasTouch ? 'teacher' : 'administrator',
+  })
+  await page.goto(`/?page=app&view=notebook&tab=attendance&course=${courseId}`)
+  await expect(
+    page.getByLabel('Attendance for Lina').getByRole('button', { pressed: true }),
+  ).toHaveAccessibleName('present')
+  if (hasTouch) await clickAccountAction(page, 'العربية')
+
+  const marks = page.getByLabel(hasTouch ? 'الحضور للطالب Lina' : 'Attendance for Lina')
+  const absent = marks.getByRole('button', { name: hasTouch ? 'غائب' : 'absent', exact: true })
+  const selected = marks.getByRole('button', { pressed: true })
+  const save = page.getByRole('button', {
+    name: hasTouch ? 'حفظ الحضور (1)' : 'Save attendance (1)',
+  })
+  const acknowledged = () =>
+    page.waitForResponse(
+      (response) => response.url().endsWith('/api/attendance/sync') && response.ok(),
+    )
+  const activateAbsent = () => (hasTouch ? absent.tap() : absent.click())
+
+  await activateAbsent()
+  await activateAbsent()
+  await expect(selected).toHaveAccessibleName(hasTouch ? 'حاضر' : 'present')
+  await activateAbsent()
+  await Promise.all([acknowledged(), save.click()])
+  await expect(save).toHaveCount(0)
+  await expect(absent).toHaveAttribute('aria-pressed', 'true')
+
+  if (hasTouch) {
+    await page.evaluate(() => navigator.serviceWorker.ready)
+    await page.reload()
+    await expect(absent).toHaveAttribute('aria-pressed', 'true')
+    await expect
+      .poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller)))
+      .toBe(true)
+    await context.setOffline(true)
+    await expect(page.getByText('غير متصل', { exact: true })).toBeVisible()
+    await activateAbsent()
+    await expect(selected).toHaveCount(0)
+    await page.reload()
+    await expect(marks).toBeVisible()
+    await expect(selected).toHaveCount(0)
+  }
+  const [response] = await Promise.all([
+    acknowledged(),
+    hasTouch ? context.setOffline(false) : activateAbsent(),
+  ])
+  expect(await response.json()).toMatchObject({ outcomes: [{ kind: 'saved' }] })
+  await expect(selected).toHaveCount(0)
+  await expect(save).toHaveCount(0)
+  await page.reload()
+  await expect(marks).toBeVisible()
+  await expect(selected).toHaveCount(0)
 })
 
 test('an administrator can finish a partial session without overwriting exceptions or losing their place', async ({

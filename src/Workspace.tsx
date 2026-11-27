@@ -807,7 +807,7 @@ function Notebook({
                 observed={sessionDrafts[sessionKey]?.observed}
                 setDraft={(values) => {
                   const displayed = new Map(
-                    scopedProjection.attendance
+                    scopedProjection.attendanceVersions
                       .filter(({ value }) => value.date === query.date)
                       .map(({ value, event }) => [value.studentId, event.id]),
                   )
@@ -1489,7 +1489,7 @@ function AttendanceView({
       draft[student.studentId] && draft[student.studentId] !== current.get(student.studentId),
   )
   const savedVersions = new Map(
-    projected.attendance
+    projected.attendanceVersions
       .filter(({ value }) => value.date === date)
       .map(({ value, event }) => [value.studentId, event.id]),
   )
@@ -1762,7 +1762,20 @@ function AttendanceView({
                 }
               }}
               onMark={(id, value) => {
-                if (!value.length && current.has(id)) return
+                if (!value.length && !draft[id] && current.has(id)) {
+                  const enrollment = enrollments.find((entry) => entry.studentId === id)
+                  if (enrollment)
+                    void save([
+                      {
+                        kind: 'attendance',
+                        studentId: id,
+                        enrollmentId: enrollment.id,
+                        date,
+                        status: null,
+                      },
+                    ])
+                  return
+                }
                 const next = { ...draft }
                 if (!value.length || value[0] === current.get(id)) delete next[id]
                 else next[id] = value[0]
@@ -2557,7 +2570,7 @@ function describeEvent(
   if (value.kind === 'student')
     return `${t('Student')}: ${value.name} · ${t(value.active ? 'active' : 'inactive')}`
   if (value.kind === 'attendance')
-    return `${name} · ${value.date} · ${t(normalizeStatus(value.status))}`
+    return `${name} · ${value.date} · ${t(value.status === null ? 'Not marked' : normalizeStatus(value.status))}`
   return `${name} · ${value.date} · #${value.tags.join(' #')} · ${value.text}`
 }
 function Empty({ text }: { text: string }) {

@@ -382,7 +382,7 @@ const offlineSnapshotSchema = z.object({
       enrollmentId: z.uuid().optional(),
       date: z.iso.date(),
       eventId: z.uuid(),
-      status: statusSchema,
+      status: statusSchema.nullable(),
     }),
   ),
   notes: z.array(
@@ -440,7 +440,7 @@ export async function cacheOfflineRoster(
           active: item.active,
         })),
     })),
-    attendance: projected.attendance
+    attendance: projected.attendanceVersions
       .filter(({ value }) => studentIds.has(value.studentId))
       .map(({ event, value }) => ({ ...value, eventId: event.id })),
     notes: projected.notes

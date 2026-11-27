@@ -2533,3 +2533,9 @@ Synthetic Chromium checks cover six recorded dates, one Arabic row at 662px, one
 The owner asked to see previous course grades, the pass decision and attendance rate when opening a student, especially for closed courses. Student information now lists those values for administrators, including withdrawn enrollments and saved result overrides. Attendance history opens on demand in All students and closed courses. It starts expanded for a selected open course.
 
 Synthetic Chromium scenarios cover the profile on desktop and emulated phones, with English and Arabic labels, a saved zero, missing scores, a closed-course override and the history disclosure. The PR records release and Railway checks. The supplied student record requires a signed-in account.
+
+## 2026-11-27 11:54 Asia/Damascus — Clear a saved attendance mark by pressing it again
+
+The owner asked to undo an accidental attendance selection from its row. Press the selected saved status to clear the student’s attendance for that course and date. The device saves the clear immediately and syncs when online. The clear leaves the date unmarked and retains the previous marks in history.
+
+Synthetic Chromium coverage exercises a desktop administrator and an Arabic phone-sized teacher view, including a disconnected reload and reconnection. Disposable PostgreSQL covers scoped projection, stale writes, exact retries and student visibility. The PR records the release checks and Railway verification.

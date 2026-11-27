@@ -8,7 +8,7 @@ export const offlineAttendanceRecordSchema = z.object({
       studentId: z.uuid(),
       enrollmentId: z.uuid(),
       date: z.iso.date(),
-      status: statusSchema,
+      status: statusSchema.nullable(),
     }),
   }),
   expectedEventId: z.uuid().nullable(),
@@ -21,7 +21,7 @@ export const offlineAttendanceSyncSchema = z.object({
 export const offlineAttendanceOutcomeSchema = z.object({
   id: z.uuid(),
   kind: z.enum(['saved', 'unchanged', 'conflict', 'forbidden', 'id_conflict']),
-  current: z.object({ eventId: z.uuid(), status: statusSchema }).nullable(),
+  current: z.object({ eventId: z.uuid(), status: statusSchema.nullable() }).nullable(),
 })
 export const offlineAttendanceResponseSchema = z.object({
   outcomes: z.array(offlineAttendanceOutcomeSchema),

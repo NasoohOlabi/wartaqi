@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
 import { createHandler } from '../functions/notebook-service'
-import { makeEvent, projectEvents } from '../shared/ledger'
+import { makeEvent, projectEvents, type LedgerEvent } from '../shared/ledger'
 import { courseBoardSchema, neonSnapshotSchema, neonStudentAttendanceSchema } from '../shared/neon'
 import { offlineAttendanceResponseSchema } from '../shared/offlineAttendance'
 import {
@@ -917,6 +917,62 @@ integration(
       expect(projectedStudent.attendance.filter(({ date }) => date === offlineDate)).toEqual([
         expect.objectContaining({ status: winningStatus, enrollmentId: enrollmentIds[0] }),
       ])
+      const winningVersion = race.find((outcome) => outcome?.kind === 'saved')?.current
+      if (!winningVersion) throw new Error('Expected the saved attendance version')
+      const syncAttendance = async (event: LedgerEvent, expectedEventId: string) => {
+        const response = await call('/api/attendance/sync', subjects.teacher, {
+          accountId: subjects.teacher,
+          records: [{ event, expectedEventId }],
+        })
+        expect(response.status, await response.clone().text()).toBe(200)
+        return offlineAttendanceResponseSchema.parse(await response.json()).outcomes[0]
+      }
+      const replacement = makeEvent('Synthetic course teacher', {
+        kind: 'attendance',
+        studentId,
+        enrollmentId: enrollmentIds[0],
+        date: offlineDate,
+        status: 'excused',
+      })
+      expect(await syncAttendance(replacement, winningVersion.eventId)).toMatchObject({
+        kind: 'saved',
+      })
+      const clear = makeEvent('Synthetic course teacher', {
+        kind: 'attendance',
+        studentId,
+        enrollmentId: enrollmentIds[0],
+        date: offlineDate,
+        status: null,
+      })
+      expect(await syncAttendance(clear, winningVersion.eventId)).toMatchObject({
+        kind: 'conflict',
+        current: { eventId: replacement.id, status: 'excused' },
+      })
+      expect(await syncAttendance(clear, replacement.id)).toMatchObject({
+        kind: 'saved',
+        current: { eventId: clear.id, status: null },
+      })
+      const afterClear = neonStudentAttendanceSchema.parse(
+        await (await call('/api/student/attendance', subjects.student)).json(),
+      )
+      expect(afterClear.attendance.filter(({ date }) => date === offlineDate)).toEqual([])
+      const newMark = { ...replacement, id: crypto.randomUUID() }
+      expect(await syncAttendance(newMark, replacement.id)).toMatchObject({
+        kind: 'conflict',
+        current: { eventId: clear.id, status: null },
+      })
+      expect(await syncAttendance(newMark, clear.id)).toMatchObject({ kind: 'saved' })
+      expect(await syncAttendance(clear, replacement.id)).toMatchObject({
+        kind: 'saved',
+        current: { eventId: newMark.id, status: 'excused' },
+      })
+      const latestNotebook = neonSnapshotSchema.parse(
+        await (await call('/api/notebook', subjects.teacher)).json(),
+      )
+      expect(latestNotebook.events.filter(({ id }) => id === clear.id)).toEqual([
+        expect.objectContaining({ payload: clear.payload }),
+      ])
+      expect(latestNotebook.events.some(({ id }) => id === replacement.id)).toBe(true)
       const syncStudent = async (operation: z.input<typeof offlineStudentOperationSchema>) => {
         const response = await call('/api/student/sync', subjects.teacher, {
           accountId: subjects.teacher,
