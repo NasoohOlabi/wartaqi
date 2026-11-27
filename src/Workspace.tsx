@@ -1731,6 +1731,12 @@ function RosterView({
       value: (s) => studentLevel(s, courseSelected, enrollments),
     },
     {
+      id: 'birthYear',
+      filterMode: 'literal',
+      label: ar ? 'سنة الميلاد' : 'Birth year',
+      value: (s) => s.birthYear,
+    },
+    {
       id: 'courses',
       label: ar ? 'الدورات' : 'Courses',
       value: (s) =>
@@ -1793,6 +1799,7 @@ function RosterView({
             <col className="roster-phone-column" />
             <col className="roster-summary-column" />
             <col className="roster-level-column" />
+            <col className="roster-birth-year-column" />
             <col className="roster-courses-column" />
             <col className="roster-active-column" />
             <col className="roster-actions-column" />
@@ -1857,6 +1864,9 @@ function RosterView({
                 </td>
                 <td data-label={ar ? 'المستوى' : 'Level'}>
                   <bdi>{studentLevel(student, courseSelected, enrollments) || '—'}</bdi>
+                </td>
+                <td data-label={ar ? 'سنة الميلاد' : 'Birth year'}>
+                  <bdi>{student.birthYear ?? '—'}</bdi>
                 </td>
                 <td data-label={ar ? 'الدورات' : 'Courses'}>
                   {(() => {

@@ -261,6 +261,38 @@ async function sortFromToolbar(
   await page.keyboard.press('Escape')
 }
 
+test('roster birth years sort numerically and filter literally', async ({ page }) => {
+  const { writes } = await syntheticTables(page)
+  await page.goto('/?page=app&tab=roster')
+  const rows = page.locator('.roster-students-table tbody tr')
+  await sortFromToolbar(page, { column: 'birthYear' })
+  await expect(rows.locator('td:nth-child(6)')).toHaveText([
+    '2000',
+    '2001',
+    '2002',
+    '2003',
+    '—',
+    '—',
+  ])
+  expect(
+    await rows
+      .first()
+      .locator('td:nth-child(6) bdi')
+      .evaluate((year) => year.getClientRects().length),
+  ).toBe(1)
+  await page.getByRole('button', { name: 'Filter options' }).click()
+  await page.getByLabel('Add filter', { exact: true }).selectOption('birthYear')
+  await page.getByRole('searchbox', { name: 'Filter Birth year' }).fill('2001')
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(rows).toHaveCount(1)
+  await expect(rows.first()).toContainText('Alpha')
+  await page.getByRole('button', { name: 'Filter options' }).click()
+  await page.getByRole('searchbox', { name: 'Filter Birth year' }).fill('2010')
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+  await expect(rows).toHaveCount(0)
+  expect(writes).toEqual([])
+})
+
 test('whole decimal levels display consistently and retain raw edit values', async ({ page }) => {
   const { writes } = await syntheticTables(page)
   await page.goto('/?page=app&tab=roster')
@@ -290,7 +322,7 @@ test('every staff table column sorts and filters without writes', async ({ page 
     ['view=courses', 2, true],
     [`view=courses&course=${courseId}&courseView=students`, 6, false],
     [`view=courses&course=${courseId}&courseView=grades`, 8, true],
-    ['tab=roster', 7, true],
+    ['tab=roster', 8, true],
     [`view=student&student=${studentIds[0]}`, 3, false],
     [`tab=attendance&course=${courseId}`, 4, false],
     [`tab=attendance&course=${courseId}&q=Alpha`, 4, false],
@@ -493,6 +525,20 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
       const heading = await title.boundingBox()
       const name = await open.boundingBox()
       const attendance = await first.locator('td[data-label]').nth(3).boundingBox()
+      const phone = await first.locator('td').nth(2).boundingBox()
+      const level = await first.locator('td').nth(4).boundingBox()
+      const year = await first.locator('td').nth(5).boundingBox()
+      const courses = await first.locator('td').nth(6).boundingBox()
+      if (!phone || !level || !year || !courses) throw new Error('Roster fields are hidden')
+      expect(phone.y).toBe(attendance?.y)
+      expect(level.y).toBe(year.y)
+      expect(year.y).toBe(courses.y)
+      await expect(first.locator('td').nth(5)).toHaveText('2000')
+      await expect(rows.filter({ hasText: 'Echo' }).locator('td').nth(5)).toHaveText('—')
+      await expect(first.locator('td').nth(5)).toHaveAttribute(
+        'data-label',
+        ar ? 'سنة الميلاد' : 'Birth year',
+      )
       if (!heading || !name || !attendance)
         throw new Error('Roster title or student fields are hidden')
       expect(name.height).toBeGreaterThanOrEqual(44)
@@ -633,7 +679,7 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
     await expect(open).toBeFocused()
     await sort.click()
     const columns = page.getByLabel(ar ? 'إضافة عمود' : 'Add column', { exact: true })
-    await expect(columns.locator('option:not([disabled])')).toHaveCount(7)
+    await expect(columns.locator('option:not([disabled])')).toHaveCount(8)
     await columns.selectOption('first')
     await page.keyboard.press('Escape')
     await expect(rows.first().locator('.roster-mobile-open')).toHaveText('Alpha Family')
@@ -641,7 +687,7 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
     await expect(rows.first().locator('.roster-mobile-open')).toHaveText('Alpha Family')
     await filter.click()
     const filters = page.getByLabel(ar ? 'إضافة تصفية' : 'Add filter', { exact: true })
-    await expect(filters.locator('option:not([disabled])')).toHaveCount(7)
+    await expect(filters.locator('option:not([disabled])')).toHaveCount(8)
     await filters.selectOption('first')
     await page
       .getByRole('searchbox', { name: ar ? 'تصفية الاسم الأول' : 'Filter First name' })
