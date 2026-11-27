@@ -2499,3 +2499,9 @@ The owner asked for faster CI on GitHub Free. A sampled PR took 7m 52s and a mai
 Playwright discovery found 78, 81 and 73 cases in the shards. The combined cases exactly matched all 232 cases in the unsharded desktop and mobile suite. Actionlint and `bun run verify` passed. The required check's shell condition passed only when both prerequisites succeeded across all 16 combinations of success, failure, cancellation and skip. GitHub run timings and exact-commit Railway verification are recorded in the PR.
 
 At 10:21 Asia/Damascus, PR #206 passed Validation in 3m 21s. Its HTML reports used 1.4 MB total, down from 138 MB in the baseline PR. The first main run stopped before browser tests on one runner after the preconfigured Microsoft apt feed returned HTTP 403. `Verify` failed and Railway blocked that deployment. Browser jobs now remove that unused feed on their disposable runners and still install Chromium's dependencies from Ubuntu. The local release check passed with 229 browser cases and three skips. The follow-up PR records hosted verification and Railway deployment evidence.
+
+## 2026-11-27 10:48 Asia/Damascus — Fit six follow-up dates in one row
+
+The owner reported wasted space in the follow-up date cards at 662px. The dashboard sizes each card to its localized label and wraps cards when they no longer fit on a row.
+
+Synthetic Chromium checks cover six recorded dates, one Arabic row at 662px, one row in both languages at 1280px, and wrapping without overflow on narrow phones. The PR records release and Railway verification.
