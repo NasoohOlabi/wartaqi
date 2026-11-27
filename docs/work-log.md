@@ -2714,3 +2714,9 @@ The broader Settings regression needed its expected navigation updated from five
 The owner requested repeated local Docker measurements and at least 30% reductions in requests, bytes, CPU, memory, and PostgreSQL storage. Railway is outside this task. Baseline 7f5ae9a uses disposable PostgreSQL 17 and synthetic fixtures with 2,408 and 120,729 events. The lab counts HTTP and WebSocket traffic at the proxy, records container cgroups, exercises offline sync across browsers and repeats a seven-reader workload.
 
 Both H+ baselines passed and recorded 163–164 requests, 79–80 API and socket requests, and 2.56 MB transferred. LAN and both large stress runs passed. The 56 large reads transferred 403 MB per run. The Docker registry timed out, so both measured images use the same cached runtime dependency layer and the release Rust compiler. The reports are under `.artifacts/performance`. Emulation and the fixture do not establish mobile-carrier or provider billing behavior.
+
+## 2026-11-27 21:47 Asia/Damascus - Remove repeated browser session checks
+
+Protected requests now go directly to the role-checked endpoint. The session endpoint renews a live browser session, and the Bun notebook verifier leaves cookie renewal there. A focused test against disposable Postgres verified that a domain read does not extend the session while the browser endpoint renews the database row and returns the cookie.
+
+Both Docker H+ runs passed. Session requests fell from 33–34 to seven and API and socket calls fell from 79–80 to 55–57. Reconnect delivery fell from about 6.3 seconds to 3.7 seconds. Additional full snapshot reads raised total bytes in this isolation run, so byte reduction still needs a separate change. The synthetic browser also verified the stale account denial.

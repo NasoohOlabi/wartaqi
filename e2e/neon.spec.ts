@@ -119,6 +119,7 @@ test('sign in, reload and switch teacher without mixing notebook data', async ({
   let current: (typeof users)[number] | undefined
   const events: Record<string, LedgerEvent[]> = {}
   const attempts = new Map<string, number>()
+  let sessionRequests = 0
   let releaseApproval = () => {}
   const approvalHeld = new Promise<void>((resolve) => {
     releaseApproval = resolve
@@ -127,6 +128,7 @@ test('sign in, reload and switch teacher without mixing notebook data', async ({
   await context.route(`${auth}/**`, async (route) => {
     const request = route.request()
     const path = new URL(request.url()).pathname
+    if (path.endsWith('/get-session')) sessionRequests += 1
     const headers = {
       'access-control-allow-origin': origin,
       'access-control-allow-credentials': 'true',
@@ -305,9 +307,11 @@ test('sign in, reload and switch teacher without mixing notebook data', async ({
     { times: 1 },
   )
   await page.getByRole('navigation').getByRole('button', { name: 'Students' }).click()
+  const sessionsBeforeRefresh = sessionRequests
   const refreshing = page.waitForRequest(`${api}/notebook`)
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await refreshing
+  expect(sessionRequests).toBe(sessionsBeforeRefresh)
   await clickAccountAction(page, 'Profile settings')
   await clickAccountAction(page, 'Sign out')
   await expect(page.locator('.wartaq-home h1')).toBeVisible()
@@ -343,6 +347,14 @@ test('sign in, reload and switch teacher without mixing notebook data', async ({
     await expect(page.locator('.workspace-rail nav').getByText(/History/)).toHaveCount(0)
     await expect(page).toHaveURL(/view=notebook/)
   }
+  current = users[0]
+  await page.getByRole('navigation').getByRole('button', { name: 'Students' }).click()
+  const mismatch = page.waitForResponse(
+    (response) => response.url() === `${api}/notebook` && response.status() === 401,
+  )
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await mismatch
+  await expect(page.getByText('Your session has expired. Please sign in again.')).toBeVisible()
 })
 
 test('session restoration shows a neutral placeholder until signed out', async ({ page }) => {

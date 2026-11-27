@@ -14,6 +14,8 @@ Attendance has three current statuses: **Present**, **Absent** and **Excused**. 
 
 ## Delivery
 
+Protected browser requests send the expected account and use the same-origin session cookie. The server checks both with each request. The browser renews an active session through the session endpoint, which can return a refreshed cookie.
+
 `src/useLedger.ts` persists a batch before sending and blocks new submissions while delivery is uncertain. Pending operations take a browser-wide Web Lock and the original account lock for compatibility with older open tabs. Retries and discards read the current stored batch again under those locks. Corrupt or unavailable storage and unsupported locks fail closed. A retry reads first and removes already visible IDs. The API enforces unique IDs so a retry cannot create another event for the same ID. The server checks duplicate IDs against the stored actor, assignment, PostgreSQL timestamp and payload. This legacy batch requires explicit retry. Pending storage is private data; reconcile it before clearing. Form drafts are memory-only. Active views also subscribe to workspace changes and revalidate on reconnect.
 
 `bun run verify` checks the code and build; `bun run verify:ui` drives synthetic browser paths. Neither replaces live Railway verification. See the [verification skill](../.agents/skills/verify-halaqa/SKILL.md).

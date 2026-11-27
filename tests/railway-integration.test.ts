@@ -63,8 +63,34 @@ integration(
     })
     expect(signUp.status).toBe(200)
     const cookie = signUp.headers.get('set-cookie')?.split(';')[0]
-    await pool.query('DELETE FROM app_accounts WHERE auth_user_id = $1', [userId])
     const headers = { cookie: cookie ?? '', 'x-user-id': userId }
+    const aged = await pool.query(
+      `UPDATE neon_auth.session SET "expiresAt" = now() + interval '5 days'
+       WHERE "userId" = $1 RETURNING "expiresAt"`,
+      [userId],
+    )
+    expect(aged.rowCount).toBe(1)
+    expect((await fetch(`${origin}/api/me`, { headers })).status).toBe(200)
+    const unchanged = await pool.query(
+      'SELECT "expiresAt" FROM neon_auth.session WHERE "userId" = $1',
+      [userId],
+    )
+    expect(unchanged.rows[0].expiresAt).toEqual(aged.rows[0].expiresAt)
+    const renewed = await fetch(`${origin}/api/auth/get-session`, {
+      headers: { cookie: cookie ?? '' },
+    })
+    expect(renewed.status).toBe(200)
+    expect(
+      renewed.headers
+        .getSetCookie()
+        .some((value) => value.startsWith('better-auth.session_token=')),
+    ).toBe(true)
+    const refreshed = await pool.query(
+      'SELECT "expiresAt" FROM neon_auth.session WHERE "userId" = $1',
+      [userId],
+    )
+    expect(refreshed.rows[0].expiresAt.getTime()).toBeGreaterThan(aged.rows[0].expiresAt.getTime())
+    await pool.query('DELETE FROM app_accounts WHERE auth_user_id = $1', [userId])
     expect((await fetch(`${origin}/api/me`, { headers })).status).toBe(403)
     expect(
       (

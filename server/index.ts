@@ -201,7 +201,11 @@ const notebook = createHandler(
   },
   [origin],
   async (request) => {
-    const session = await auth.api.getSession({ headers: request.headers })
+    // Only the browser's session endpoint can return a renewed cookie.
+    const session = await auth.api.getSession({
+      headers: request.headers,
+      query: { disableRefresh: true },
+    })
     if (!session?.user.id || request.headers.get('x-user-id') !== session.user.id)
       throw new Error('Unauthorized')
     return { subject: session.user.id, sessionId: session.session.id }

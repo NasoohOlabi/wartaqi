@@ -6,7 +6,7 @@ import { neonAccountSchema, neonBatchSchema, neonSnapshotSchema } from '../share
 import type { LedgerEvent } from '../shared/ledger'
 
 export const apiUrl = window.location.origin
-export const authClient = createAuthClient()
+export const authClient = createAuthClient({ sessionOptions: { refetchInterval: 60 * 60 } })
 
 export const sessionChangeEvent = 'halaqa-session-change'
 export const sessionChangeSource = crypto.randomUUID()
@@ -65,23 +65,6 @@ export async function request(
   const deny = (status: 401 | 403) => {
     if (reportDenial && localGrant(userId)?.generation === generation)
       window.dispatchEvent(new AccessDeniedEvent(userId, status))
-  }
-  const session = await authClient.getSession({
-    fetchOptions: { signal: AbortSignal.timeout(15000) },
-  })
-  const signedInUserId = session.data?.user.id
-  if (signedInUserId && signedInUserId !== userId) {
-    deny(403)
-    throw new NeonRequestError(403)
-  }
-  if (!signedInUserId) {
-    const status = session.error?.status
-    if (status === 401 || status === 403 || !session.error) {
-      const denial = status === 403 ? 403 : 401
-      deny(denial)
-      throw new NeonRequestError(denial)
-    }
-    throw new NeonRequestError(503)
   }
   const response = await accountFetch(path, userId, body, edit)
   if (!response.ok) {
