@@ -268,12 +268,10 @@ test('whole decimal levels display consistently and retain raw edit values', asy
     page.locator('tbody tr').filter({ hasText: 'Zulu' }).locator('td').nth(4),
   ).toHaveText('1')
   await page.goto(`/?page=app&view=student&student=${studentIds[0]}`)
-  await expect(
-    page
-      .locator('dl div')
-      .filter({ has: page.locator('dt', { hasText: /^Level$/ }) })
-      .locator('dd'),
-  ).toHaveText('1')
+  const levelBadge = page.locator('.student-detail-profile .student-detail-level')
+  await expect(levelBadge).toHaveText('Level 1')
+  await page.goto(`/?page=app&view=student&student=${studentIds[0]}&course=${courseId}`)
+  await expect(levelBadge).toHaveText('Level 2')
   await page.goto(`/?page=app&view=courses&course=${courseId}&courseView=students`)
   const row = page.locator('tbody tr').filter({ hasText: 'Zulu' })
   await expect(row.locator('td').nth(2)).toHaveText('2')
