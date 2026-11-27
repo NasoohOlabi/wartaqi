@@ -1,5 +1,11 @@
 # Work log
 
+## 2026-11-27 20:28 Asia/Damascus (UTC+03:00) - Drag students between course groups
+
+The owner asked to drag students between teacher groups and hide teachers with no students in the course. Manage groups now lets an administrator drag a student onto a visible teacher group or Unassigned, including collapsed groups. Empty teacher groups appear after their first assignment. Their teachers stay selectable in Move to group, which also supports keyboard use. Both controls use the existing enrollment save and retry flow.
+
+Browser coverage exercises the move with a desktop mouse and a 320px Arabic touch viewport, including preview position, canceled and outside drops, retry and reload. A phone scenario verifies scrolling to a group below the viewport. `bun run verify:release` passed with 155 unit tests and 259 browser cases. It skipped 16 optional integration tests and seven browser cases. The browser checks use synthetic records. The PR tracks Railway deployment. Physical devices remain unverified.
+
 ## 2026-11-25 13:54 Asia/Damascus (UTC+03:00) - Use an icon for WhatsApp chats
 
 The owner asked to replace the WhatsApp text beside student phone numbers. The shared staff phone field now shows the WhatsApp icon with a 44px tap target and a localized accessible name. The phone number still opens the dialer.

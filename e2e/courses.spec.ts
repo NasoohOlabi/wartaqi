@@ -1460,8 +1460,7 @@ test('course group accordions move one enrollment and preserve it on failure', a
   await expect(move).toBeVisible()
   await unassigned.locator('summary').click()
   await expect(unassigned.getByText('New Student', { exact: true })).toBeVisible()
-  await destination.locator('summary').click()
-  await expect(destination.getByRole('combobox')).toHaveCount(0)
+  await expect(destination).toHaveCount(0)
   expect((await move.boundingBox())?.height).toBeGreaterThanOrEqual(44)
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
     await page.evaluate(() => window.innerWidth),
@@ -1473,9 +1472,12 @@ test('course group accordions move one enrollment and preserve it on failure', a
   await expect(page.getByRole('alert').first()).toBeVisible()
   await expect(move).toBeVisible()
   expect(enrollments[0]).toEqual(original)
+  await expect(destination).toHaveCount(0)
   await page.getByRole('button', { name: ar ? 'إعادة المحاولة' : 'Retry', exact: true }).click()
+  await destination.locator('summary').click()
   await expect(destination.getByRole('combobox', { name: moveName })).toBeVisible()
   await expect(move).toHaveCount(0)
+  await expect(source).toHaveCount(0)
   const assignment = { kind: 'group', courseId: courseA, ids: [enrollA], teacherId: destinationId }
   expect(assignments).toEqual([assignment, assignment])
   expect(enrollments[0]).toEqual({
@@ -1489,6 +1491,169 @@ test('course group accordions move one enrollment and preserve it on failure', a
   await page.reload()
   await destination.locator('summary').click()
   await expect(destination.getByRole('combobox', { name: moveName })).toBeVisible()
+})
+
+test('course groups accept a student drag onto a collapsed group', async ({ page }, testInfo) => {
+  const { assignments, board, enrollments, failNextAssignment } = await setupCourses(page)
+  const destinationId = '10000000-0000-4000-8000-000000000004'
+  board.teachers.push({ teacherId: destinationId, name: 'Destination Teacher', active: true })
+  Object.assign(enrollments[0], { teacherId, teacherName: 'Admin', level: '4', theory: 91 })
+  enrollments.push({
+    ...enrollments[0],
+    id: '40000000-0000-4000-8000-000000000003',
+    studentId: secondStudentId,
+    teacherId: destinationId,
+    teacherName: 'Destination Teacher',
+  })
+  const [original, otherCourse] = structuredClone(enrollments)
+  const mobile = testInfo.project.name === 'mobile'
+  if (mobile) {
+    await page.setViewportSize({ width: 320, height: 844 })
+    await page.addInitScript(() => localStorage.setItem('halaqa-language-preference', 'ar'))
+  }
+  await page.goto(`/?page=app&view=courses&course=${courseA}&courseView=groups`)
+  const source = page.locator(`[data-course-group="${teacherId}"]`)
+  const destination = page.locator(`[data-course-group="${destinationId}"]`)
+  const destinationGroup = destination.locator('..')
+  await source.click()
+  const grip = source.locator('..').getByRole('button', {
+    name: `${mobile ? 'اسحب الطالب' : 'Drag student'}: Synthetic Student`,
+  })
+  const preview = page.locator('.course-group-overlay')
+  await expect(grip).toBeVisible()
+  await destination.scrollIntoViewIfNeeded()
+  await expect(destinationGroup).not.toHaveAttribute('open')
+  const handle = await grip.boundingBox()
+  const header = await destination.boundingBox()
+  if (!handle || !header) throw new Error('Missing course group drag controls')
+  expect(handle.width).toBeGreaterThanOrEqual(44)
+  expect(handle.height).toBeGreaterThanOrEqual(44)
+  const start = { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 }
+  const end = { x: header.x + header.width / 2, y: header.y + header.height / 2 }
+  const outside = { ...end, y: header.y + header.height + 4 }
+  const touch = mobile ? await page.context().newCDPSession(page) : null
+
+  async function drag(action: 'cancel' | 'outside' | 'drop') {
+    if (touch) {
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [start] })
+    } else {
+      await page.mouse.move(start.x, start.y)
+      await page.mouse.down()
+      await page.mouse.move(start.x, start.y + 12)
+    }
+    await expect(preview).toHaveText('Synthetic Student')
+    const initial = await preview.boundingBox()
+    const point = action === 'outside' ? outside : end
+    if (touch) {
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point] })
+    } else {
+      await page.mouse.move(point.x, point.y, { steps: 8 })
+    }
+    if (action === 'outside') await expect(destination).not.toHaveAttribute('data-drop-target')
+    else await expect(destination).toHaveAttribute('data-drop-target', 'true')
+    const moved = await preview.boundingBox()
+    if (!initial || !moved) throw new Error('Missing course group drag preview')
+    expect(Math.abs(moved.y - initial.y)).toBeGreaterThan(12)
+    if (touch) {
+      await touch.send('Input.dispatchTouchEvent', {
+        type: action === 'cancel' ? 'touchCancel' : 'touchEnd',
+        touchPoints: [],
+      })
+    } else {
+      if (action === 'cancel') await page.keyboard.press('Escape')
+      await page.mouse.up()
+    }
+    await expect(preview).toBeHidden()
+  }
+
+  await drag('cancel')
+  await drag('outside')
+  expect(assignments).toEqual([])
+  failNextAssignment()
+  await drag('drop')
+  await touch?.detach()
+  await expect(page.getByRole('alert').first()).toBeVisible()
+  await expect(grip).toBeVisible()
+  expect(enrollments[0]).toEqual(original)
+
+  await page.getByRole('button', { name: mobile ? 'إعادة المحاولة' : 'Retry', exact: true }).click()
+  await expect(destination).toContainText('(2)')
+  await expect(source).toHaveCount(0)
+  await expect(grip).toBeHidden()
+  const assignment = { kind: 'group', courseId: courseA, ids: [enrollA], teacherId: destinationId }
+  expect(assignments).toEqual([assignment, assignment])
+  expect(enrollments[0]).toEqual({
+    ...original,
+    teacherId: destinationId,
+    teacherName: 'Destination Teacher',
+  })
+  expect(enrollments[1]).toEqual(otherCourse)
+  await page.reload()
+  await destination.click()
+  await expect(destinationGroup.getByText('Synthetic Student', { exact: true })).toBeVisible()
+})
+
+test('course drag scrolls to a populated teacher below the phone viewport', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'Uses Chromium touch input on a phone')
+  const { assignments, board, enrollments } = await setupCourses(page)
+  Object.assign(enrollments[0], { teacherId, teacherName: 'Admin' })
+  const destinationId = '10000000-0000-4000-8000-000000000022'
+  for (let index = 10; index <= 22; index++) {
+    const groupTeacherId = `10000000-0000-4000-8000-0000000000${index}`
+    const groupStudentId = `20000000-0000-4000-8000-0000000000${index}`
+    const teacherName = `Teacher ${index}`
+    board.teachers.push({ teacherId: groupTeacherId, name: teacherName, active: true })
+    board.students.push({
+      ...board.students[0],
+      studentId: groupStudentId,
+      name: `Member ${index}`,
+    })
+    enrollments.push({
+      ...enrollments[0],
+      id: `40000000-0000-4000-8000-0000000000${index}`,
+      studentId: groupStudentId,
+      teacherId: groupTeacherId,
+      teacherName,
+    })
+  }
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`/?page=app&view=courses&course=${courseA}&courseView=groups`)
+  await page.locator(`[data-course-group="${teacherId}"]`).click()
+  const grip = page.getByRole('button', { name: 'Drag student: Synthetic Student' })
+  await grip.scrollIntoViewIfNeeded()
+  const handle = await grip.boundingBox()
+  const target = page.locator(`[data-course-group="${destinationId}"]`)
+  const offscreen = await target.boundingBox()
+  if (!handle || !offscreen) throw new Error('Missing drag controls')
+  expect(offscreen.y).toBeGreaterThan(844)
+  const touch = await page.context().newCDPSession(page)
+  const x = handle.x + handle.width / 2
+  const y = handle.y + handle.height / 2
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
+  const overlay = page.locator('.course-group-overlay')
+  await expect(overlay).toHaveText('Synthetic Student')
+  for (const py of [y + 25, 520, 630, 725, 748]) {
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: py }] })
+    await expect(overlay).toBeVisible()
+  }
+  await expect
+    .poll(async () => (await target.boundingBox())?.y, { timeout: 6000 })
+    .toBeLessThan(735)
+  const box = await target.boundingBox()
+  if (!box) throw new Error('Missing scrolled drop target')
+  await touch.send('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }],
+  })
+  await expect(target).toHaveAttribute('data-drop-target', 'true')
+  await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  await expect(target).toContainText('(2)')
+  expect(assignments).toEqual([
+    { kind: 'group', courseId: courseA, ids: [enrollA], teacherId: destinationId },
+  ])
+  await touch.detach()
 })
 
 test('course roster modes focus the table and save a group across searches', async ({
