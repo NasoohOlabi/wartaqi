@@ -2594,3 +2594,9 @@ Two signed-in synthetic Chromium sessions against a disposable Postgres verified
 
 - Investigated repeated successful saves followed by old levels in the notebook. The membership handler ignored the supplied level and returned success. PR #219 addresses client readback scheduling.
 - Route explicit MCP levels through the administrator enrollment write and keep legacy membership payloads from replacing them. The disposable PostgreSQL regression covers write, readback and stale membership replay. Local bun run verify passed with 155 tests and 14 opt-in skips. Production readback requires deployment and authorized access.
+
+## 2026-11-27 16:45 Asia/Damascus — Expand the website README
+
+The owner asked for a fuller description of Wartaq and diagrams. The README explains the public Qur’an course homepage, role permissions, attendance and follow-up, offline sync, and Telegram and MCP access. Two Mermaid diagrams show the session workflow and the path from a local mark to the notebook and student portal.
+
+All 12 relative links resolved. Both diagrams rendered in Chromium at 375 px and 920 px with accessible titles and descriptions. `bun run verify` passed on the updated base. `bun run verify:release` passed before the base update, with 155 unit tests and 258 browser tests passing. Fourteen database-dependent unit-suite cases and six browser cases were skipped locally. The PR records CI and the public checks after Railway deploys the merged commit.
