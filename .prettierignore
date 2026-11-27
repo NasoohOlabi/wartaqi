@@ -3,4 +3,6 @@ node_modules/
 dist/
 .local/
 .artifacts/
+rust-sync/target/
+rust-telegram/target/
 .husky/_/
