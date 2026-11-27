@@ -438,8 +438,8 @@ export function registerMcpTools(
   )
   post(
     'save_enrollment',
-    'Set course membership and teacher. First enrollment records the student’s current level. Withdrawal preserves level, history and grades.',
-    '/api/admin/enrollments/membership',
+    'Set membership, teacher and optional course level. Omit level to preserve it or copy the roster level on first enrollment. Withdrawal preserves history and grades.',
+    '/api/admin/enrollments/save',
     enrollmentMembershipSchema,
   )
   post(

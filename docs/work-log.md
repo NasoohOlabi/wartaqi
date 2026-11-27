@@ -2585,3 +2585,10 @@ The owner reported that a slow enrollment save left the switch looking off. A se
 Four focused Chromium checks passed on desktop English and mobile Arabic. They cover a held enrollment write and refresh, a blocked second tap, later withdrawal, failed rejoin and retry with the original enrollment ID, and the earlier inactive roster regression. The course suite passed against disposable PostgreSQL. The PR records the release checks and Railway verification.
 
 At 16:12 Asia/Damascus, PR #222 incorporated the enrollment switch from PR #221 and retained both course documentation changes. `bun run verify` and all eight focused Chromium checks passed across desktop and mobile, including group moves and membership retries.
+
+## 2026-11-27 16:24 Asia/Damascus ? MCP enrollment levels
+
+- Investigated repeated successful saves followed by old levels in the notebook. The membership handler ignored the supplied level and returned success. PR #219 addresses client readback scheduling.
+- Route explicit MCP levels through the administrator enrollment write and keep legacy membership payloads from replacing them. The disposable PostgreSQL regression covers write, readback and stale membership replay. Local bun run verify passed with 155 tests and 14 opt-in skips. Production readback requires deployment and authorized access.
+
+At 16:38 Asia/Damascus, PR #222 incorporated the MCP enrollment update from PR #223. `bun run verify` and the disposable PostgreSQL course test passed. Group moves continue to use the course assignment endpoint.
