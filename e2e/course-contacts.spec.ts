@@ -181,7 +181,7 @@ test('exports the active course roster as CSV, Excel and contacts', async ({ pag
     const status = row.getByRole('img', { name: ar ? 'نشط' : 'Active', exact: true })
     await expect(whatsapp).toHaveAttribute('href', 'https://wa.me/442012345678')
     await expect(whatsapp).toHaveText('')
-    for (const width of [1624, 320, 360, 390, 430]) {
+    for (const width of [1624, 1280, 320, 360, 390, 430]) {
       await page.setViewportSize({ width, height: 844 })
       const exportBounds = await exportAction.boundingBox()
       if (!exportBounds) throw new Error('Export students is hidden')
@@ -225,6 +225,12 @@ test('exports the active course roster as CSV, Excel and contacts', async ({ pag
       if (!target) throw new Error('WhatsApp link is hidden')
       expect(target.width).toBeGreaterThanOrEqual(44)
       expect(target.height).toBeGreaterThanOrEqual(44)
+      const dialLink = row.locator('a[href^="tel:"]')
+      const dial = await dialLink.boundingBox()
+      if (!dial) throw new Error('Dial link is hidden')
+      expect(Math.abs(dial.y + dial.height / 2 - target.y - target.height / 2)).toBeLessThan(1)
+      if (ar) expect(target.x + target.width).toBeLessThanOrEqual(dial.x + 1)
+      else expect(dial.x + dial.width).toBeLessThanOrEqual(target.x + 1)
       await expect(status).toBeVisible()
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
@@ -232,22 +238,22 @@ test('exports the active course roster as CSV, Excel and contacts', async ({ pag
       const desktopStatus = row.locator('.roster-student-status')
       if (width > 430) {
         await expect(desktopStatus.getByRole('img')).toBeVisible()
+        expect(
+          await dialLink.evaluate((link) => {
+            const range = document.createRange()
+            range.selectNodeContents(link)
+            return range.getClientRects().length
+          }),
+        ).toBe(1)
         continue
       }
       await expect(desktopStatus).toBeHidden()
-      const dial = await row.locator('a[href^="tel:"]').boundingBox()
       const badge = await status.boundingBox()
       const name = await row.locator('.roster-mobile-open bdi').boundingBox()
-      if (!dial || !badge || !name) throw new Error('Roster name, status or dial link is hidden')
-      expect(Math.abs(dial.y + dial.height / 2 - target.y - target.height / 2)).toBeLessThan(1)
+      if (!badge || !name) throw new Error('Roster name or status is hidden')
       expect(Math.abs(name.y + name.height / 2 - badge.y - badge.height / 2)).toBeLessThan(1)
-      if (ar) {
-        expect(target.x + target.width).toBeLessThanOrEqual(dial.x + 1)
-        expect(name.x + name.width).toBeLessThanOrEqual(badge.x + 1)
-      } else {
-        expect(dial.x + dial.width).toBeLessThanOrEqual(target.x + 1)
-        expect(badge.x + badge.width).toBeLessThanOrEqual(name.x + 1)
-      }
+      if (ar) expect(name.x + name.width).toBeLessThanOrEqual(badge.x + 1)
+      else expect(badge.x + badge.width).toBeLessThanOrEqual(name.x + 1)
       expect(
         await table.evaluate((el) => el.scrollWidth <= el.parentElement!.clientWidth + 1),
       ).toBe(true)
