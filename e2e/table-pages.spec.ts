@@ -329,12 +329,13 @@ test('every staff table column sorts and filters without writes', async ({ page 
     [`tab=summary&course=${courseId}`, 5, false],
   ] satisfies [string, number, boolean][]) {
     await page.goto(`/?page=app&${query}`)
-    await everyColumn(
-      page.locator('table').first(),
-      columns,
-      actions,
-      !query.includes('courseView=grades'),
-    )
+    let table = page.locator('table').first()
+    if (query.startsWith('view=student&')) {
+      const history = page.locator('.student-details-history')
+      await history.locator('summary').click()
+      table = history.locator('table')
+    }
+    await everyColumn(table, columns, actions, !query.includes('courseView=grades'))
   }
   for (const raw of [
     '{broken',

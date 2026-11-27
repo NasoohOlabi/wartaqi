@@ -5,7 +5,7 @@ import { formatLevel } from './levelFormat'
 import { PhoneNumber } from './PhoneNumber'
 import { courseContacts, downloadContacts } from './courseContacts'
 import { downloadRosterCsv, downloadRosterExcel, rosterRows } from './rosterExport'
-import { TableControls, TableHeader, TableToolbar } from './DataTable'
+import { TableHeader, TableToolbar } from './DataTable'
 import { useDataTable } from './useDataTable'
 import { matchesText } from './studentSearch'
 import {
@@ -1282,9 +1282,9 @@ function StudentDetails({
             <summary>{historyLabel}</summary>
             {detailRecords.length ? (
               <>
-                <div className="table-toolbar-actions mb-2 justify-end">
-                  <TableControls model={detailTable} />
-                </div>
+                <TableToolbar model={detailTable} className="mb-2 justify-end">
+                  {null}
+                </TableToolbar>
                 <div
                   className="role-table-scroll"
                   tabIndex={0}
