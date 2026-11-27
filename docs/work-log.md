@@ -2571,3 +2571,11 @@ After a local save, the selected mark now stays visible for 650 ms, then the car
 The browser regression exercises the middle and end of a long roster, a repeat tap, reload, and reduced-motion focus on desktop and mobile Chromium. Before and after recordings use synthetic records in a 390 px phone viewport. The PR records release and Railway checks. Physical-device and authenticated production behavior require separate verification.
 
 At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing before its confirmation delay while an earlier sync was still settling after reload. The hold now follows the result of the specific local save, and a focused row hands off focus before it is removed. The browser regression covers both keyboard and pointer focus through this path.
+
+## 2026-11-27 16:03 Asia/Damascus — Keep online writes moving during readback
+
+The owner reported that an edit made on a connected phone committed late and asked to fix delivery before changing conflict policy. Two production attendance records showed about 13 seconds between their device timestamps and database receipt. The available telemetry could not tie the reported edit to a particular client stall.
+
+Holding a post-save notebook read reproduced a second write stalling in attendance and course teacher assignment on desktop and emulated iPhone. The attendance drain now releases after upload and schedules readback independently. Course requests still send in submission order, while readback and retry handling run separately. Both browser regressions require the second write to succeed before releasing the held read and verify the result after reload. The PR records broader checks and Railway delivery. A physical phone and the original incident remain unverified.
+
+The sync design records the next phases: compare reliable user edit times for the same field, retain field history, and show automatic and manual conflict resolutions from the last seven days in Settings.

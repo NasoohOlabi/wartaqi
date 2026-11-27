@@ -31,6 +31,12 @@ A warm visit with a stalled API displays cached records before the stalled respo
 
 See [verification matrix](sync-verification.md) for release evidence.
 
+## Follow-up order
+
+1. **Fix online delivery delays first.** A foreground phone with a working connection must send a locally saved edit without waiting for an earlier snapshot read to finish. Measure tap, durable enqueue, request start, server receipt, commit and confirmation under one operation ID. Verify on a phone with a deliberately delayed read and confirm the outcome from a second client. Include attendance and course enrollment in the checks.
+2. **Order conflicting edits by when the user made them.** Capture edit time at the user's action and store it alongside the observed field revision, operation ID, source and server receipt/commit times. Use a server-anchored time estimate for website edits and server time for MCP requests when the client supplies no trustworthy action time. Compare same-field edits inside the write transaction. When the order is reliable, the later user edit wins even if the earlier phone edit arrives after it. Overlapping clock uncertainty goes to review. Identical values converge without another change, and independent compatible fields can both save. Keep attendance history append-only and project accepted ledger events in server sequence order.
+3. **Record field history and conflict resolutions.** Append a changelog entry for every committed change to an editable field. Add a role-checked **Settings → Sync conflicts** page with a rolling seven-day history of automatic and manual resolutions, including cases where an older edit loses without changing the field. Show the affected field, the competing edits and their sources, edit and receipt times, the result and the reason. Link each entry to its field changelog. Limit private values to roles allowed to read that field. Keep secret values out of history. A manual override is a new edit based on the reviewed revision. Verify cross-device conflicts in both request orders, exact retries, uncertain clocks, access scope, and the seven-day cutoff.
+
 ## Adding a feature
 
 1. Identify who can read the value, its authoritative entity ID, and the field or event version a user sees before editing. Define the Zod request and response in `shared/`. Keep authorization and commit order on the server.

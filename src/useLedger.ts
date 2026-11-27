@@ -383,13 +383,14 @@ export function useLedger(
           result.reason instanceof NeonRequestError &&
           (result.reason.status === 401 || result.reason.status === 403),
       )
-      if (uploaded || conflicted || denied) {
+      const refreshSnapshot = async () => {
         // A concurrent GET may have started before the commit. Follow it with a fresh read.
         const inFlight = readInFlight.current
         if (inFlight) await inFlight
-        if (!isCurrent()) return false
-        await readNotebook()
+        if (isCurrent()) await readNotebook()
       }
+      if (denied) await refreshSnapshot()
+      else if (uploaded || conflicted) void refreshSnapshot()
       return outcomes.every((result) => result.status === 'fulfilled')
     })().catch(() => false)
     syncInFlight.current = task
