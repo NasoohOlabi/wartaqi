@@ -1,10 +1,12 @@
 ﻿import { expect, test } from '@playwright/test'
 import { clickAccountAction } from './profileActions'
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 
 test.use({ trace: 'off' })
 
-test('exports active course contacts and offers direct WhatsApp links', async ({ page }) => {
+test('exports active course contacts and offers direct WhatsApp links', async ({
+  page,
+}, testInfo) => {
   const id = '10000000-0000-4000-8000-000000000001'
   const course = '30000000-0000-4000-8000-000000000001'
   const other = '30000000-0000-4000-8000-000000000002'
@@ -72,6 +74,7 @@ test('exports active course contacts and offers direct WhatsApp links', async ({
   })
   await page.goto('/?page=app&tab=roster')
   await expect(page.locator('.roster-students-table')).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Inactive', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Export contacts' })).toHaveCount(0)
   await page.goto(`/?page=app&tab=roster&course=${course}`)
   const exportButton = page.getByRole('button', { name: 'Export contacts' })
@@ -114,36 +117,59 @@ test('exports active course contacts and offers direct WhatsApp links', async ({
   expect(content).toContain('TEL;TYPE=CELL:+442012345678\r\n')
   expect(content).not.toMatch(/Missing|Withdrawn|Inactive|Other/)
   await page.getByLabel('Find a student').fill('')
-  for (const width of [1624, 320, 390, 430]) {
-    await page.setViewportSize({ width, height: 844 })
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
-      true,
-    )
-    if (width <= 430)
+  const table = page.locator('.roster-students-table')
+  const row = table.locator('tbody tr').filter({ hasText: arabicName })
+  for (const ar of [false, true]) {
+    if (ar) {
+      await clickAccountAction(page, 'العربية')
+      await expect(page.getByRole('button', { name: 'تصدير جهات الاتصال' })).toBeVisible()
+    }
+    const whatsapp = row.getByRole('link', {
+      name: ar ? 'محادثة واتساب: +442012345678' : 'WhatsApp chat: +442012345678',
+    })
+    const status = row.getByRole('img', { name: ar ? 'نشط' : 'Active', exact: true })
+    await expect(whatsapp).toHaveAttribute('href', 'https://wa.me/442012345678')
+    await expect(whatsapp).toHaveText('')
+    for (const width of [1624, 320, 390, 430]) {
+      await page.setViewportSize({ width, height: 844 })
+      const target = await whatsapp.boundingBox()
+      if (!target) throw new Error('WhatsApp link is hidden')
+      expect(target.width).toBeGreaterThanOrEqual(44)
+      expect(target.height).toBeGreaterThanOrEqual(44)
+      await expect(status).toBeVisible()
       expect(
-        await page
-          .locator('.roster-students-table')
-          .evaluate((el) => el.scrollWidth <= el.parentElement!.clientWidth + 1),
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
       ).toBe(true)
-  }
-  await clickAccountAction(page, 'العربية')
-  await expect(page.getByRole('button', { name: 'تصدير جهات الاتصال' })).toBeVisible()
-  const arabicChat = page.getByRole('link', { name: 'محادثة واتساب: ٠٩١٢٣٤٥٦٧٨' })
-  await expect(arabicChat).toHaveAttribute('href', 'https://wa.me/963912345678')
-  await expect(arabicChat).toHaveText('')
-  for (const width of [1624, 320, 390, 430]) {
-    await page.setViewportSize({ width, height: 844 })
-    const target = await arabicChat.boundingBox()
-    expect(target?.width).toBeGreaterThanOrEqual(44)
-    expect(target?.height).toBeGreaterThanOrEqual(44)
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(
-      true,
-    )
-    if (width <= 430)
+      const desktopStatus = row.locator('.roster-student-status')
+      if (width > 430) {
+        await expect(desktopStatus.getByRole('img')).toBeVisible()
+        continue
+      }
+      await expect(desktopStatus).toBeHidden()
+      const dial = await row.locator('a[href^="tel:"]').boundingBox()
+      const badge = await status.boundingBox()
+      const name = await row.locator('.roster-mobile-open bdi').boundingBox()
+      if (!dial || !badge || !name) throw new Error('Roster name, status or dial link is hidden')
+      expect(Math.abs(dial.y + dial.height / 2 - target.y - target.height / 2)).toBeLessThan(1)
+      expect(Math.abs(name.y + name.height / 2 - badge.y - badge.height / 2)).toBeLessThan(1)
+      if (ar) {
+        expect(target.x + target.width).toBeLessThanOrEqual(dial.x + 1)
+        expect(name.x + name.width).toBeLessThanOrEqual(badge.x + 1)
+      } else {
+        expect(dial.x + dial.width).toBeLessThanOrEqual(target.x + 1)
+        expect(badge.x + badge.width).toBeLessThanOrEqual(name.x + 1)
+      }
       expect(
-        await page
-          .locator('.roster-students-table')
-          .evaluate((el) => el.scrollWidth <= el.parentElement!.clientWidth + 1),
+        await table.evaluate((el) => el.scrollWidth <= el.parentElement!.clientWidth + 1),
       ).toBe(true)
+      if (width === 390 && testInfo.project.name === 'mobile') {
+        await mkdir('.artifacts/verification', { recursive: true })
+        await row.evaluate((record) => record.scrollIntoView({ block: 'center' }))
+        await row.screenshot({
+          path: `.artifacts/verification/course-roster-contact-${ar ? 'ar' : 'en'}.png`,
+          scale: 'css',
+        })
+      }
+    }
   }
 })

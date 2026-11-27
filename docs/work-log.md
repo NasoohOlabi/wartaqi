@@ -2417,3 +2417,9 @@ The navigation scenario exercises the course tabs, student return with a saved s
 The owner asked for two rows per student on the course Students page. The first row holds the name fields and course level when shown. The second holds the teacher, enrollment and handbook controls available in the selected view. In Groups, the teacher selector uses the space available alongside the enrollment switch.
 
 The course roster browser scenario passed for All columns, Groups and Books in English and Arabic at 320, 390 and 430px and on desktop. It checks row geometry and overflow with synthetic names, including a long mixed-script name, and exercises saved teacher assignments across searches. The PR records release checks and Railway verification.
+
+## 2026-11-27 08:54 Asia/Damascus — Compact mobile notebook roster
+
+The owner asked to remove the standalone WhatsApp and status rows in the notebook Students list. The status icon now sits beside the student's name, and WhatsApp shares the dial line with the phone number. The course toolbar wraps when the heading and controls need more room.
+
+Focused browser checks passed in English and Arabic on desktop and at 320, 390 and 430px. The synthetic cases check alignment, 44px WhatsApp targets, overflow, profile navigation and contact export. The PR records the release gate and Railway verification. Native WhatsApp handoff remains unverified.
