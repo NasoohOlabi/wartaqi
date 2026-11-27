@@ -18,6 +18,7 @@ import {
   Save,
   Star,
   UsersRound,
+  UserRoundCog,
 } from 'lucide-react'
 import {
   accountProfileLabel,
@@ -40,6 +41,95 @@ import { rankStudents } from './studentSearch'
 type Board = ReturnType<typeof neonAdminBoardSchema.parse>
 
 type Draft = { id?: string; teacherId?: string }
+
+function CourseGroups({
+  ar,
+  board,
+  enrollments,
+  disabled,
+  move,
+}: {
+  ar: boolean
+  board: Board
+  enrollments: Enrollment[]
+  disabled: boolean
+  move: (enrollmentId: string, teacherId: Enrollment['teacherId']) => void
+}) {
+  const unassigned = ar ? 'غير معيّن' : 'Unassigned'
+  const moveLabel = ar ? 'نقل إلى مجموعة' : 'Move to group'
+  const groups = new Map<
+    Enrollment['teacherId'],
+    { name: string; members: { name: string; enrollmentId: string }[] }
+  >()
+  for (const teacher of board.teachers)
+    groups.set(teacher.teacherId, { name: teacher.name, members: [] })
+  groups.set(null, { name: unassigned, members: [] })
+  const activeByStudent = new Map(
+    enrollments.filter((entry) => entry.active).map((entry) => [entry.studentId, entry]),
+  )
+  for (const student of board.students) {
+    const entry = activeByStudent.get(student.studentId)
+    if (!entry) continue
+    const group = groups.get(entry.teacherId) ?? {
+      name: entry.teacherName ?? (ar ? 'معلم غير متاح' : 'Unavailable teacher'),
+      members: [],
+    }
+    group.members.push({ name: student.name, enrollmentId: entry.id })
+    groups.set(entry.teacherId, group)
+  }
+  const destinations = [
+    ...board.teachers.map(({ teacherId, name }) => ({ teacherId, name })),
+    { teacherId: null, name: unassigned },
+  ]
+  return [...groups].map(([teacherId, group]) => {
+    const options = destinations.filter((destination) => destination.teacherId !== teacherId)
+    return (
+      <details
+        key={teacherId ?? 'unassigned'}
+        className="rounded-lg border border-[var(--dark-border,#cde1df)] px-3"
+      >
+        <summary className="min-h-11 cursor-pointer py-2.5 font-medium [overflow-wrap:anywhere]">
+          <bdi>{group.name}</bdi> ({group.members.length})
+        </summary>
+        {group.members.length ? (
+          <ul className="space-y-2 pb-3">
+            {group.members.map(({ name, enrollmentId }) => (
+              <li key={enrollmentId} className="flex flex-wrap items-center justify-between gap-2">
+                <bdi className="min-w-0 [overflow-wrap:anywhere]">{name}</bdi>
+                {options.length > 0 && (
+                  <select
+                    className="min-h-11 min-w-0 max-w-full"
+                    aria-label={`${moveLabel}: ${name}`}
+                    value=""
+                    disabled={disabled}
+                    onChange={(event) => {
+                      const destination = event.target.value
+                      move(enrollmentId, destination === 'unassigned' ? null : destination)
+                    }}
+                  >
+                    <option value="" disabled>
+                      {moveLabel}
+                    </option>
+                    {options.map((destination) => (
+                      <option
+                        key={destination.teacherId ?? 'unassigned'}
+                        value={destination.teacherId ?? 'unassigned'}
+                      >
+                        {destination.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted pb-3">{ar ? 'لا يوجد طلاب' : 'No students'}</p>
+        )}
+      </details>
+    )
+  })
+}
 
 function CourseForm({
   course,
@@ -80,13 +170,20 @@ function CourseSections({
 }: {
   courseId: string
   ar: boolean
-  current: 'students' | 'grades' | 'history'
+  current: 'students' | 'groups' | 'grades' | 'history'
 }) {
   const sections = [
     {
       id: 'students',
       label: ar ? 'الطلاب' : 'Students',
       accessible: ar ? 'إدارة طلاب الدورة' : 'Manage course students',
+    },
+    {
+      id: 'groups',
+      label: ar ? '\u0627\u0644\u0645\u062c\u0645\u0648\u0639\u0627\u062a' : 'Groups',
+      accessible: ar
+        ? '\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0645\u062c\u0645\u0648\u0639\u0627\u062a'
+        : 'Manage groups',
     },
     {
       id: 'grades',
@@ -147,13 +244,16 @@ export function CoursePageHeader({
 }: {
   course: Pick<Course, 'id' | 'name'>
   ar: boolean
-  current: 'students' | 'grades' | 'history'
+  current: 'students' | 'groups' | 'grades' | 'history'
   actions?: React.ReactNode
 }) {
   const section = {
     students: ar
       ? '\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0637\u0644\u0627\u0628'
       : 'Manage students',
+    groups: ar
+      ? '\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0645\u062c\u0645\u0648\u0639\u0627\u062a'
+      : 'Manage groups',
     grades: ar ? '\u0627\u0644\u062f\u0631\u062c\u0627\u062a' : 'Grades',
     history: ar ? '\u0627\u0644\u0633\u062c\u0644' : 'History',
   }[current]
@@ -487,6 +587,13 @@ export function Courses({
                               onClick: () => go('students', item.id),
                             },
                             {
+                              label: ar
+                                ? '\u0625\u062f\u0627\u0631\u0629 \u0627\u0644\u0645\u062c\u0645\u0648\u0639\u0627\u062a'
+                                : 'Manage groups',
+                              icon: UserRoundCog,
+                              onClick: () => go('groups', item.id),
+                            },
+                            {
                               label: ar ? 'الدرجات' : 'Grades',
                               icon: ClipboardList,
                               onClick: () => go('grades', item.id),
@@ -570,6 +677,28 @@ export function Courses({
             </button>
           }
         />
+      )}
+      {course && query.courseView === 'groups' && (
+        <>
+          <CoursePageHeader course={course} ar={ar} current="groups" />
+          {board && (
+            <CourseGroups
+              key={course.id}
+              ar={ar}
+              board={board}
+              enrollments={courseEntries}
+              disabled={busy || offline}
+              move={(id, teacherId) =>
+                void submit(
+                  '/api/admin/enrollments/assignment',
+                  { kind: 'group', courseId: course.id, ids: [id], teacherId },
+                  undefined,
+                  `group:${course.id}:${id}`,
+                )
+              }
+            />
+          )}
+        </>
       )}
       {course && (query.courseView === 'students' || query.courseView === 'grades') && (
         <>

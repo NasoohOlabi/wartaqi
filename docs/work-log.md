@@ -2608,6 +2608,28 @@ The owner reported that a student note appeared in the attendance sidebar withou
 
 Synthetic Chromium checks cover saving from Attendance, reading from the correct profile across dates, hiding a corrected note after reload, and English and Arabic desktop and phone layouts. `bun run verify:release` passed with 155 local tests and 256 browser cases. Optional provider suites were skipped locally. The browser checks use intercepted Auth and notebook routes. The PR records Railway verification.
 
+## 2026-11-27 16:00 Asia/Damascus — Manage course groups by teacher
+
+The owner asked for a course-row menu action that opens teacher groups and lets administrators move individual students. **Manage groups** opens a course page with teacher accordions and an **Unassigned** group. Each move updates only the selected enrollment's teacher using the existing assignment endpoint. A failed save leaves the member in their last confirmed group and offers a retry.
+
+Synthetic Chromium checks cover the course menu, move, failed save, retry, reload and independent enrollment data on desktop and an Arabic phone. The course integration test passed against disposable PostgreSQL 17 and checked authorization, course scope, withdrawal and preservation of other enrollment fields. The PR records release and Railway checks. Production sign-in and physical-device behavior require separate verification.
+
+At 16:12 Asia/Damascus, PR #222 incorporated the enrollment switch from PR #221 and retained both course documentation changes. `bun run verify` and all eight focused Chromium checks passed across desktop and mobile, including group moves and membership retries.
+
+At 16:38 Asia/Damascus, PR #222 incorporated the MCP enrollment update from PR #223. `bun run verify` and the disposable PostgreSQL course test passed. Group moves continue to use the course assignment endpoint.
+
+At 16:47 Asia/Damascus, PR #222 incorporated the student notes update from PR #220. `bun run verify` and six focused Chromium cases passed across desktop and mobile, covering group moves, membership and student notes.
+
+At 17:08 Asia/Damascus, PR #222 incorporated the session replay removal from PR #224. `bun run verify` and six desktop and mobile browser cases passed across group moves, notebook notes and attendance.
+
+At 17:19 Asia/Damascus, PR #222 incorporated the notebook write and readback update from PR #219. `bun run verify` and eight desktop and mobile browser cases passed across group moves, retries, membership and grade threshold saves.
+
+At 17:33 Asia/Damascus, browser shard 2 timed out waiting for the legacy service worker to become redundant. Verify failed because it depends on that shard. The same PWA scenario passed 24 local runs on the reported head. After incorporating PR #226, core verification, eight focused browser cases and the disposable PostgreSQL course test passed. The PWA timeout remains specific to the observed CI run.
+
+At 17:52 Asia/Damascus, two CI shards failed on the legacy worker handoff and the update notice. A delayed precache reproduced the early notice assertion, and the full local PWA suite also caught an installed replacement waiting behind the active worker. The browser test now waits for Chromium to activate the replacement before it checks the notice, refresh and unsaved draft. Both delayed-update scenarios passed, and three runs of the desktop and mobile PWA suite passed all 66 cases. Core verification passed.
+
+At 19:40 Asia/Damascus, PR #222 incorporated the rewritten web runtime from PR #227. In hybrid mode Rust serves the admin and notebook reads and forwards course assignment writes and their headers to Bun. Core verification, eight focused desktop and mobile cases and the disposable PostgreSQL course test passed. GitHub CI covers the combined runtime, with Railway verification after merge.
+
 ## 2026-11-27 16:01 Asia/Damascus — Show course membership changes on the first tap
 
 The owner reported that a slow enrollment save left the switch looking off. A second tap after the save could undo the enrollment. The switch now displays the requested state during the save and accepts another tap after it settles. A failed confirmation restores the last confirmed state. Retry uses the original operation and displays its pending change.
