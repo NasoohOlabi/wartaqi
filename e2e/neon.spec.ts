@@ -347,12 +347,14 @@ test('sign in, reload and switch teacher without mixing notebook data', async ({
     await expect(page.locator('.workspace-rail nav').getByText(/History/)).toHaveCount(0)
     await expect(page).toHaveURL(/view=notebook/)
   }
-  current = users[0]
   await page.getByRole('navigation').getByRole('button', { name: 'Students' }).click()
+  const refresh = page.getByRole('button', { name: 'Refresh', exact: true })
+  await expect(refresh).toBeVisible()
   const mismatch = page.waitForResponse(
     (response) => response.url() === `${api}/notebook` && response.status() === 401,
   )
-  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  current = users[0]
+  await Promise.race([mismatch, refresh.click()])
   await mismatch
   await expect(page.getByText('Your session has expired. Please sign in again.')).toBeVisible()
 })

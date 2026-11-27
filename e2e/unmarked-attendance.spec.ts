@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { courseId, mockSyntheticNotebook } from './syntheticNotebook'
+import {
+  offlineAttendanceResponseSchema,
+  offlineAttendanceSyncSchema,
+} from '../shared/offlineAttendance'
 
 const names = Array.from(
   { length: 24 },
@@ -91,9 +95,18 @@ test('Show unmarked confirms the mark and removes rows without a scroll jump', a
   const another = attendance(11).getByRole('button', { name: ar ? 'معذور' : 'excused' })
   await another.click()
   await expect(another).toHaveAttribute('aria-pressed', 'true')
+  const cleared = page.waitForResponse((response) => {
+    if (new URL(response.url()).pathname !== '/api/attendance/sync') return false
+    const submitted = offlineAttendanceSyncSchema.safeParse(response.request().postDataJSON())
+    return (
+      submitted.success && submitted.data.records.some(({ event }) => event.payload.status === null)
+    )
+  })
   await another.click()
   await expect(another).toHaveAttribute('aria-pressed', 'false')
   await expect(attendance(11)).toBeVisible()
+  const acknowledgement = offlineAttendanceResponseSchema.parse(await (await cleared).json())
+  expect(acknowledgement.outcomes).toMatchObject([{ kind: 'saved', current: { status: null } }])
   await page.reload()
   await expect(attendance(11)).toBeVisible()
   await expect(attendance(12)).toHaveCount(0)
