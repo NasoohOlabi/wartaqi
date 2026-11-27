@@ -4,6 +4,8 @@ Administrators open **Courses** to see every saved course, including courses wit
 
 **Manage students** searches the existing roster by name. **All columns** and **Groups** display one **Course level** field. Before a student first joins, it shows the current student level that enrollment will record. The server copies that value at first enrollment. The recorded course level stays fixed, including when it is blank. **Books** focuses on enrollment and handbook receipt. The current view is saved in the page link.
 
+On a phone, each student uses two rows. The first holds the name fields and course level when shown. The second holds the controls for the selected view.
+
 In **Groups**, select enrolled students individually or select the visible matches. Selections carry across searches within the course. Check the selected count and apply a shared teacher. The server applies the group assignment in one transaction and rejects it if any selected enrollment has been withdrawn. Reopen the view to refresh enrollment status if it has changed.
 
 Teacher choices save immediately for students with an enrollment. The enrollment switch saves immediately and preserves level, history and grades through withdrawal and rejoining. A student can have different teachers in different courses. Course teacher assignments do not grant notebook access. Switching off blocks new attendance for that enrollment on the server.

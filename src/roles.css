@@ -409,6 +409,17 @@
     padding-block: 0.5rem;
     border-bottom: 1px solid #dce9e8;
   }
+  .course-students-table:not(.course-students-books) tbody tr {
+    grid-template-columns: minmax(0, 1.45fr) minmax(0, 0.9fr) minmax(0, 1fr);
+    column-gap: 0.375rem;
+  }
+  .course-students-groups .course-student-teacher {
+    grid-column: span 2;
+  }
+  .course-student-teacher select {
+    width: 100%;
+    padding-inline: 0.25rem;
+  }
   .role-table.mobile-record-table tbody td,
   .mobile-record-table td,
   .mobile-record-table th[scope='row'],
