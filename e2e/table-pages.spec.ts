@@ -268,12 +268,10 @@ test('whole decimal levels display consistently and retain raw edit values', asy
     page.locator('tbody tr').filter({ hasText: 'Zulu' }).locator('td').nth(4),
   ).toHaveText('1')
   await page.goto(`/?page=app&view=student&student=${studentIds[0]}`)
-  await expect(
-    page
-      .locator('dl div')
-      .filter({ has: page.locator('dt', { hasText: /^Level$/ }) })
-      .locator('dd'),
-  ).toHaveText('1')
+  const levelBadge = page.locator('.student-detail-profile .student-detail-level')
+  await expect(levelBadge).toHaveText('Level 1')
+  await page.goto(`/?page=app&view=student&student=${studentIds[0]}&course=${courseId}`)
+  await expect(levelBadge).toHaveText('Level 2')
   await page.goto(`/?page=app&view=courses&course=${courseId}&courseView=students`)
   const row = page.locator('tbody tr').filter({ hasText: 'Zulu' })
   await expect(row.locator('td').nth(2)).toHaveText('2')
@@ -388,7 +386,9 @@ test('wide student details align profile fields, attendance and notes', async ({
       name: ar ? 'سجل الحضور' : 'Attendance history',
     })
     const rows = history.locator('tbody tr')
-    const firstName = details.locator('dd').filter({ hasText: /^Zulu$/ })
+    const profile = details.locator('.student-detail-profile')
+    await expect(profile.locator('.student-detail-name')).toHaveText('Zulu Family')
+    await expect(profile.getByRole('link', { name: 'Alpha course' })).toBeVisible()
     const notes = details.getByRole('region', { name: ar ? 'ملاحظات الطالب' : 'Student notes' })
     await expect(notes.getByText('Review the next passage.')).toBeVisible()
     await expect(notes.locator('time')).toHaveAttribute('datetime', '2026-11-14')
@@ -396,17 +396,6 @@ test('wide student details align profile fields, attendance and notes', async ({
     for (const width of [1624, 1920, 2560]) {
       await page.setViewportSize({ width, height: 560 })
       await expect(rows.first()).toBeInViewport({ ratio: 1 })
-      const misalignment = await firstName.evaluate((value, rtl) => {
-        const label = value.previousElementSibling
-        if (!label) throw new Error('First name label is missing')
-        const range = document.createRange()
-        range.selectNodeContents(label)
-        const labelBounds = range.getBoundingClientRect()
-        range.selectNodeContents(value)
-        const valueBounds = range.getBoundingClientRect()
-        return rtl ? valueBounds.right - labelBounds.right : valueBounds.left - labelBounds.left
-      }, ar)
-      expect(Math.abs(misalignment)).toBeLessThan(2)
       const profileBounds = await details.locator('.student-details-overview').boundingBox()
       const historyBounds = await history.boundingBox()
       const notesBounds = await notes.boundingBox()
@@ -467,7 +456,12 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile')
-  const { writes } = await syntheticTables(page, 'administrator', 'وارتق 5')
+  const courseName = 'وارتق 5'
+  const { writes, snapshot } = await syntheticTables(page, 'administrator', courseName)
+  const profileStudent = snapshot.students.find((student) => student.studentId === studentIds[0])
+  if (!profileStudent) throw new Error('Synthetic profile student is missing')
+  profileStudent.whatsapp = '0912345678'
+  profileStudent.location = 'حمص'
   await page.goto('/?page=app&tab=roster')
   const table = page.locator('.roster-students-table')
   const rows = table.locator('tbody tr')
@@ -518,6 +512,14 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
       page.getByRole('heading', { name: ar ? 'معلومات الطالب' : 'Student information' }),
     ).toBeVisible()
     const details = page.locator('.student-details')
+    const profile = details.locator('.student-detail-profile')
+    const name = profile.locator('.student-detail-name')
+    const level = profile.locator('.student-detail-level')
+    const chat = profile.getByRole('link', { name: ar ? /محادثة واتساب/ : /WhatsApp chat/ })
+    const dial = profile.getByRole('link', { name: '0912 345 678', exact: true })
+    const location = profile.getByText('حمص', { exact: true })
+    const birthYear = profile.getByText('2000', { exact: true })
+    const course = profile.getByRole('link', { name: courseName })
     const edit = details.getByRole('button', { name: ar ? 'تعديل الطالب' : 'Edit student' })
     const backName = ar ? 'العودة إلى الطلاب' : 'Back to students'
     const back = page.getByRole('button', { name: backName, exact: true })
@@ -530,9 +532,13 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
       'transform',
       ar ? 'matrix(-1, 0, 0, 1, 0, 0)' : 'none',
     )
-    const courses = details.getByRole('heading', { name: ar ? 'الدورات' : 'Courses' })
     const history = details.getByRole('region', { name: ar ? 'سجل الحضور' : 'Attendance history' })
     const addNote = details.getByRole('button', { name: ar ? 'إضافة ملاحظة' : 'Add note' })
+    await expect(name).toHaveText('Zulu Family')
+    await expect(level).toHaveText(ar ? 'المستوى 1' : 'Level 1')
+    await expect(chat).toHaveAttribute('href', 'https://wa.me/963912345678')
+    await expect(dial).toHaveAttribute('href', 'tel:0912345678')
+    await expect(dial).toHaveAttribute('dir', 'ltr')
     await expect(history.locator('tbody tr')).toHaveCount(3)
     await expect(history.locator('thead')).toBeHidden()
     for (const width of [320, 360, 390, 430]) {
@@ -550,13 +556,43 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
         width,
       )
-      const coursesBounds = await courses.boundingBox()
+      const [profileBounds, nameBounds, levelBounds, chatBounds, dialBounds] = await Promise.all(
+        [profile, name, level, chat, dial].map((element) => element.boundingBox()),
+      )
       const addNoteBounds = await addNote.boundingBox()
       const historyBounds = await history.boundingBox()
-      if (!coursesBounds || !addNoteBounds || !historyBounds)
+      if (
+        !profileBounds ||
+        !nameBounds ||
+        !levelBounds ||
+        !chatBounds ||
+        !dialBounds ||
+        !addNoteBounds ||
+        !historyBounds
+      )
         throw new Error('Student details are hidden')
+      expect(chatBounds.width).toBeGreaterThanOrEqual(44)
+      expect(chatBounds.height).toBeGreaterThanOrEqual(44)
+      expect(dialBounds.height).toBeGreaterThanOrEqual(44)
+      for (const bounds of [nameBounds, levelBounds]) {
+        expect(bounds.y).toBeLessThan(chatBounds.y + chatBounds.height)
+        expect(bounds.y + bounds.height).toBeGreaterThan(chatBounds.y)
+      }
+      if (ar) expect(chatBounds.x).toBeCloseTo(profileBounds.x, 0)
+      else
+        expect(chatBounds.x + chatBounds.width).toBeCloseTo(
+          profileBounds.x + profileBounds.width,
+          0,
+        )
+      expect(dialBounds.y).toBeGreaterThanOrEqual(chatBounds.y + chatBounds.height)
+      for (const item of [location, birthYear, course]) {
+        const bounds = await item.boundingBox()
+        if (!bounds) throw new Error('A profile detail is hidden')
+        expect(bounds.y).toBeLessThan(dialBounds.y + dialBounds.height)
+        expect(bounds.y + bounds.height).toBeGreaterThan(dialBounds.y)
+      }
       expect(addNoteBounds.height).toBeGreaterThanOrEqual(44)
-      expect(addNoteBounds.y).toBeGreaterThan(coursesBounds.y + coursesBounds.height)
+      expect(addNoteBounds.y).toBeGreaterThan(profileBounds.y + profileBounds.height)
       expect(historyBounds.y).toBeGreaterThan(addNoteBounds.y + addNoteBounds.height)
       expect(await history.evaluate((element) => element.scrollWidth)).toBeLessThanOrEqual(
         historyBounds.width + 1,
