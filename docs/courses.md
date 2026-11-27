@@ -8,7 +8,7 @@ On a phone, each student uses two rows. The first holds the name fields and cour
 
 In **Groups**, select enrolled students individually or select the visible matches. Selections carry across searches within the course. Check the selected count and apply a shared teacher. The server applies the group assignment in one transaction and rejects it if any selected enrollment has been withdrawn. Reopen the view to refresh enrollment status if it has changed.
 
-Teacher choices save immediately for students with an enrollment. The enrollment switch saves immediately and preserves level, history and grades through withdrawal and rejoining. A student can have different teachers in different courses. Course teacher assignments do not grant notebook access. Switching off blocks new attendance for that enrollment on the server.
+Teacher choices save immediately for students with an enrollment. The enrollment switch saves immediately and preserves level, history and grades through withdrawal and rejoining. Manage students shows the saved enrollment for students whose roster record is inactive. Course membership changes preserve the student's roster status. A student can have different teachers in different courses. Course teacher assignments do not grant notebook access. Switching off blocks new attendance for that enrollment on the server.
 
 Successful saves on Courses, Manage students and Grades show a brief confirmation in the lower corner, above the navigation on phones. Save errors appear in the page.
 

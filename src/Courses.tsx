@@ -182,7 +182,7 @@ export function Courses({
   userId,
   courses,
   enrollments,
-  exportEnrollments,
+  gradeEnrollments,
   events,
   refreshAfterWrite,
   defaultCourse,
@@ -192,7 +192,7 @@ export function Courses({
   userId: string
   courses: Course[]
   enrollments: Enrollment[]
-  exportEnrollments: Enrollment[]
+  gradeEnrollments: Enrollment[]
   events: LedgerEvent[]
   refreshAfterWrite: () => Promise<boolean>
   defaultCourse: string
@@ -892,8 +892,8 @@ export function Courses({
               userId={userId}
               refreshAfterWrite={refreshAfterWrite}
               course={course}
-              entries={courseEntries}
-              exportEntries={exportEnrollments.filter((item) => item.courseId === course.id)}
+              entries={gradeEnrollments.filter((item) => item.courseId === course.id)}
+              exportEntries={courseEntries}
               students={board.students}
               accounts={board.accounts}
               events={events}

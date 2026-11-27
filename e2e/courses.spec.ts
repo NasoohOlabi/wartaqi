@@ -259,6 +259,15 @@ async function setupCourses(page: Page) {
     if (path === '/api/admin/enrollments/membership') {
       const body = route.request().postDataJSON()
       expect(body).not.toHaveProperty('level')
+      if (
+        enrollments.some(
+          (entry) =>
+            entry.courseId === body.courseId &&
+            entry.studentId === body.studentId &&
+            entry.id !== body.id,
+        )
+      )
+        return route.fulfill({ status: 409, json: { error: 'Conflict' } })
       const index = enrollments.findIndex((entry) => entry.id === body.id)
       if (index >= 0)
         enrollments[index] = {
@@ -370,6 +379,7 @@ async function setupCourses(page: Page) {
   const savedToast = page.getByRole('status').filter({ hasText: /^(Saved|تم الحفظ)$/ })
   return {
     board,
+    students,
     courses,
     enrollments,
     events,
@@ -1319,6 +1329,45 @@ test('course enrollment and same-day attendance stay separate', async ({ page },
   await clickRecordAction(page.getByRole('row').filter({ hasText: 'Course A' }), 'Manage students')
   await expect(syntheticRow.locator('td').nth(2)).toHaveText('\u2014')
   await expect(page.getByLabel('Teacher: Synthetic Student')).toHaveValue(teacherId)
+})
+
+test('course management updates an existing enrollment for an inactive roster student', async ({
+  page,
+}, testInfo) => {
+  const { assignments, board, enrollments, savedToast, students } = await setupCourses(page)
+  students[0].active = false
+  board.students[0].active = false
+  Object.assign(enrollments[0], { level: '4', theory: 90, handbookReceived: true })
+  const ar = testInfo.project.name === 'mobile'
+  if (ar) await page.addInitScript(() => localStorage.setItem('halaqa-language-preference', 'ar'))
+  await page.goto(`/?page=app&view=courses&courseView=students&course=${courseA}`)
+
+  const membership = page.getByRole('switch', {
+    name: `${ar ? 'مسجل' : 'Enrolled'}: Synthetic Student`,
+  })
+  const handbook = page.getByRole('checkbox', {
+    name: `${ar ? 'استلم الكتاب' : 'Handbook received'}: Synthetic Student`,
+  })
+  await expect(membership).toBeChecked()
+  await expect(handbook).toBeChecked()
+
+  await membership.click()
+  await expect(savedToast).toBeVisible()
+  await page.reload()
+  await expect(membership).not.toBeChecked()
+  await membership.click()
+  await expect(savedToast).toBeVisible()
+  await page.reload()
+  await expect(membership).toBeChecked()
+  await expect(handbook).toBeChecked()
+  expect(assignments).toEqual([
+    { kind: 'edit', courseId: courseA, id: enrollA, active: false },
+    { kind: 'edit', courseId: courseA, id: enrollA, active: true },
+  ])
+  expect(enrollments.filter((entry) => entry.courseId === courseA)).toMatchObject([
+    { id: enrollA, level: '4', theory: 90, handbookReceived: true },
+  ])
+  expect(students[0].active).toBe(false)
 })
 
 test('course roster modes focus the table and save a group across searches', async ({
