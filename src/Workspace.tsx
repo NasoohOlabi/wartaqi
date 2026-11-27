@@ -387,10 +387,6 @@ function Notebook({
   const markedToday = projected.attendance.filter(
     ({ value }) => value.date === query.date && visibleIds.has(value.studentId),
   ).length
-  const visibleNotes = projected.notes.filter(
-    ({ value }) => !value.studentId || visibleIds.has(value.studentId),
-  )
-  const latestNote = visibleNotes[visibleNotes.length - 1]
   const disabled =
     (ledger.busy && !ledger.offline) ||
     !!ledger.pending.length ||
@@ -925,19 +921,8 @@ function Notebook({
                     <strong>{markedToday}</strong>
                     <span>{language === 'ar' ? 'تم تسجيل الحضور' : 'Marked on this date'}</span>
                   </div>
-                  <div>
-                    <strong>{visibleNotes.length}</strong>
-                    <span>{t('Notes')}</span>
-                  </div>
                 </div>
               </section>
-              {latestNote && (
-                <section className="panel workspace-recent">
-                  <h2>{language === 'ar' ? 'آخر ملاحظة' : 'Latest note'}</h2>
-                  <small>{latestNote.value.date}</small>
-                  <p dir="auto">{latestNote.value.text}</p>
-                </section>
-              )}
             </aside>
           )}
         </div>
@@ -1366,6 +1351,14 @@ function StudentDetails({
                   <p className="whitespace-pre-wrap">
                     <bdi>{value.text}</bdi>
                   </p>
+                  <p className="muted flex flex-wrap gap-x-2">
+                    <bdi>{event.actor}</bdi>
+                    {[...new Set(value.tags)].map((tag) => (
+                      <bdi key={tag} dir="ltr">
+                        #{tag}
+                      </bdi>
+                    ))}
+                  </p>
                 </li>
               ))}
             </ul>
@@ -1722,19 +1715,6 @@ function AttendanceView({
             </button>
           </div>
         </form>
-        {projected.notes
-          .filter(({ value }) => value.studentId === noteStudent?.studentId && value.date === date)
-          .toReversed()
-          .map(({ event, value }) => (
-            <article key={event.id} className="mt-4 border-t pt-3">
-              <p dir="auto" className="whitespace-pre-wrap">
-                {value.text}
-              </p>
-              <p className="muted">
-                <bdi>{event.actor}</bdi> {value.tags.map((tag) => `#${tag}`).join(' ')}
-              </p>
-            </article>
-          ))}
       </dialog>
       <TableToolbar model={candidates.length ? attendanceTable : undefined}>
         <h2 className="title">
