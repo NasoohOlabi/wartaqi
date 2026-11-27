@@ -6,6 +6,7 @@ import {
 import { z } from 'zod'
 import { offlineStudentSyncSchema } from '../shared/offlineStudent'
 import type { LedgerEvent } from '../shared/ledger'
+import { expectMobileBack } from './headerLayout'
 
 const accountId = 'offline-teacher'
 const courseId = '40000000-0000-4000-8000-000000000001'
@@ -309,6 +310,7 @@ test('the full roster, attendance, notes and phone edits survive a cold offline 
   await offlinePage.getByRole('button', { name: 'العربية', exact: true }).click()
   await offlinePage.getByRole('button', { name: 'تغييراتي', exact: true }).click()
   await expect(offlinePage.getByRole('heading', { name: 'تغييراتي', exact: true })).toBeVisible()
+  if (testInfo.project.name === 'mobile') await expectMobileBack(offlinePage, 'رجوع')
   await expect(offlinePage.locator('.workspace-rail nav')).toBeVisible()
   await expect(offlinePage.locator('.workspace-auth')).toHaveCount(0)
   await expect(offlinePage.getByRole('region', { name: 'التغييرات المنتظرة' })).toBeVisible()

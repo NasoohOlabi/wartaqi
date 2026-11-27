@@ -50,6 +50,7 @@ export function AdminConsole({
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [inviting, setInviting] = useState(false)
+  const [inviteSending, setInviteSending] = useState(false)
   const [editing, setEditing] = useState<Student | null>(null)
   const [creating, setCreating] = useState(initialCreateStudent)
   const [revision, setRevision] = useState(0)
@@ -106,6 +107,52 @@ export function AdminConsole({
   const returnFromNewStudent = () =>
     returnToParent(courseId ? { view: 'courses', courseView: 'students' } : { view: 'notebook' })
   const returnToStudent = () => returnToParent({ view: 'student' })
+  const accountsBackLabel = ar
+    ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u062d\u0633\u0627\u0628\u0627\u062a'
+    : 'Back to accounts'
+  const returnToAccounts = () => {
+    setInviting(false)
+    setRevision((n) => n + 1)
+  }
+  const back = initialCreateStudent
+    ? {
+        label: courseId
+          ? ar
+            ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0637\u0644\u0627\u0628 \u0627\u0644\u062f\u0648\u0631\u0629'
+            : 'Back to course students'
+          : query.tab === 'roster'
+            ? ar
+              ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0644\u0627\u0628'
+              : 'Back to students'
+            : ar
+              ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629'
+              : 'Back to dashboard',
+        onClick: returnFromNewStudent,
+      }
+    : editingStudentId
+      ? {
+          label: ar
+            ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0627\u0644\u0628'
+            : 'Back to student',
+          onClick: returnToStudent,
+        }
+      : creating || editing
+        ? {
+            label: ar
+              ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0644\u0627\u0628'
+              : 'Back to students',
+            onClick: () => {
+              setCreating(false)
+              setEditing(null)
+            },
+          }
+        : inviting
+          ? inviteSending
+            ? undefined
+            : { label: accountsBackLabel, onClick: returnToAccounts }
+          : query.account
+            ? { label: accountsBackLabel, onClick: () => setQuery({ account: '' }, true) }
+            : undefined
   const studentTable = useDataTable('admin-students', board?.students ?? [], [
     { id: 'first', label: ar ? 'الاسم الأول' : 'First name', value: (s) => s.firstName },
     { id: 'last', label: ar ? 'اسم العائلة' : 'Last name', value: (s) => s.lastName },
@@ -154,7 +201,7 @@ export function AdminConsole({
   }
   return (
     <div className="workspace">
-      <WorkspaceNavigation administrator profile={profile} leave={signOut} />
+      <WorkspaceNavigation administrator profile={profile} leave={signOut} back={back} />
       <main id="main-content" className="workspace-main" tabIndex={-1}>
         <WorkspacePageHeader
           title={
@@ -179,48 +226,9 @@ export function AdminConsole({
                       : 'Settings'
           }
           parent={
-            initialCreateStudent ? (
-              <button className="secondary" onClick={returnFromNewStudent}>
-                {courseId
-                  ? ar
-                    ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0637\u0644\u0627\u0628 \u0627\u0644\u062f\u0648\u0631\u0629'
-                    : 'Back to course students'
-                  : query.tab === 'roster'
-                    ? ar
-                      ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0644\u0627\u0628'
-                      : 'Back to students'
-                    : ar
-                      ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0631\u0626\u064a\u0633\u064a\u0629'
-                      : 'Back to dashboard'}
-              </button>
-            ) : editingStudentId ? (
-              <button className="secondary" onClick={returnToStudent}>
-                {ar
-                  ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0627\u0644\u0628'
-                  : 'Back to student'}
-              </button>
-            ) : creating || editing ? (
-              <button
-                className="secondary"
-                onClick={() => {
-                  setCreating(false)
-                  setEditing(null)
-                }}
-              >
-                {ar
-                  ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u0637\u0644\u0627\u0628'
-                  : 'Back to students'}
-              </button>
-            ) : query.account ? (
-              <button
-                className="secondary"
-                onClick={() => {
-                  setQuery({ account: '' }, true)
-                }}
-              >
-                {ar
-                  ? '\u0627\u0644\u0639\u0648\u062f\u0629 \u0625\u0644\u0649 \u0627\u0644\u062d\u0633\u0627\u0628\u0627\u062a'
-                  : 'Back to accounts'}
+            back && !inviting ? (
+              <button className="secondary workspace-page-back" onClick={back.onClick}>
+                {back.label}
               </button>
             ) : undefined
           }
@@ -253,10 +261,9 @@ export function AdminConsole({
                   <InviteAccounts
                     userId={userId}
                     ar={ar}
-                    done={() => {
-                      setInviting(false)
-                      setRevision((n) => n + 1)
-                    }}
+                    done={returnToAccounts}
+                    backLabel={accountsBackLabel}
+                    onSendingChange={setInviteSending}
                   />
                 ) : query.account ? (
                   <>
@@ -291,7 +298,13 @@ export function AdminConsole({
                   </>
                 ) : (
                   <>
-                    <button className="primary mb-4" onClick={() => setInviting(true)}>
+                    <button
+                      className="primary mb-4"
+                      onClick={() => {
+                        setInviting(true)
+                        window.scrollTo(0, 0)
+                      }}
+                    >
                       {ar ? 'إنشاء حسابات' : 'Create accounts'}
                     </button>
                     {board.accounts.filter((account) => account.authUserId !== userId).length ===
@@ -328,6 +341,7 @@ export function AdminConsole({
                         onClick={() => {
                           setEditing(null)
                           setCreating(true)
+                          window.scrollTo(0, 0)
                         }}
                       >
                         <UserRoundPlus size={22} aria-hidden="true" />
@@ -444,6 +458,7 @@ export function AdminConsole({
                                 onClick={() => {
                                   setCreating(false)
                                   setEditing(student)
+                                  window.scrollTo(0, 0)
                                 }}
                               >
                                 <Pencil size={18} aria-hidden="true" />

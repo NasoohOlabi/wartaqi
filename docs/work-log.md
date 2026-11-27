@@ -2500,6 +2500,12 @@ Playwright discovery found 78, 81 and 73 cases in the shards. The combined cases
 
 At 10:21 Asia/Damascus, PR #206 passed Validation in 3m 21s. Its HTML reports used 1.4 MB total, down from 138 MB in the baseline PR. The first main run stopped before browser tests on one runner after the preconfigured Microsoft apt feed returned HTTP 403. `Verify` failed and Railway blocked that deployment. Browser jobs now remove that unused feed on their disposable runners and still install Chromium's dependencies from Ubuntu. The local release check passed with 229 browser cases and three skips. The follow-up PR records hosted verification and Railway deployment evidence.
 
+## 2026-11-27 10:36 Asia/Damascus — Put mobile return controls in the app bar
+
+The owner requested fixes for all return controls identified in the site audit. At 360×800, the fixed tabs covered the Create accounts form's Back button. Mobile child screens now use the leading app-bar arrow already used for student profiles. Course pages, student and account forms, invitation messages, personal settings, diagnostics, Telegram conversations and offline changes keep their existing return destinations. The desktop controls remain in the page.
+
+Synthetic browser checks exercise the leading 48px target, accessible label, tooltip, arrow direction and return behavior on phone layouts, plus labelled desktop actions. They cover the account form before edits, the invitation receipt, course subpages and return to the existing list. The PR records release and Railway checks. Physical device behavior requires a separate check.
+
 ## 2026-11-27 10:48 Asia/Damascus — Fit six follow-up dates in one row
 
 The owner reported wasted space in the follow-up date cards at 662px. The dashboard sizes each card to its localized label and wraps cards when they no longer fit on a row.

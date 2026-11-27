@@ -1,5 +1,34 @@
 import { expect, type Page } from '@playwright/test'
 
+export async function expectMobileBack(page: Page, label: string) {
+  const back = page.getByRole('button', { name: label, exact: true })
+  const logo = page.locator('.workspace-brand .wartaq-logo')
+
+  await expect(back).toHaveCount(1)
+  await expect(back).toHaveClass(/\bworkspace-up\b/)
+  await expect(back).toHaveAttribute('title', label)
+  await expect(back).toBeInViewport({ ratio: 1 })
+  const rtl = (await page.locator('html').getAttribute('dir')) === 'rtl'
+  await expect(back.locator('svg')).toHaveCSS(
+    'transform',
+    rtl ? 'matrix(-1, 0, 0, 1, 0, 0)' : 'none',
+  )
+  const target = await back.boundingBox()
+  const brand = await logo.boundingBox()
+  if (!target || !brand) throw new Error('Back or the app bar logo is hidden')
+  expect(target.height).toBeGreaterThanOrEqual(48)
+  expect(target.width).toBeGreaterThanOrEqual(48)
+  if (rtl) expect(target.x).toBeGreaterThanOrEqual(brand.x + brand.width)
+  else expect(target.x + target.width).toBeLessThanOrEqual(brand.x)
+  expect(
+    await back.evaluate((button) => {
+      const { x, y, width, height } = button.getBoundingClientRect()
+      return button.contains(document.elementFromPoint(x + width / 2, y + height / 2))
+    }),
+  ).toBe(true)
+  return back
+}
+
 export async function compactHeader(page: Page, selector: string) {
   const profile = page.locator('.profile-trigger')
   if (await profile.count()) {

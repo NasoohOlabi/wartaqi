@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import { diagnosticsBatchSchema } from '../shared/diagnostics'
 import { mockSyntheticNotebook } from './syntheticNotebook'
 import { clickAccountAction } from './profileActions'
+import { expectMobileBack } from './headerLayout'
 
 for (const language of ['en', 'ar'] as const) {
   test(`administrator diagnostics journey (${language})`, async ({ page }) => {
@@ -91,5 +92,11 @@ for (const language of ['en', 'ar'] as const) {
       true,
     )
     expect(batches.join()).not.toMatch(/secret-value|privateQuery|Private Record/)
+    const back =
+      language === 'ar'
+        ? await expectMobileBack(page, 'العودة إلى القائمة')
+        : page.getByRole('button', { name: 'Back to list', exact: true })
+    await back.click()
+    await expect(page.getByText('Synthetic Journey')).toBeVisible()
   })
 }
