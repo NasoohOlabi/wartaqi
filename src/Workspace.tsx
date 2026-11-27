@@ -1745,7 +1745,7 @@ function RosterView({
     <section className="panel">
       <TableToolbar
         model={rosterTable}
-        className="roster-toolbar mb-3"
+        className={selectedCourse ? 'roster-course-toolbar mb-3' : 'mb-3'}
         actions={
           selectedCourse && (
             <button
