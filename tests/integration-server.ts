@@ -5,6 +5,7 @@ import { z } from 'zod'
 export async function startIntegrationServer(
   databaseUrl: string,
   authSecret = randomBytes(32).toString('hex'),
+  telegramWorkerSecret?: string,
 ) {
   const ready = Promise.withResolvers<unknown>()
   const child = Bun.spawn([process.execPath, 'run', import.meta.path], {
@@ -12,6 +13,7 @@ export async function startIntegrationServer(
       ...process.env,
       DATABASE_URL: databaseUrl,
       BETTER_AUTH_SECRET: authSecret,
+      ...(telegramWorkerSecret && { TELEGRAM_WORKER_SECRET: telegramWorkerSecret }),
     },
     stdout: 'ignore',
     stderr: 'inherit',

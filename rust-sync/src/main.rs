@@ -1,20 +1,35 @@
 mod access;
 mod api;
+mod assets;
+mod auth_browser;
 mod auth_get_session;
+mod auth_invitation_profile;
+mod auth_profile;
+mod auth_sign_in;
 mod catalog;
-#[cfg(test)]
+mod catalog_legacy;
 mod credentials;
+mod device_sessions;
 mod diagnostics;
 mod grade_sync;
 mod ledger;
 mod ledger_writes;
+#[cfg(test)]
+mod mcp_discovery;
+#[cfg(test)]
+mod mcp_tools;
+mod roster_admin;
 mod session_identity;
 mod session_replay;
 mod staff_reads;
 mod student_writes;
+mod telegram_conversations;
+mod telegram_student;
+#[cfg(test)]
+mod telegram_teacher;
 mod writes;
 
-use std::{env, time::Duration};
+use std::{env, path::PathBuf, sync::Arc, time::Duration};
 
 use axum::{
     Router,
@@ -126,7 +141,10 @@ async fn shutdown_signal() {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port: u16 = env::var("PORT").unwrap_or_else(|_| "3001".into()).parse()?;
     let origin = env::var("WORKSPACE_ORIGIN")?;
-    let bun_origin = url::Url::parse(&env::var("BUN_ORIGIN")?)?;
+    let bun_origin = env::var("BUN_ORIGIN")
+        .ok()
+        .map(|origin| url::Url::parse(&origin))
+        .transpose()?;
     let database_url = env::var("DATABASE_URL")?;
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
@@ -136,9 +154,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api = api::create(
         &database_url,
         origin.clone(),
-        &bun_origin,
+        bun_origin.as_ref(),
         http,
         env::var("BETTER_AUTH_SECRET").ok(),
+        env::var("TELEGRAM_WORKER_SECRET").ok(),
     )?;
     let routes = api.router();
     let (layer, io) = SocketIo::builder().max_payload(4096).build_layer();
@@ -164,12 +183,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
     let address = listener.local_addr()?;
     let task = tokio::spawn(listen(database_url, io.clone()));
-    let app = Router::new()
+    let mut app = Router::new()
         .route(
             "/health",
             get(|| async { axum::Json(serde_json::json!({"ok": true})) }),
         )
-        .merge(routes)
+        .merge(routes);
+    if let Some(root) = env::var_os("ASSET_DIR") {
+        let root = Arc::new(PathBuf::from(root).canonicalize()?);
+        if !root.is_dir() {
+            return Err("ASSET_DIR must be a directory".into());
+        }
+        app = app.fallback(move |request: Request| {
+            let root = root.clone();
+            async move {
+                let path = request.uri().path();
+                if path.starts_with("/api/")
+                    || path.starts_with("/.well-known/")
+                    || path == "/mcp"
+                    || path.starts_with("/mcp/")
+                {
+                    return StatusCode::NOT_FOUND.into_response();
+                }
+                let path = path.to_owned();
+                let method = request.method().clone();
+                tokio::task::spawn_blocking(move || assets::serve(&root, &method, &path))
+                    .await
+                    .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+            }
+        });
+    }
+    let app = app
         .layer(layer)
         .layer(middleware::from_fn(move |req, next| {
             gate(req, next, origin.clone())

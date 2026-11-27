@@ -11,13 +11,14 @@ export async function startRustBrowserProxy() {
       hmr: false,
       watch: null,
       proxy: {
-        '^/(socket\\.io/|api/(me|notebook|student/attendance|attendance/sync))(?=\\?|$)': {
-          target: 'http://127.0.0.1:1',
-          ws: true,
-          configure(_proxy, options) {
-            rustProxy = options
+        '^/(socket\\.io/|api/(auth/(sign-in/phone|get-session|sign-out)|device-accounts(/switch)?|me|notebook|student/attendance|attendance/sync))(?=\\?|$)':
+          {
+            target: 'http://127.0.0.1:1',
+            ws: true,
+            configure(_proxy, options) {
+              rustProxy = options
+            },
           },
-        },
         '/': {
           target: 'http://127.0.0.1:1',
           configure(_proxy, options) {

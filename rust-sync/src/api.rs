@@ -16,8 +16,10 @@ use tokio_postgres::NoTls;
 use url::Url;
 
 use crate::{
-    access, auth_get_session, catalog, diagnostics, grade_sync, ledger, ledger_writes,
-    session_identity, session_replay, staff_reads, student_writes, writes::Error,
+    access, auth_browser, auth_get_session, auth_invitation_profile, auth_profile, catalog,
+    catalog_legacy, diagnostics, grade_sync, ledger, ledger_writes, roster_admin, session_identity,
+    session_replay, staff_reads, student_writes, telegram_conversations, telegram_student,
+    writes::Error,
 };
 
 const WRITE_PATHS: &[&str] = &[
@@ -27,6 +29,11 @@ const WRITE_PATHS: &[&str] = &[
     "/api/student/sync",
     "/api/admin/courses",
     "/api/admin/courses/settings",
+    "/api/admin/courses/status",
+    "/api/admin/students",
+    "/api/admin/students/enroll",
+    "/api/admin/enrollments",
+    "/api/admin/enrollments/decision",
     "/api/admin/enrollments/handbook",
     "/api/admin/enrollments/grades",
     "/api/admin/enrollments/membership",
@@ -36,12 +43,16 @@ const REPLAY_PATH: &str = "/api/diagnostics/replay";
 const DIAGNOSTICS_PATH: &str = "/api/diagnostics";
 const JOURNEYS_PATH: &str = "/api/diagnostics/journeys";
 const DIAGNOSTIC_EVENTS_PATH: &str = "/api/diagnostics/events";
+const TELEGRAM_INGEST_PATH: &str = "/api/telegram/conversations";
+const TELEGRAM_CONVERSATIONS_PATH: &str = "/api/diagnostics/telegram/conversations";
+const TELEGRAM_TURNS_PATH: &str = "/api/diagnostics/telegram/turns";
 
 #[derive(Clone)]
 pub(crate) struct Api {
     pool: Pool,
     origin: HeaderValue,
     sessions: Sessions,
+    telegram_worker_secret: Option<Arc<str>>,
 }
 
 #[derive(Clone)]
@@ -53,9 +64,10 @@ enum Sessions {
 pub(crate) fn create(
     database_url: &str,
     origin: String,
-    bun_origin: &Url,
+    bun_origin: Option<&Url>,
     http: reqwest::Client,
     secret: Option<String>,
+    telegram_worker_secret: Option<String>,
 ) -> Result<Api, Box<dyn std::error::Error>> {
     let mut db: tokio_postgres::Config = database_url.parse()?;
     db.connect_timeout(Duration::from_secs(10))
@@ -73,7 +85,9 @@ pub(crate) fn create(
         },
         Some(_) => return Err("BETTER_AUTH_SECRET must contain at least 32 characters".into()),
         None => Sessions::Bun {
-            url: bun_origin.join("/api/auth/get-session")?,
+            url: bun_origin
+                .ok_or("BUN_ORIGIN is required without BETTER_AUTH_SECRET")?
+                .join("/api/auth/get-session")?,
             http,
         },
     };
@@ -81,6 +95,7 @@ pub(crate) fn create(
         pool,
         origin: origin.parse()?,
         sessions,
+        telegram_worker_secret: telegram_worker_secret.map(Into::into),
     })
 }
 
@@ -94,14 +109,40 @@ impl Api {
             .route(REPLAY_PATH, any(handle))
             .route(DIAGNOSTICS_PATH, any(handle))
             .route(JOURNEYS_PATH, any(handle))
-            .route(DIAGNOSTIC_EVENTS_PATH, any(handle));
+            .route(DIAGNOSTIC_EVENTS_PATH, any(handle))
+            .route(TELEGRAM_CONVERSATIONS_PATH, any(handle))
+            .route(TELEGRAM_TURNS_PATH, any(handle))
+            .route("/api/telegram/student", any(telegram_student_request))
+            .route(TELEGRAM_INGEST_PATH, any(telegram_ingest));
         if matches!(self.sessions, Sessions::Native { .. }) {
             router = router.route("/api/auth/get-session", get(current_session));
         }
         for path in WRITE_PATHS {
             router = router.route(path, any(handle));
         }
-        router.with_state(self.clone())
+        let router = router.with_state(self.clone());
+        match &self.sessions {
+            Sessions::Native { secret, secure } => router
+                .merge(auth_browser::router(
+                    self.pool.clone(),
+                    self.origin.clone(),
+                    secret.clone(),
+                    *secure,
+                ))
+                .merge(auth_profile::router(
+                    self.pool.clone(),
+                    self.origin.clone(),
+                    secret.clone(),
+                    *secure,
+                ))
+                .merge(auth_invitation_profile::router(
+                    self.pool.clone(),
+                    self.origin.clone(),
+                    secret.clone(),
+                    *secure,
+                )),
+            Sessions::Bun { .. } => router,
+        }
     }
 
     pub(crate) async fn authorize_socket(&self, headers: &HeaderMap, expected: &str) -> bool {
@@ -210,7 +251,12 @@ async fn handle(State(state): State<Api>, request: Request) -> Response {
     }
     if matches!(
         path,
-        REPLAY_PATH | DIAGNOSTICS_PATH | JOURNEYS_PATH | DIAGNOSTIC_EVENTS_PATH
+        REPLAY_PATH
+            | DIAGNOSTICS_PATH
+            | JOURNEYS_PATH
+            | DIAGNOSTIC_EVENTS_PATH
+            | TELEGRAM_CONVERSATIONS_PATH
+            | TELEGRAM_TURNS_PATH
     ) {
         let route = if path == REPLAY_PATH {
             Route::Replay
@@ -269,6 +315,40 @@ async fn handle(State(state): State<Api>, request: Request) -> Response {
             .insert(header::VARY, HeaderValue::from_static("Origin"));
     }
     response
+}
+
+async fn telegram_ingest(State(state): State<Api>, request: Request) -> Response {
+    let (parts, body) = request.into_parts();
+    if let Err(status) = telegram_conversations::check_ingest(
+        &parts.method,
+        &parts.headers,
+        state.telegram_worker_secret.as_deref(),
+    ) {
+        let message = match status {
+            StatusCode::UNAUTHORIZED => "Unauthorized",
+            StatusCode::METHOD_NOT_ALLOWED => "Method not allowed",
+            _ => "Invalid request",
+        };
+        return error(status, message);
+    }
+    let Ok(bytes) = bounded_body(body, 65_536).await else {
+        return error(StatusCode::BAD_REQUEST, "Invalid request");
+    };
+    if let Ok(client) = state.pool.get().await
+        && let Ok(response) = telegram_conversations::ingest(&**client, &bytes).await
+    {
+        return response;
+    }
+    error(StatusCode::SERVICE_UNAVAILABLE, "Unavailable")
+}
+
+async fn telegram_student_request(State(state): State<Api>, request: Request) -> Response {
+    telegram_student::handle(
+        &state.pool,
+        request,
+        state.telegram_worker_secret.as_deref(),
+    )
+    .await
 }
 
 fn error(status: StatusCode, message: &str) -> Response {
@@ -355,13 +435,14 @@ async fn authorized(
         Route::Me => grant.me(),
         _ if grant.requires_setup() => return Err(Error::Forbidden),
         Route::Replay => {
+            tx.commit().await?;
             let bytes = if parts.method == Method::POST {
                 bounded_body(body, 48 * 1024).await?
             } else {
                 Vec::new()
             };
-            let response = session_replay::handle(
-                &*tx,
+            return Ok(session_replay::handle(
+                &**client,
                 &subject,
                 grant.role(),
                 &parts.method,
@@ -369,25 +450,31 @@ async fn authorized(
                 headers,
                 &bytes,
             )
-            .await?;
-            tx.commit().await?;
-            return Ok(response);
+            .await?);
         }
         Route::Diagnostics => {
+            // The diagnostic insert takes a foreign-key lock on the actor. Release the
+            // access check's row lock before competing with another writer for this event ID.
+            tx.commit().await?;
             let response = match (path, &parts.method) {
                 (DIAGNOSTICS_PATH, &Method::POST) => {
                     let bytes = bounded_body(body, 16 * 1024).await?;
-                    diagnostics::ingest(&*tx, &subject, grant.role(), headers, &bytes).await?
+                    diagnostics::ingest(&**client, &subject, grant.role(), headers, &bytes).await?
                 }
                 (JOURNEYS_PATH | DIAGNOSTIC_EVENTS_PATH, &Method::GET) => {
                     if !grant.is_admin() {
                         return Err(Error::Forbidden);
                     }
-                    diagnostics::read(&*tx, &parts.uri).await?
+                    diagnostics::read(&**client, &parts.uri).await?
+                }
+                (TELEGRAM_CONVERSATIONS_PATH | TELEGRAM_TURNS_PATH, _) => {
+                    if !grant.is_admin() {
+                        return Err(Error::Forbidden);
+                    }
+                    telegram_conversations::read(&**client, &parts.method, &parts.uri).await?
                 }
                 _ => return Ok(error(StatusCode::NOT_FOUND, "Not found")),
             };
-            tx.commit().await?;
             return Ok(response);
         }
         Route::Notebook if !grant.is_student() && grant.can_read() => {
@@ -411,7 +498,16 @@ async fn authorized(
                 return Err(Error::Forbidden);
             }
             let input = read_body(body).await?;
-            if path == "/api/admin/enrollments/grades" {
+            if matches!(path, "/api/admin/students" | "/api/admin/students/enroll") {
+                roster_admin::apply(&tx, path, input).await?
+            } else if matches!(
+                path,
+                "/api/admin/enrollments"
+                    | "/api/admin/enrollments/decision"
+                    | "/api/admin/courses/status"
+            ) {
+                catalog_legacy::apply(&tx, path, &subject, input).await?
+            } else if path == "/api/admin/enrollments/grades" {
                 if let Some(response) = grade_sync::apply(&tx, &subject, &grant, &input).await? {
                     response
                 } else {

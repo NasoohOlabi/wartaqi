@@ -194,7 +194,7 @@ pub(crate) fn decode_event(row: &Row) -> Result<Value, Error> {
     )?)
 }
 
-fn project(events: &[Value], courses: &HashMap<String, String>) -> Vec<Value> {
+pub(crate) fn project(events: &[Value], courses: &HashMap<String, String>) -> Vec<Value> {
     let mut unique: HashMap<&str, &Value> = HashMap::new();
     let mut ordered = Vec::new();
     let mut reversed = HashSet::new();

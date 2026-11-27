@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import { Pool } from 'pg'
+import { z } from 'zod'
 import { createIdentity } from './integration-identity'
 import { startIntegrationServer } from './integration-server'
 import { startRustBackend } from './rust-backend-server'
@@ -26,12 +27,22 @@ parity(
     const enrollmentIds = Array.from({ length: 3 }, uuid)
     const users: string[] = []
     const receipts: string[] = []
+    const telegramGrants: string[] = []
+    const trace = randomBytes(9).toString('base64url')
     const password = 'synthetic-parity-password'
     try {
       const secret = randomBytes(32).toString('hex')
-      bun = await startIntegrationServer(databaseUrl, secret)
+      const telegramWorkerSecret = randomBytes(32).toString('hex')
+      bun = await startIntegrationServer(databaseUrl, secret, telegramWorkerSecret)
       const { origin } = bun
-      rust = await startRustBackend(binary, databaseUrl, origin, secret)
+      rust = await startRustBackend(
+        binary,
+        databaseUrl,
+        origin,
+        secret,
+        origin,
+        telegramWorkerSecret,
+      )
       const endpoints = [origin, rust.origin]
       for (const [role, id, phone] of [
         ['teacher', teacherId, '+12025550181'],
@@ -99,8 +110,8 @@ parity(
         )
       }
 
-      const signIn = async (phone: string, userId: string) => {
-        const response = await fetch(`${origin}/api/auth/sign-in/phone`, {
+      const signIn = async (phone: string, userId: string, endpoint = origin) => {
+        const response = await fetch(`${endpoint}/api/auth/sign-in/phone`, {
           method: 'POST',
           headers: { origin, 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone, password }),
@@ -136,6 +147,96 @@ parity(
       await same('/api/me', 401)
       await same('/api/auth/get-session', 200)
       await same('/api/auth/get-session', 200, { headers: teacher })
+      const rustTeacher = await signIn('+12025550181', users[0], rust.origin)
+      await same('/api/auth/get-session', 200, { headers: rustTeacher })
+      await same('/api/me', 200, { headers: rustTeacher })
+      await same('/api/device-accounts', 200, { headers: teacher })
+      await same('/api/device-accounts', 200, { headers: rustTeacher })
+      const jsonPost = (headers: typeof teacher, body: unknown): RequestInit => ({
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      await same('/api/auth/update-user', 200, jsonPost(rustTeacher, { name: 'Native profile' }))
+      await same('/api/auth/get-session', 200, { headers: rustTeacher })
+      const changedPassword = 'updated-synthetic-password'
+      const passwordChange = await fetch(
+        `${rust.origin}/api/auth/change-password`,
+        jsonPost(rustTeacher, { currentPassword: password, newPassword: changedPassword }),
+      )
+      expect(passwordChange.status).toBe(200)
+      const loginWithNewPassword = await fetch(
+        `${origin}/api/auth/sign-in/phone`,
+        jsonPost(teacher, { phone: '+12025550181', password: changedPassword }),
+      )
+      expect(loginWithNewPassword.status).toBe(200)
+      const signOut = await fetch(`${rust.origin}/api/auth/sign-out`, {
+        method: 'POST',
+        headers: rustTeacher,
+      })
+      expect(signOut.status).toBe(200)
+      await same('/api/me', 401, { headers: rustTeacher })
+      await same('/api/me', 200, { headers: teacher })
+      await same('/api/diagnostics/telegram/conversations', 403, { headers: teacher })
+      await same('/api/diagnostics/telegram/conversations?before=0', 400, { headers: admin })
+      await same('/api/telegram/conversations', 401, { method: 'POST', body: '{}' })
+      await same('/api/telegram/student', 401, { method: 'POST', body: '{}' })
+      const conversationId = randomBytes(32).toString('hex')
+      const turn = {
+        trace,
+        conversationId,
+        question: 'Help with https://local.invalid?',
+        reply: 'Use the help menu',
+        delivery: 'sent',
+        outcome: 'ok',
+        promptVersion: 'wartaq-help-v1',
+        model: 'synthetic',
+        elapsedMs: 10,
+      }
+      const ingest = (body: unknown): RequestInit => ({
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${telegramWorkerSecret}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      })
+      expect(await same('/api/telegram/conversations', 200, ingest(turn))).toEqual({ ok: true })
+      await same('/api/telegram/conversations', 409, ingest({ ...turn, reply: 'Different' }))
+      await same('/api/diagnostics/telegram/conversations', 200, { headers: admin })
+      expect(
+        await same(`/api/diagnostics/telegram/turns?conversation=${conversationId}`, 200, {
+          headers: admin,
+        }),
+      ).toEqual({
+        items: [expect.objectContaining({ trace, question: 'Help with [redacted]' })],
+        nextCursor: null,
+      })
+      for (const endpoint of endpoints) {
+        const issued = await fetch(
+          `${endpoint}/api/telegram/student`,
+          ingest({ action: 'login-phone', phone: '+12025550183' }),
+        )
+        expect(issued.status).toBe(200)
+        const { token, role } = z
+          .object({
+            token: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+            role: z.literal('student'),
+          })
+          .parse(await issued.json())
+        telegramGrants.push(
+          `wartaq:telegram:${createHash('sha256').update(token).digest('hex')}:${users[2]}`,
+        )
+        expect(role).toBe('student')
+        await same('/api/telegram/student', 200, ingest({ action: 'attendance', token }))
+        const other = endpoint === origin ? rust.origin : origin
+        const revoked = await fetch(
+          `${other}/api/telegram/student`,
+          ingest({ action: 'unlink', token }),
+        )
+        expect(revoked.status).toBe(200)
+        await same('/api/telegram/student', 403, ingest({ action: 'attendance', token }))
+      }
       await same('/api/me', 401, { headers: { ...teacher, 'x-user-id': users[1] } })
       await same('/api/me', 403, { headers: { ...admin, origin: 'https://foreign.invalid' } })
       await same('/api/me', 405, { headers: teacher, method: 'POST' })
@@ -395,6 +496,21 @@ parity(
       await same('/api/student/attendance', 400, { headers: student })
       await same('/api/notebook', 400, { headers: teacher })
       await pool.query(
+        'UPDATE app_accounts SET invitation_request_id = $2, invitation_requires_setup = true WHERE auth_user_id = $1',
+        [users[2], uuid()],
+      )
+      await same('/api/student/attendance', 403, { headers: student })
+      await same('/api/me/invitation-profile', 400, jsonPost(student, { newPassword: password }))
+      const otherStudentSession = await signIn('+12025550183', users[2], rust.origin)
+      const invitation = await fetch(
+        `${rust.origin}/api/me/invitation-profile`,
+        jsonPost(student, { newPassword: changedPassword }),
+      )
+      expect(invitation.status).toBe(200)
+      expect(await invitation.json()).toEqual({ saved: true, sessionRevoked: false })
+      await same('/api/me', 200, { headers: student })
+      await same('/api/me', 401, { headers: otherStudentSession })
+      await pool.query(
         "UPDATE app_accounts SET expires_at = '2000-01-01T00:00:00Z' WHERE auth_user_id = $1",
         [users[0]],
       )
@@ -407,6 +523,10 @@ parity(
       await Promise.all([bun?.child.exited, rust?.exited])
       await pool.query('DELETE FROM events WHERE student_id = $1', [studentId])
       await pool.query('DELETE FROM website_diagnostics WHERE actor_id = ANY($1::text[])', [users])
+      await pool.query('DELETE FROM telegram_conversation_turns WHERE trace = $1', [trace])
+      await pool.query('DELETE FROM neon_auth.verification WHERE identifier = ANY($1::text[])', [
+        telegramGrants,
+      ])
       await pool.query('DELETE FROM website_session_replay WHERE actor_id = ANY($1::text[])', [
         users,
       ])

@@ -9,15 +9,17 @@ export async function startRustBackend(
   bunOrigin: string,
   authSecret: string,
   workspaceOrigin = bunOrigin,
+  telegramWorkerSecret?: string,
 ) {
   const child = spawn(binary, [], {
     env: {
       ...process.env,
       PORT: '0',
-      BUN_ORIGIN: bunOrigin,
+      BUN_ORIGIN: undefined,
       WORKSPACE_ORIGIN: workspaceOrigin,
       DATABASE_URL: databaseUrl,
       BETTER_AUTH_SECRET: authSecret,
+      ...(telegramWorkerSecret && { TELEGRAM_WORKER_SECRET: telegramWorkerSecret }),
     },
     stdio: ['ignore', 'pipe', 'inherit'],
   })
