@@ -3,6 +3,7 @@ import { clickAccountAction } from './profileActions'
 import { expectMobileBack } from './headerLayout'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { mkdir } from 'node:fs/promises'
+import type { input } from 'zod'
 import {
   applyGradeChanges,
   gradeChangesConflict,
@@ -2045,7 +2046,7 @@ test('administrator no-course Students includes the complete inactive register',
     { id: '30000000-0000-4000-8000-000000000004', name: 'Fourth Course', open: true },
     { id: '30000000-0000-4000-8000-000000000005', name: 'Withdrawn Course', open: true },
   ]
-  const enrollments = [
+  const enrollments: input<typeof enrollmentSchema>[] = [
     {
       id: enrollA,
       courseId: courseA,
@@ -2054,6 +2055,7 @@ test('administrator no-course Students includes the complete inactive register',
       active: true,
       practical: null,
       theory: null,
+      gradeDecisions: [],
     },
   ]
   for (const [index, course] of courses.entries()) {
@@ -2063,8 +2065,20 @@ test('administrator no-course Students includes the complete inactive register',
       studentId: secondStudentId,
       level: 'Historical level',
       active: index < 4,
-      practical: null,
-      theory: null,
+      practical: index === 0 ? 0 : null,
+      theory: index === 0 ? 90 : null,
+      gradeDecisions:
+        index === 1
+          ? [
+              {
+                requestId: '60000000-0000-4000-8000-000000000001',
+                result: 'pass',
+                note: 'Synthetic decision',
+                actor: 'admin',
+                at: '2026-01-01T00:00:00.000Z',
+              },
+            ]
+          : [],
     })
   }
   const historyEvents = [
@@ -2168,27 +2182,61 @@ test('administrator no-course Students includes the complete inactive register',
   await expect(
     detail.getByText('Recorded sessions', { exact: true }).locator('..').locator('dd'),
   ).toHaveText('2')
-  await expect(detail.getByText('50.0%', { exact: true })).toBeVisible()
+  await expect(
+    detail.locator('.student-detail-totals').getByText('50.0%', { exact: true }),
+  ).toBeVisible()
   await expect(detail.getByRole('button', { name: 'Take attendance' })).toHaveCount(0)
+  const results = detail.locator('.student-course-results')
+  const firstResult = results.locator('tbody tr').filter({ hasText: 'Synthetic Course' })
+  await expect(firstResult.locator('td[data-label="Theory"]')).toHaveText('90')
+  await expect(firstResult.locator('td[data-label="Practical"]')).toHaveText('0')
+  await expect(firstResult.locator('td[data-label="Attendance rate"]')).toHaveText('100.0%')
+  await expect(firstResult.locator('td[data-label="Result"]')).toHaveText('Fail')
+  const closedResult = results.locator('tbody tr').filter({ hasText: 'Closed Course' })
+  await expect(closedResult).toContainText('Closed')
+  await expect(closedResult.locator('td[data-label="Practical"]')).toHaveText('—')
+  await expect(closedResult.locator('td[data-label="Attendance rate"]')).toHaveText('—')
+  await expect(closedResult.locator('td[data-label="Result"]')).toHaveText('Pass')
+  await expect(results.locator('tbody tr').filter({ hasText: 'Withdrawn Course' })).toContainText(
+    'Withdrawn',
+  )
+  await expect(results.locator('tbody tr').filter({ hasText: 'Withdrawn Course' })).toContainText(
+    'Pending',
+  )
+  const history = detail.locator('details')
+  await expect(history).not.toHaveAttribute('open', '')
+  await history.locator('summary').click()
   await expect(
     detail.getByRole('region', { name: 'Attendance history' }).locator('tbody tr'),
   ).toHaveCount(2)
   await page.reload()
-  await expect(detail.getByText('50.0%', { exact: true })).toBeVisible()
+  await expect(
+    detail.locator('.student-detail-totals').getByText('50.0%', { exact: true }),
+  ).toBeVisible()
   await selectCourse(page, 'Synthetic Course')
   await expect(
     detail.getByText('Recorded sessions', { exact: true }).locator('..').locator('dd'),
   ).toHaveText('1')
-  await expect(detail.getByText('100.0%', { exact: true })).toBeVisible()
+  await expect(
+    detail.locator('.student-detail-totals').getByText('100.0%', { exact: true }),
+  ).toBeVisible()
+  await expect(history).toHaveAttribute('open', '')
   await page.goBack()
-  await expect(detail.getByText('50.0%', { exact: true })).toBeVisible()
+  await expect(
+    detail.locator('.student-detail-totals').getByText('50.0%', { exact: true }),
+  ).toBeVisible()
   await page.goBack()
   await expect(historical).toBeVisible()
+  await page.goto(`/?page=app&view=student&tab=roster&student=${secondStudentId}&course=${courseB}`)
+  await expect(history.locator('summary')).toBeVisible()
+  await expect(history).not.toHaveAttribute('open', '')
+  await page.goBack()
   await page.goto('/?page=app&view=student&tab=roster&student=20000000-0000-4000-8000-000000000099')
   await expect(page.getByText('Student unavailable')).toBeVisible()
   await expect(page.locator('.student-details')).toHaveCount(0)
   await page.goBack()
   await unassigned.getByRole('button', { name: 'Open student' }).click()
+  await page.locator('.student-details details summary').click()
   await expect(page.locator('.student-details').getByText('No attendance records')).toBeVisible()
   await page.goBack()
 
