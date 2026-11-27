@@ -63,7 +63,7 @@ test('staff phone links remain usable in both languages', async ({ page }) => {
   })
   await page.route('**/api/**', async (route) => {
     const path = new URL(route.request().url()).pathname
-    if (path === '/api/diagnostics') return route.fulfill({ json: { ok: true } })
+    if (path.startsWith('/api/diagnostics')) return route.fulfill({ json: { ok: true } })
     if (route.request().method() !== 'GET') writes.push(path)
     if (path.startsWith('/api/auth/')) return route.fallback()
     if (path === '/api/me') return route.fulfill({ json: { account: teacher } })
@@ -122,8 +122,54 @@ test('staff phone links remain usable in both languages', async ({ page }) => {
     .getByRole('navigation', { name: 'Settings sections' })
     .getByRole('link', { name: 'Students', exact: true })
     .click()
-  await check()
-  await clickAccountAction(page, 'العربية')
-  await check()
+  for (const ar of [false, true]) {
+    if (ar) await clickAccountAction(page, 'العربية')
+    const register = page.getByRole('region', { name: ar ? 'قائمة الطلاب' : 'Student list' })
+    const dial = page.getByRole('link', { name: '+963 912 345 678', exact: true })
+    const row = register.locator('tbody tr').filter({ has: dial })
+    const chat = row.getByRole('link', { name: /WhatsApp chat|محادثة واتساب/ })
+    const heading = page.getByRole('heading', { name: ar ? 'الطلاب' : 'Students', exact: true })
+    const add = page.getByRole('button', { name: ar ? 'إضافة طالب' : 'Add student', exact: true })
+    const edit = row.getByRole('button', { name: ar ? 'تعديل' : 'Edit', exact: true })
+    for (const button of [add, edit]) {
+      await expect(button).toHaveText('')
+      await expect(button.locator('svg[aria-hidden="true"]')).toBeVisible()
+    }
+    await expect(chat).toHaveAttribute('href', 'https://wa.me/963912345678')
+    for (const width of [1624, 320, 390, 430]) {
+      await page.setViewportSize({ width, height: 844 })
+      await check()
+      if (width > 430) continue
+      const [phone, whatsapp, title, create, name, pencil] = await Promise.all([
+        dial.boundingBox(),
+        chat.boundingBox(),
+        heading.boundingBox(),
+        add.boundingBox(),
+        row.locator('td:first-child').boundingBox(),
+        edit.boundingBox(),
+      ])
+      if (!phone || !whatsapp || !title || !create || !name || !pencil)
+        throw new Error('A Settings roster field or action is hidden')
+      for (const target of [whatsapp, create, pencil]) {
+        expect(target.width).toBeGreaterThanOrEqual(44)
+        expect(target.height).toBeGreaterThanOrEqual(44)
+      }
+      expect(Math.abs(phone.y + phone.height / 2 - whatsapp.y - whatsapp.height / 2)).toBeLessThan(
+        1,
+      )
+      expect(title.height).toBeLessThan(40)
+      expect(create.y).toBeLessThan(title.y + title.height)
+      expect(pencil.y).toBeLessThan(name.y + name.height)
+      expect(await register.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      )
+    }
+    await edit.click()
+    await expect(page.locator('form.role-editor')).toBeVisible()
+    await page.getByRole('button', { name: ar ? 'إلغاء' : 'Cancel', exact: true }).click()
+    await add.click()
+    await expect(page.locator('form.role-editor')).toBeVisible()
+    await page.getByRole('button', { name: ar ? 'إلغاء' : 'Cancel', exact: true }).click()
+  }
   expect(writes).toEqual([])
 })

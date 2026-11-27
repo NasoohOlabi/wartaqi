@@ -796,7 +796,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     '—',
     'Synthetic Teacher',
     'Active',
-    'Edit',
+    '',
   ])
   await expect(rows.nth(1).locator('td')).toHaveText([
     'أحمد محمد',
@@ -807,7 +807,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     '—',
     'Synthetic Teacher',
     'Inactive',
-    'Edit',
+    '',
   ])
   await expect(rows.nth(2).locator('td')).toHaveText([
     'Mononym',
@@ -818,7 +818,7 @@ test('administrator assigns roles and creates an assigned student', async ({ pag
     '—',
     'Unassigned',
     'Active',
-    'Edit',
+    '',
   ])
   await rows.nth(2).getByRole('button', { name: 'Edit' }).click()
   await expect(page.locator('form.role-editor').getByLabel('Teacher')).toHaveValue('')

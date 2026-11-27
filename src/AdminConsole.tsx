@@ -4,7 +4,7 @@ import { formatLevel } from './levelFormat'
 import { PhoneNumber } from './PhoneNumber'
 import { TableHeader, TableToolbar } from './DataTable'
 import { useDataTable } from './useDataTable'
-import { ChevronDown, Copy, RefreshCw } from 'lucide-react'
+import { ChevronDown, Copy, Pencil, RefreshCw, UserRoundPlus } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { z } from 'zod'
 import {
@@ -42,6 +42,8 @@ export function AdminConsole({
 }) {
   const { language, t, errorMessage } = useLanguage()
   const ar = language === 'ar'
+  const addStudentLabel = ar ? 'إضافة طالب' : 'Add student'
+  const editLabel = ar ? 'تعديل' : 'Edit'
   const query = useQueryState()
   const [board, setBoard] = useState<Board | null>(null)
   const [error, setError] = useState('')
@@ -314,7 +316,24 @@ export function AdminConsole({
             {selectedSection === 'students' && (
               <section className="panel role-section">
                 {showStudentTable && (
-                  <TableToolbar model={studentTable} className="mb-4">
+                  <TableToolbar
+                    model={studentTable}
+                    className="role-students-toolbar mb-4"
+                    actions={
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={addStudentLabel}
+                        title={addStudentLabel}
+                        onClick={() => {
+                          setEditing(null)
+                          setCreating(true)
+                        }}
+                      >
+                        <UserRoundPlus size={22} aria-hidden="true" />
+                      </button>
+                    }
+                  >
                     <h2 className="title">{ar ? 'الطلاب' : 'Students'}</h2>
                   </TableToolbar>
                 )}
@@ -324,17 +343,6 @@ export function AdminConsole({
                       ? '\u0627\u0644\u0637\u0627\u0644\u0628 \u063a\u064a\u0631 \u0645\u062a\u0627\u062d'
                       : 'Student unavailable'}
                   </p>
-                )}
-                {showStudentTable && (
-                  <button
-                    className="secondary mb-4"
-                    onClick={() => {
-                      setEditing(null)
-                      setCreating(true)
-                    }}
-                  >
-                    {ar ? 'إضافة طالب' : 'Add student'}
-                  </button>
                 )}
                 {(creating || activeEditing) && (
                   <StudentForm
@@ -398,7 +406,10 @@ export function AdminConsole({
                             <td data-label={ar ? 'المستوى' : 'Level'}>
                               <bdi>{formatLevel(student.group)}</bdi>
                             </td>
-                            <td dir="ltr" data-label={ar ? 'واتساب' : 'WhatsApp'}>
+                            <td
+                              className="roster-student-phone"
+                              data-label={ar ? 'واتساب' : 'WhatsApp'}
+                            >
                               {student.whatsapp ? <PhoneNumber value={student.whatsapp} /> : '—'}
                             </td>
                             <td dir="auto" data-label={ar ? 'المنطقة' : 'Location'}>
@@ -421,15 +432,21 @@ export function AdminConsole({
                                   ? 'غير نشط'
                                   : 'Inactive'}
                             </td>
-                            <td data-label={ar ? 'الإجراءات' : 'Actions'}>
+                            <td
+                              className="role-student-edit"
+                              data-label={ar ? 'الإجراءات' : 'Actions'}
+                            >
                               <button
-                                className="secondary"
+                                type="button"
+                                className="icon-button"
+                                aria-label={editLabel}
+                                title={editLabel}
                                 onClick={() => {
                                   setCreating(false)
                                   setEditing(student)
                                 }}
                               >
-                                {ar ? 'تعديل' : 'Edit'}
+                                <Pencil size={18} aria-hidden="true" />
                               </button>
                             </td>
                           </tr>

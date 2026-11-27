@@ -383,7 +383,8 @@
   text-align: center;
 }
 
-.roster-students-table .roster-mobile-open {
+.roster-students-table .roster-mobile-open,
+.roster-mobile-status {
   display: none;
 }
 
@@ -408,6 +409,28 @@
     column-gap: 1rem;
     padding-block: 0.5rem;
     border-bottom: 1px solid #dce9e8;
+  }
+  .roster-students-table tbody tr {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+    column-gap: 0.5rem;
+  }
+  .role-students-table tbody tr {
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) 44px;
+    column-gap: 0.375rem;
+  }
+  .role-students-toolbar,
+  .role-students-toolbar .table-toolbar-actions {
+    gap: 0.25rem;
+  }
+  .role-students-table td:nth-child(2n + 4) {
+    grid-column: span 2;
+  }
+  .role-students-table .role-student-edit {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .role-students-table .role-student-edit::before {
+    display: none;
   }
   .course-students-table:not(.course-students-books) tbody tr {
     grid-template-columns: minmax(0, 1.45fr) minmax(0, 0.9fr) minmax(0, 1fr);
@@ -458,6 +481,7 @@
     display: none;
   }
   .role-table.roster-students-table tbody .roster-last-name,
+  .role-table.roster-students-table tbody .roster-student-status,
   .role-table.roster-students-table tbody .roster-desktop-action,
   .mobile-record-table .roster-student-name::before,
   .mobile-record-table .record-title::before,
@@ -469,15 +493,27 @@
     font-size: 1.125rem;
     font-weight: 600;
   }
-  .roster-student-name {
+  .role-table.roster-students-table tbody .roster-student-name {
     grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
   }
-  .roster-student-status svg {
-    margin-inline: 0;
+  .roster-mobile-status {
+    display: inline-flex;
+    flex: none;
+  }
+  .roster-student-phone > span {
+    flex-wrap: nowrap;
+    column-gap: 0;
+  }
+  .roster-student-phone a[href^='https://wa.me/'] {
+    flex: none;
   }
   .roster-students-table .roster-mobile-open {
     display: flex;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     justify-content: space-between;
     gap: 0.5rem;
     padding-inline: 0;
