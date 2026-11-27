@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto'
+import type { WebSocketData } from '@socket.io/bun-engine'
 import { z } from 'zod'
 
 export async function startIntegrationServer(databaseUrl: string) {
@@ -37,14 +38,23 @@ export async function startIntegrationServer(databaseUrl: string) {
 }
 
 if (import.meta.main) {
-  const handler = Promise.withResolvers<typeof import('../server/index').handle>()
-  const server = Bun.serve({
+  type Workspace = ReturnType<typeof import('../server/index').workspaceServer>
+  const handler = Promise.withResolvers<Workspace>()
+  let workspace: Workspace | undefined
+  const server = Bun.serve<WebSocketData>({
     hostname: '127.0.0.1',
     port: 0,
-    fetch: async (request) => (await handler.promise)(request),
+    idleTimeout: 50,
+    fetch: async (request, instance) => (await handler.promise).serve.fetch(request, instance),
+    websocket: {
+      open: (socket) => workspace?.serve.websocket.open(socket),
+      message: (socket, message) => workspace?.serve.websocket.message(socket, message),
+      close: (socket, code, reason) => workspace?.serve.websocket.close(socket, code, reason),
+    },
   })
   process.env.PORT = String(server.port)
   process.env.BETTER_AUTH_URL = server.url.origin
-  handler.resolve((await import('../server/index')).handle)
+  workspace = (await import('../server/index')).workspaceServer()
+  handler.resolve(workspace)
   process.send?.(server.url.origin)
 }

@@ -51,10 +51,19 @@ const invitationColumns = [
   'invitation_birth_date',
   'invitation_requires_setup',
 ] as const
-type Version = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13
+const gradeReceiptTable = {
+  name: 'public.grade_sync_receipts',
+  columns: ['request_id', 'fingerprint'],
+} as const
+type Version = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14
 function tablesFor(version: Version) {
   if (version < 3) return [...baseTables]
-  return [...baseTables.slice(0, -1), ...courseTables, baseTables[baseTables.length - 1]]
+  return [
+    ...baseTables.slice(0, -1),
+    ...courseTables,
+    baseTables[baseTables.length - 1],
+    ...(version >= 14 ? [gradeReceiptTable] : []),
+  ]
 }
 function columnsFor(
   table: ReturnType<typeof tablesFor>[number],
@@ -103,6 +112,7 @@ const backupSchema = z.strictObject({
     z.literal(11),
     z.literal(12),
     z.literal(13),
+    z.literal(14),
   ]),
   createdAt: z.iso.datetime(),
   tables: z.array(z.strictObject({ name: z.string(), rows: z.array(rowSchema) })),
@@ -206,6 +216,9 @@ function validateBackup(backup: Backup) {
 async function schemaVersion(db: PoolClient): Promise<Version> {
   const result = await db.query(
     `SELECT
+    to_regclass('public.grade_sync_receipts') IS NOT NULL AS grade_receipts,
+    (SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'grade_sync_receipts') AS grade_receipt_columns,
+    (SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'grade_sync_receipts' AND is_nullable = 'NO' AND ((column_name = 'request_id' AND data_type = 'uuid') OR (column_name = 'fingerprint' AND data_type = 'text'))) AS grade_receipt_fields,
     (SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'app_accounts' AND column_name = 'verified_phone' AND data_type = 'text' AND is_nullable = 'YES') AS verified_phone,
     (SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'app_accounts' AND column_name = ANY($1::text[])) AS invitation_columns,
     (SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'app_accounts' AND (
@@ -238,6 +251,9 @@ async function schemaVersion(db: PoolClient): Promise<Version> {
     [invitationColumns],
   )
   const {
+    grade_receipts,
+    grade_receipt_columns,
+    grade_receipt_fields,
     verified_phone,
     invitation_columns,
     invitation_fields,
@@ -264,6 +280,9 @@ async function schemaVersion(db: PoolClient): Promise<Version> {
     grading_columns,
   } = z
     .object({
+      grade_receipts: z.boolean(),
+      grade_receipt_columns: z.number(),
+      grade_receipt_fields: z.number(),
       verified_phone: z.number(),
       invitation_columns: z.number(),
       invitation_fields: z.number(),
@@ -319,10 +338,18 @@ async function schemaVersion(db: PoolClient): Promise<Version> {
     throw new Error('Student name migration required for course backup')
   if (enrollment_teacher !== teacher_column || (enrollment_teacher && !decisions))
     throw new Error('Incomplete enrollment teacher migration')
+  if (
+    grade_receipts &&
+    (grade_receipt_columns !== gradeReceiptTable.columns.length ||
+      grade_receipt_fields !== gradeReceiptTable.columns.length ||
+      !verified_phone ||
+      !invitation_columns)
+  )
+    throw new Error('Incomplete grade receipt migration')
   if (invitation_columns > 0) {
     if (!enrollment_teacher || invitation_fields !== invitationColumns.length)
       throw new Error('Incomplete account invitation migration')
-    return verified_phone ? 13 : 12
+    return grade_receipts ? 14 : verified_phone ? 13 : 12
   }
   if (enrollment_teacher) return 11
   return courses === 2
@@ -475,6 +502,10 @@ async function main() {
           'SELECT 1 FROM app_accounts WHERE verified_phone IS NOT NULL LIMIT 1',
         )
         if (phones.rowCount) throw new Error('Legacy backup cannot represent verified phones')
+      }
+      if (backup.version < 14 && targetVersion >= 14) {
+        const receipts = await db.query('SELECT 1 FROM public.grade_sync_receipts LIMIT 1')
+        if (receipts.rowCount) throw new Error('Legacy backup cannot represent grade receipts')
       }
       const actual = await snapshot(db, backup.version)
       for (const [index, table] of backup.tables.entries()) {

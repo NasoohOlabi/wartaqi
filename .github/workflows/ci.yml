@@ -64,6 +64,15 @@ jobs:
       - name: Build standalone Telegram worker
         run: docker build -f telegram/Dockerfile .
 
+      - name: Install Chromium for the real-server test
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list /etc/apt/sources.list.d/microsoft-prod.sources
+          bunx playwright install --with-deps chromium
+      - name: Verify offline writes and live delivery between independent browsers
+        env:
+          TEST_RAILWAY_DATABASE_URL: postgres://postgres@127.0.0.1:5432/notebook_test
+        run: bunx playwright test e2e/workspace-sync.spec.ts --project=chromium --trace=off
+
   browser:
     name: Browser tests (${{ matrix.shard }})
     runs-on: ubuntu-latest

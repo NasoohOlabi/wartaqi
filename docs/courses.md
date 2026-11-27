@@ -46,6 +46,10 @@ Migration `neon/005-active-enrollments.sql` adds an active membership flag, defa
 
 Administrators can manually close and reopen a course from the course list. Manual closure can proceed with incomplete grades. Closed courses remain in the management list. Notebook selectors omit them unless the course is the saved default or the course currently being viewed; a previously saved course URL can still show history and corrections, while new attendance is rejected. Reopening permits attendance again. Notes remain student-scoped.
 
+Administrators can still edit scores and performance notes for a closed course. A grade edit leaves the course closed and does not rerun level promotion. This applies to immediate saves and grade edits replayed after reconnecting.
+
+Grades saved on this device wait for a connection. After sign-out, the same administrator can review earlier unsent edits once Wartaq confirms access again. Choose **Send earlier grade changes** to retry them, or discard them from the device. If another edit changed the same field, compare the saved and local values before choosing which to keep.
+
 Closing from Courses or Grades advances the current level for active students with an active enrollment, a saved effective Pass and a whole-number course level. A student who enters at level 1 and passes advances to level 2, while the completed course still shows level 1 and their next new enrollment records level 2. A Fail or pending result leaves the current level as is. The result uses saved scores, projected attendance and the latest saved override. Higher current levels and custom labels are preserved. Retrying closure, or reopening and closing again with the same course level, never adds a second level. Previously closed courses receive no automatic backfill.
 
 Apply `bun run db:migrate` through `neon/006-closed-courses.sql` before deployment. Existing and new courses default to open. Version 5 backups preserve course status; older backups restore courses as open and cannot compare successfully with closed courses. Test against a disposable database first.

@@ -21,6 +21,7 @@ import { createMcpHandler } from './mcp'
 import { invitationReceipts } from './mcp-invitation'
 import { mcpConsentPage } from './mcp-consent'
 import { createMcpOAuthPlugins } from './mcp-oauth'
+import { createWorkspaceSync } from './sync'
 import type { McpOperation } from './mcp-tools'
 import {
   profileUpdateSchema,
@@ -537,6 +538,15 @@ export async function handle(request: Request): Promise<Response> {
            AND i.indnkeyatts = 1 AND i.indpred IS NULL`,
       )
       if (!phoneIndex.rowCount) throw new Error('Phone migration required')
+      const sync = await pool.query(
+        `SELECT count(*)::int AS triggers
+         FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+         WHERE c.relnamespace = 'public'::regnamespace AND t.tgname = 'notify_workspace_changed'
+           AND t.tgenabled IN ('O','A')
+           AND c.relname IN ('app_accounts','teachers','students','courses','course_enrollments','events')
+           AND to_regclass('public.grade_sync_receipts') IS NOT NULL`,
+      )
+      if (sync.rows[0]?.triggers !== 6) throw new Error('Workspace sync migrations required')
       return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } })
     } catch {
       return Response.json({ ok: false }, { status: 503, headers: { 'Cache-Control': 'no-store' } })
@@ -763,6 +773,28 @@ export async function handle(request: Request): Promise<Response> {
   })
 }
 
+export function workspaceServer() {
+  return createWorkspaceSync({
+    databaseUrl: config.DATABASE_URL,
+    origin,
+    handle,
+    async authorize(headers, userId) {
+      // Use the same grant, expiry and role checks as the normal notebook requests.
+      headers.set('x-user-id', userId)
+      const response = await notebook(new Request(new URL('/api/me', origin), { headers }))
+      if (!response.ok) return false
+      const grant = z
+        .object({
+          account: z.object({
+            invitationProfile: z.object({ requiresSetup: z.boolean() }).optional(),
+          }),
+        })
+        .safeParse(await response.json())
+      return grant.success && !grant.data.account.invitationProfile?.requiresSetup
+    },
+  })
+}
+
 if (import.meta.main) {
   const cleanup = () => {
     void pruneDiagnostics(pool).catch(() => console.warn('Diagnostics cleanup failed'))
@@ -772,6 +804,17 @@ if (import.meta.main) {
     )
   }
   cleanup()
-  setInterval(cleanup, 60 * 60 * 1000).unref()
-  Bun.serve({ port: config.PORT, hostname: '0.0.0.0', fetch: handle })
+  const cleanupTimer = setInterval(cleanup, 60 * 60 * 1000).unref()
+  const workspace = workspaceServer()
+  const server = Bun.serve({ port: config.PORT, hostname: '0.0.0.0', ...workspace.serve })
+  let shuttingDown = false
+  const shutdown = async () => {
+    if (shuttingDown) return
+    shuttingDown = true
+    clearInterval(cleanupTimer)
+    await Promise.all([server.stop(true), workspace.close()])
+    await Promise.all([pool.end(), authPool.end()])
+  }
+  process.once('SIGINT', () => void shutdown())
+  process.once('SIGTERM', () => void shutdown())
 }

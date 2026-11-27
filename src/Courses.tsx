@@ -5,6 +5,7 @@ import { formatLevel } from './levelFormat'
 import { TableControls, TableHeader, TableToolbar } from './DataTable'
 import { useDataTable } from './useDataTable'
 import { useEffect, useRef, useState } from 'react'
+import { useAdminBoardReplica } from './useRoleReplica'
 import {
   Check,
   ClipboardList,
@@ -26,6 +27,9 @@ import {
 } from '../shared/neon'
 import { projectEvents, type LedgerEvent } from '../shared/ledger'
 import { courseAttendance, missingCourseScores, savedGradeResult } from '../shared/courseGrading'
+import { applyGradeChanges, type GradeValues } from '../shared/gradeSync'
+import { gradeAcceptedEvent, gradeScope, queueGradeEdit, useGradeQueue } from './gradeSync'
+import type { CachedAccess } from './offlineAccess'
 import { CourseExportDialog } from './CourseExportDialog'
 import { request } from './neon'
 import { useLanguage } from './useLanguage'
@@ -183,6 +187,7 @@ export function Courses({
   refresh,
   defaultCourse,
   chooseDefault,
+  cached,
 }: {
   userId: string
   courses: Course[]
@@ -192,13 +197,19 @@ export function Courses({
   refresh: () => Promise<boolean>
   defaultCourse: string
   chooseDefault: (course: string) => void
+  cached?: CachedAccess
 }) {
   const { language } = useLanguage()
   const ar = language === 'ar'
   const addStudentLabel = ar ? 'إضافة طالب جديد إلى هذه الدورة' : 'Add new student to this course'
   const query = useQueryState()
   const course = courses.find((item) => item.id === query.course)
-  const [board, setBoard] = useState<Board | null>(null)
+  const { data: board, error: boardError, refresh: refreshBoard } = useAdminBoardReplica()
+  const offline = Boolean(cached)
+  const offlineRef = useRef(offline)
+  useEffect(() => {
+    offlineRef.current = offline
+  }, [offline])
   const [drafts, setDrafts] = useState<Record<string, Draft>>({})
   const [error, setError] = useState('')
   const [saved, setSaved] = useState(false)
@@ -208,19 +219,6 @@ export function Courses({
   const [failedSaves, setFailedSaves] = useState<Record<string, () => void>>({})
   const saveQueue = useRef<Promise<void>>(Promise.resolve())
   const pendingSaves = useRef(0)
-  useEffect(() => {
-    let cancelled = false
-    request('/api/admin', userId)
-      .then((value) => {
-        if (!cancelled) setBoard(neonAdminBoardSchema.parse(value))
-      })
-      .catch((cause: unknown) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : 'Load failed')
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [userId])
   useEffect(() => {
     if (!saved) return
     const timer = window.setTimeout(() => setSaved(false), 4_000)
@@ -233,6 +231,7 @@ export function Courses({
     saveKey?: string,
     refreshOnly = false,
   ) {
+    if (offline) return Promise.resolve(false)
     pendingSaves.current += 1
     setBusy(true)
     const operation = saveQueue.current.then(async () => {
@@ -246,12 +245,13 @@ export function Courses({
         })
       let writeSucceeded = refreshOnly
       try {
+        if (offlineRef.current) throw new Error('Connect to Wartaq to save course changes.')
         if (!writeSucceeded) {
           await request(path, userId, body)
           writeSucceeded = true
         }
         if (path === '/api/admin/courses/status') {
-          setBoard(neonAdminBoardSchema.parse(await request('/api/admin', userId)))
+          await refreshBoard()
         }
         if (!(await refresh()) && saveKey) throw new Error('Could not refresh student changes')
         onSuccess?.()
@@ -367,7 +367,18 @@ export function Courses({
           <h1 className="title">{ar ? 'الدورات' : 'Courses'}</h1>
         </TableToolbar>
       )}
-      {error && <p role="alert">{error}</p>}
+      {cached?.offline && (
+        <p role="status">
+          {query.courseView === 'grades'
+            ? ar
+              ? 'اتصل بوارتق لتغيير الحدود أو تعديل النتائج أو إغلاق الدورة.'
+              : 'Connect to Wartaq to change thresholds, override results, or close the course.'
+            : ar
+              ? 'اتصل بوارتق لحفظ تغييرات الدورة.'
+              : 'Connect to Wartaq to save course changes.'}
+        </p>
+      )}
+      {(error || boardError) && <p role="alert">{error || boardError}</p>}
       {retries.length > 0 && (
         <div className="flex flex-wrap items-center gap-3">
           <p role="alert">
@@ -375,7 +386,7 @@ export function Courses({
           </p>
           <button
             className="secondary"
-            disabled={busy}
+            disabled={busy || offline}
             onClick={() => retries.forEach((retry) => retry())}
           >
             {ar ? 'إعادة المحاولة' : 'Retry'}
@@ -474,7 +485,7 @@ export function Courses({
                                   ? 'إعادة فتح الدورة'
                                   : 'Reopen course',
                               icon: item.open ? Lock : LockOpen,
-                              disabled: busy,
+                              disabled: busy || offline,
                               onClick: () =>
                                 void submit('/api/admin/courses/status', {
                                   id: item.id,
@@ -514,7 +525,7 @@ export function Courses({
             key={query.courseView === 'create' ? 'create' : course?.id}
             course={query.courseView === 'edit' ? course : undefined}
             ar={ar}
-            busy={busy}
+            busy={busy || offline}
             submit={async (id, name) => {
               if (await submit('/api/admin/courses', { id, name })) go('', '')
             }}
@@ -633,7 +644,9 @@ export function Courses({
                       </label>
                       <button
                         className="primary"
-                        disabled={busy || !selectedIds.length || bulkTeacher === 'unchanged'}
+                        disabled={
+                          busy || offline || !selectedIds.length || bulkTeacher === 'unchanged'
+                        }
                         onClick={() => {
                           const ids = selectedIds
                           const snapshot = drafts
@@ -803,7 +816,7 @@ export function Courses({
                               <select
                                 aria-label={`${ar ? 'المعلم' : 'Teacher'}: ${student.firstName} ${student.lastName}`}
                                 value={draft.teacherId}
-                                disabled={busy && !entry}
+                                disabled={offline || (busy && !entry)}
                                 onChange={(event) => {
                                   const teacherId = event.target.value
                                   setDrafts((current) => ({
@@ -839,7 +852,7 @@ export function Courses({
                               role="switch"
                               aria-label={`${ar ? 'مسجل' : 'Enrolled'}: ${student.firstName} ${student.lastName}`}
                               checked={entry?.active ?? false}
-                              disabled={busy}
+                              disabled={busy || offline}
                               onChange={(event) => saveMembership(event.target.checked)}
                             />
                           </td>
@@ -850,7 +863,7 @@ export function Courses({
                                   type="checkbox"
                                   aria-label={`${ar ? 'استلم الكتاب' : 'Handbook received'}: ${student.firstName} ${student.lastName}`}
                                   checked={entry?.handbookReceived ?? false}
-                                  disabled={busy || !entry}
+                                  disabled={busy || offline || !entry}
                                   onChange={(event) =>
                                     entry &&
                                     void submit(
@@ -875,6 +888,8 @@ export function Courses({
           {query.courseView === 'grades' && board && (
             <GradePage
               key={course.id}
+              userId={userId}
+              refresh={refresh}
               course={course}
               entries={courseEntries}
               exportEntries={exportEnrollments.filter((item) => item.courseId === course.id)}
@@ -882,6 +897,7 @@ export function Courses({
               accounts={board.accounts}
               events={events}
               busy={busy}
+              offline={offline}
               ar={ar}
               save={submit}
             />
@@ -892,7 +908,15 @@ export function Courses({
   )
 }
 
+type GradeDraft = {
+  practical?: { original: number | null; value: string }
+  theory?: { original: number | null; value: string }
+  notes?: { original: string; value: string }
+}
+
 function GradePage({
+  userId,
+  refresh,
   course,
   entries,
   exportEntries,
@@ -900,9 +924,12 @@ function GradePage({
   accounts,
   events,
   busy,
+  offline,
   ar,
   save,
 }: {
+  userId: string
+  refresh: () => Promise<boolean>
   course: Course
   entries: Enrollment[]
   exportEntries: Enrollment[]
@@ -910,12 +937,63 @@ function GradePage({
   accounts: Board['accounts']
   events: LedgerEvent[]
   busy: boolean
+  offline: boolean
   ar: boolean
   save: (path: string, body: unknown) => Promise<boolean>
 }) {
-  const [drafts, setDrafts] = useState<
-    Record<string, { practical: string; theory: string; notes: string }>
-  >({})
+  const [drafts, setDrafts] = useState<Record<string, GradeDraft>>({})
+  const [persisting, setPersisting] = useState<Record<string, boolean>>({})
+  const [saveError, setSaveError] = useState(false)
+  const pendingGrades = useGradeQueue(userId)
+  useEffect(() => {
+    function accepted(event: Event) {
+      if (event instanceof CustomEvent && event.detail === gradeScope(userId)?.generation)
+        void refresh()
+    }
+    window.addEventListener(gradeAcceptedEvent, accepted)
+    return () => window.removeEventListener(gradeAcceptedEvent, accepted)
+  }, [refresh, userId])
+  async function saveGrades(entry: Enrollment, label: string) {
+    const scope = gradeScope(userId)
+    if (!scope) {
+      setSaveError(true)
+      return
+    }
+    const raw = drafts[entry.id]
+    if (!raw) return
+    const previous: GradeValues = {
+      practical: raw.practical ? raw.practical.original : entry.practical,
+      theory: raw.theory ? raw.theory.original : entry.theory,
+      notes: raw.notes?.original ?? entry.notes,
+    }
+    const next: GradeValues = {
+      practical: raw.practical
+        ? raw.practical.value === ''
+          ? null
+          : Number(raw.practical.value)
+        : entry.practical,
+      theory: raw.theory
+        ? raw.theory.value === ''
+          ? null
+          : Number(raw.theory.value)
+        : entry.theory,
+      notes: raw.notes?.value ?? entry.notes,
+    }
+    setPersisting((current) => ({ ...current, [entry.id]: true }))
+    setSaveError(false)
+    try {
+      await queueGradeEdit({ scope, id: entry.id, label, previous, next })
+      setDrafts((current) => {
+        const updated = { ...current }
+        delete updated[entry.id]
+        return updated
+      })
+    } catch {
+      setSaveError(true)
+    } finally {
+      setPersisting((current) => ({ ...current, [entry.id]: false }))
+    }
+  }
   const [decisionEntry, setDecisionEntry] = useState<string | null>(null)
   const [decisionError, setDecisionError] = useState(false)
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -938,26 +1016,21 @@ function GradePage({
     Number(settings.practicalMinimum) !== course.practicalMinimum ||
     Number(settings.theoryMinimum) !== course.theoryMinimum ||
     Object.values(settings).some((value) => value === '')
-  const gradeDirty = entries.some((entry) => {
+  const gradePending = (id: string) => pendingGrades.find((item) => item.operation.id === id)
+  const dirtyGrade = (entry: Enrollment) => {
     const draft = drafts[entry.id]
     return (
-      draft &&
-      (draft.practical !== (entry.practical?.toString() ?? '') ||
-        draft.theory !== (entry.theory?.toString() ?? '') ||
-        draft.notes !== entry.notes)
+      gradePending(entry.id) ||
+      (draft?.practical &&
+        draft.practical.value !== (draft.practical.original?.toString() ?? '')) ||
+      (draft?.theory && draft.theory.value !== (draft.theory.original?.toString() ?? '')) ||
+      (draft?.notes && draft.notes.value !== draft.notes.original)
     )
-  })
+  }
+  const gradeDirty = entries.some(dirtyGrade)
   const attendance = projectEvents(events).attendance
   const gradeResult = (entry: Enrollment, ratio: number | null) => {
-    const draft = drafts[entry.id]
-    if (
-      settingsDirty ||
-      (draft &&
-        (draft.practical !== (entry.practical?.toString() ?? '') ||
-          draft.theory !== (entry.theory?.toString() ?? '') ||
-          draft.notes !== entry.notes))
-    )
-      return 'pending'
+    if (settingsDirty || dirtyGrade(entry)) return 'pending'
     return savedGradeResult(course, entry, ratio)
   }
   const attendanceRatio = (entry: Enrollment) => courseAttendance(attendance, entry).ratio
@@ -1005,14 +1078,18 @@ function GradePage({
         id: key,
         label: key === 'practical' ? (ar ? 'عملي' : 'Practical') : ar ? 'نظري' : 'Theory',
         value: (entry: Enrollment) => {
-          const value = drafts[entry.id]?.[key] ?? entry[key]
+          const pending = gradePending(entry.id)?.operation.fields[key]
+          const value = drafts[entry.id]?.[key]?.value ?? (pending ? pending.next : entry[key])
           return value == null || value === '' ? null : Number(value)
         },
       })),
       {
         id: 'notes',
         label: ar ? 'ملاحظة أداء الدورة' : 'Course performance note',
-        value: (entry) => drafts[entry.id]?.notes ?? entry.notes,
+        value: (entry) =>
+          drafts[entry.id]?.notes?.value ??
+          gradePending(entry.id)?.operation.fields.notes?.next ??
+          entry.notes,
       },
       {
         id: 'result',
@@ -1048,7 +1125,7 @@ function GradePage({
               aria-label={ar ? 'تصدير Excel' : 'Export Excel'}
               data-diagnostic-action="export"
               title={ar ? 'تصدير Excel' : 'Export Excel'}
-              disabled={busy || settingsDirty || !!gradeDirty}
+              disabled={busy || offline || settingsDirty || !!gradeDirty}
               onClick={() => setExportOpen(true)}
             >
               <Download size={20} aria-hidden="true" />
@@ -1105,7 +1182,7 @@ function GradePage({
               />
             </label>
           ))}
-          <button className="secondary" disabled={busy || !settingsDirty}>
+          <button className="secondary" disabled={busy || offline || !settingsDirty}>
             {ar ? 'حفظ الحدود' : 'Save thresholds'}
           </button>
         </form>
@@ -1127,6 +1204,13 @@ function GradePage({
           ? 'الحضور = الحاضر / (الحاضر + الغائب + المعذور). الأيام غير المسجلة مستبعدة.'
           : 'Attendance = Present / (Present + Absent + Excused). Unmarked days are excluded.'}
       </p>
+      {saveError && (
+        <p className="form-error" role="alert">
+          {ar
+            ? 'تعذر حفظ تغييرات الدرجات على هذا الجهاز.'
+            : 'Unable to save grade changes on this device.'}
+        </p>
+      )}
       <div
         className="role-table-scroll grade-table-scroll"
         role="region"
@@ -1139,11 +1223,15 @@ function GradePage({
             {gradeTable.rows.map((entry) => {
               const student = students.find((item) => item.studentId === entry.studentId)
               if (!student) return null
-              const draft = drafts[entry.id] ?? {
-                practical: entry.practical?.toString() ?? '',
-                theory: entry.theory?.toString() ?? '',
-                notes: entry.notes,
+              const pending = gradePending(entry.id)
+              const displayed = pending ? applyGradeChanges(entry, pending.operation.fields) : entry
+              const raw = drafts[entry.id]
+              const draft = {
+                practical: raw?.practical?.value ?? displayed.practical?.toString() ?? '',
+                theory: raw?.theory?.value ?? displayed.theory?.toString() ?? '',
+                notes: raw?.notes?.value ?? displayed.notes,
               }
+              const gradeLocked = busy || !!persisting[entry.id] || !!pending
               const ratio = attendanceRatio(entry)
               const result = gradeResult(entry, ratio)
               const lastDecision = entry.gradeDecisions.at(-1)
@@ -1209,17 +1297,27 @@ function GradePage({
                         }
                         aria-label={`${key === 'practical' ? (ar ? 'عملي' : 'Practical') : ar ? 'نظري' : 'Theory'}: ${student.firstName} ${student.lastName}`}
                         type="number"
-                        disabled={busy}
+                        disabled={gradeLocked}
                         min="0"
                         max="100"
                         step="any"
                         value={draft[key]}
-                        onChange={(event) =>
-                          setDrafts((current) => ({
-                            ...current,
-                            [entry.id]: { ...draft, [key]: event.target.value },
-                          }))
-                        }
+                        onChange={(event) => {
+                          const value = event.target.value
+                          setDrafts((current) => {
+                            const existing = current[entry.id]
+                            return {
+                              ...current,
+                              [entry.id]: {
+                                ...existing,
+                                [key]: {
+                                  value,
+                                  original: existing?.[key] ? existing[key].original : entry[key],
+                                },
+                              },
+                            }
+                          })
+                        }}
                       />
                     </td>
                   ))}
@@ -1231,14 +1329,21 @@ function GradePage({
                       form={formId}
                       className="resize-y min-[1025px]:min-w-48"
                       aria-label={`${ar ? 'ملاحظة أداء الدورة' : 'Course performance note'}: ${student.firstName} ${student.lastName}`}
-                      disabled={busy}
+                      disabled={gradeLocked}
                       value={draft.notes}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const value = event.target.value
                         setDrafts((current) => ({
                           ...current,
-                          [entry.id]: { ...draft, notes: event.target.value },
+                          [entry.id]: {
+                            ...current[entry.id],
+                            notes: {
+                              value,
+                              original: current[entry.id]?.notes?.original ?? entry.notes,
+                            },
+                          },
                         }))
-                      }
+                      }}
                     />
                   </td>
                   <td data-label={ar ? 'النتيجة' : 'Result'}>
@@ -1262,24 +1367,16 @@ function GradePage({
                       id={formId}
                       onSubmit={(event) => {
                         event.preventDefault()
-                        void save('/api/admin/enrollments/grades', {
-                          id: entry.id,
-                          practical: draft.practical === '' ? null : Number(draft.practical),
-                          theory: draft.theory === '' ? null : Number(draft.theory),
-                          notes: draft.notes,
-                        }).then((ok) => {
-                          if (ok)
-                            setDrafts((current) => {
-                              const next = { ...current }
-                              delete next[entry.id]
-                              return next
-                            })
-                        })
+                        if (!gradeLocked)
+                          void saveGrades(
+                            entry,
+                            `${course.name} · ${student.firstName} ${student.lastName}`,
+                          )
                       }}
                     >
                       <button
                         className="icon-button gap-2"
-                        disabled={busy}
+                        disabled={gradeLocked}
                         aria-label={ar ? 'حفظ الدرجات' : 'Save grades'}
                         title={ar ? 'حفظ الدرجات' : 'Save grades'}
                       >
@@ -1385,7 +1482,7 @@ function GradePage({
                           )}
                           <button
                             className="secondary"
-                            disabled={busy || !decisionDraft.note.trim()}
+                            disabled={busy || offline || !decisionDraft.note.trim()}
                           >
                             {ar ? 'حفظ القرار' : 'Save decision'}
                           </button>
@@ -1467,7 +1564,7 @@ function GradePage({
       {course.open && (
         <button
           className="primary"
-          disabled={busy || settingsDirty || !!gradeDirty || missing.length > 0}
+          disabled={busy || offline || settingsDirty || !!gradeDirty || missing.length > 0}
           onClick={() => void save('/api/admin/courses/status', { id: course.id, open: false })}
         >
           {ar ? 'إغلاق الدورة' : 'Close course'}
