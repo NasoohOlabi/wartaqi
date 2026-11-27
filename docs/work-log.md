@@ -2505,3 +2505,9 @@ At 10:21 Asia/Damascus, PR #206 passed Validation in 3m 21s. Its HTML reports us
 The owner requested fixes for all return controls identified in the site audit. At 360×800, the fixed tabs covered the Create accounts form's Back button. Mobile child screens now use the leading app-bar arrow already used for student profiles. Course pages, student and account forms, invitation messages, personal settings, diagnostics, Telegram conversations and offline changes keep their existing return destinations. The desktop controls remain in the page.
 
 Synthetic browser checks exercise the leading 48px target, accessible label, tooltip, arrow direction and return behavior on phone layouts, plus labelled desktop actions. They cover the account form before edits, the invitation receipt, course subpages and return to the existing list. The PR records release and Railway checks. Physical device behavior requires a separate check.
+
+## 2026-11-27 10:48 Asia/Damascus — Fit six follow-up dates in one row
+
+The owner reported wasted space in the follow-up date cards at 662px. The dashboard sizes each card to its localized label and wraps cards when they no longer fit on a row.
+
+Synthetic Chromium checks cover six recorded dates, one Arabic row at 662px, one row in both languages at 1280px, and wrapping without overflow on narrow phones. The PR records release and Railway verification.

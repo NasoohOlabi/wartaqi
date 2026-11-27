@@ -157,8 +157,6 @@ test('follow-up uses recorded absences through the selected date', async ({ page
   const daysUntilWednesday = (3 - nextDate.getUTCDay() + 7) % 7 || 7
   nextDate.setUTCDate(nextDate.getUTCDate() + daysUntilWednesday)
   const secondDate = nextDate.toISOString().slice(0, 10)
-  const followingDate = new Date(nextDate)
-  followingDate.setUTCDate(nextDate.getUTCDate() + 1)
 
   await page.getByRole('button', { name: /Continue attendance/i }).click()
   await page
@@ -172,16 +170,20 @@ test('follow-up uses recorded absences through the selected date', async ({ page
     .getByRole('button', { name: 'excused', exact: true })
     .click()
   await page.getByRole('button', { name: 'Save attendance (1)' }).click()
-  await page.getByLabel('Session date').fill(followingDate.toISOString().slice(0, 10))
-  await page
-    .getByLabel('Attendance for Omar')
-    .getByRole('button', { name: 'present', exact: true })
-    .click()
-  await page.getByRole('button', { name: 'Save attendance (1)' }).click()
+  const followingDate = new Date(nextDate)
+  for (let index = 0; index < 4; index += 1) {
+    followingDate.setUTCDate(followingDate.getUTCDate() + 1)
+    await page.getByLabel('Session date').fill(followingDate.toISOString().slice(0, 10))
+    await page
+      .getByLabel('Attendance for Omar')
+      .getByRole('button', { name: 'present', exact: true })
+      .click()
+    await page.getByRole('button', { name: 'Save attendance (1)' }).click()
+  }
   await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
   const strip = page.getByRole('list', { name: 'Recent attendance for Omar' })
   const cards = strip.getByRole('listitem')
-  await expect(cards).toHaveCount(3)
+  await expect(cards).toHaveCount(6)
   for (const [index, [status, color]] of [
     ['absent', 'rgb(220, 38, 38)'],
     ['excused', 'rgb(161, 98, 7)'],
@@ -206,37 +208,37 @@ test('follow-up uses recorded absences through the selected date', async ({ page
       )
     }
     await page.evaluate(() => document.fonts.ready)
-    for (const width of [320, 360, 390, 430, 1280]) {
+    for (const width of [320, 360, 390, 430, 662, 1280]) {
       await page.setViewportSize({ width, height: 844 })
-      expect(
-        await page.locator('.dashboard-strip time').evaluateAll((dates) => {
-          const range = document.createRange()
-          return {
-            lines: dates.map((date) => {
-              const cardBounds = date.parentElement?.getBoundingClientRect()
-              range.selectNodeContents(date)
-              const rects = Array.from(range.getClientRects())
-              return {
-                rows: new Set(rects.map((rect) => rect.top)).size,
-                fits:
-                  !!cardBounds &&
-                  rects.every(
-                    (rect) => rect.left >= cardBounds.left && rect.right <= cardBounds.right,
-                  ),
-              }
-            }),
-            viewportFits: document.documentElement.scrollWidth <= innerWidth,
-          }
-        }),
-        `${language} at ${width}px`,
-      ).toEqual({
-        lines: [
-          { rows: 1, fits: true },
-          { rows: 1, fits: true },
-          { rows: 1, fits: true },
-        ],
-        viewportFits: true,
+      const label = `${language} at ${width}px`
+      const layout = await page.locator('.dashboard-strip time').evaluateAll((dates) => {
+        const range = document.createRange()
+        return {
+          rows: new Set(dates.map((date) => date.parentElement?.getBoundingClientRect().top)).size,
+          lines: dates.map((date) => {
+            const cardBounds = date.parentElement?.getBoundingClientRect()
+            range.selectNodeContents(date)
+            const rects = Array.from(range.getClientRects())
+            return {
+              rows: new Set(rects.map((rect) => rect.top)).size,
+              fits:
+                !!cardBounds &&
+                rects.every(
+                  (rect) => rect.left >= cardBounds.left && rect.right <= cardBounds.right,
+                ),
+            }
+          }),
+          viewportFits: document.documentElement.scrollWidth <= innerWidth,
+        }
       })
+      expect(layout.lines, label).toEqual(
+        Array.from({ length: 6 }, () => ({ rows: 1, fits: true })),
+      )
+      expect(layout.viewportFits, label).toBe(true)
+      if (width === 1280 || (width === 662 && language === 'ar')) {
+        expect(layout.rows, label).toBe(1)
+      }
+      if (width === 320) expect(layout.rows, label).toBeGreaterThan(1)
     }
   }
   await clickAccountAction(page, 'English')
