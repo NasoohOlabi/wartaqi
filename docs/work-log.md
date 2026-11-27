@@ -2411,3 +2411,9 @@ A rolled-back transaction rehearsed the update before it was committed on Railwa
 The owner asked for one navigation system and reported that opening course History shifted into a narrower Settings page. The signed-in workspace now uses a persistent role-specific menu, a shared page header and local section links. Course History keeps Courses selected. Administrator Settings is a main destination, and students can open Profile settings directly. Course records link to students, and student edit and create journeys have named returns to the calling view. Existing bookmarked routes still resolve.
 
 The navigation scenario exercises the course tabs, student return with a saved search, History reload and browser Back, and the separate Settings history in desktop and emulated phone browsers. The role scenarios check student profile access, role isolation and both directions of the narrow navigation layout. Browser fixtures are synthetic. The PR records release checks and Railway deployment verification.
+
+## 2026-11-27 08:17 Asia/Damascus — Compact mobile course roster
+
+The owner asked for two rows per student on the course Students page. The first row holds the name fields and course level when shown. The second holds the teacher, enrollment and handbook controls available in the selected view. In Groups, the teacher selector uses the space available alongside the enrollment switch.
+
+The course roster browser scenario passed for All columns, Groups and Books in English and Arabic at 320, 390 and 430px and on desktop. It checks row geometry and overflow with synthetic names, including a long mixed-script name, and exercises saved teacher assignments across searches. The PR records release checks and Railway verification.

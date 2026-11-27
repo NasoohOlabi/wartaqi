@@ -689,7 +689,9 @@ export function Courses({
                 aria-label={ar ? 'طلاب الدورة' : 'Course students'}
                 tabIndex={0}
               >
-                <table className="mobile-record-table role-table course-students-table">
+                <table
+                  className={`mobile-record-table role-table course-students-table course-students-${query.studentMode}`}
+                >
                   <TableHeader model={membershipTable} />
                   <tbody>
                     {membershipTable.rows.map((student) => {
@@ -795,7 +797,10 @@ export function Courses({
                             </td>
                           )}
                           {query.studentMode !== 'books' && (
-                            <td data-label={ar ? 'المعلم' : 'Teacher'}>
+                            <td
+                              className="course-student-teacher"
+                              data-label={ar ? 'المعلم' : 'Teacher'}
+                            >
                               <select
                                 aria-label={`${ar ? 'المعلم' : 'Teacher'}: ${student.firstName} ${student.lastName}`}
                                 value={draft.teacherId}

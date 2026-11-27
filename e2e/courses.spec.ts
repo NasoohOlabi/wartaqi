@@ -951,7 +951,7 @@ test('course enrollment and same-day attendance stay separate', async ({ page },
 test('course roster modes focus the table and save a group across searches', async ({
   page,
 }, testInfo) => {
-  const { enrollments, assignments, failNextAssignment, holdNextAssignment, savedToast } =
+  const { board, enrollments, assignments, failNextAssignment, holdNextAssignment, savedToast } =
     await setupCourses(page)
   const secondId = '40000000-0000-4000-8000-000000000003'
   enrollments.push({
@@ -1045,6 +1045,13 @@ test('course roster modes focus the table and save a group across searches', asy
   await expect(teacher).toHaveValue('')
   await expect(level).toHaveText('\u2014')
 
+  Object.assign(board.students[1], {
+    firstName: 'LongSyntheticGivenName',
+    lastName: 'اسم عائلة طويل للاختبار',
+    name: 'LongSyntheticGivenName اسم عائلة طويل للاختبار',
+  })
+  await page.reload()
+
   for (const language of ['en', 'ar']) {
     const ar = language === 'ar'
     if (ar) await clickAccountAction(page, 'العربية')
@@ -1069,7 +1076,7 @@ test('course roster modes focus the table and save a group across searches', asy
         ? searchBox.x - addBox.x - addBox.width
         : addBox.x - searchBox.x - searchBox.width
       expect(gap).toBeCloseTo(8)
-      for (const mode of ['groups', 'books']) {
+      for (const mode of ['all', 'groups', 'books']) {
         await page
           .locator('select')
           .filter({ has: page.locator('option[value="groups"]') })
@@ -1084,6 +1091,24 @@ test('course roster modes focus the table and save a group across searches', asy
             .locator('..')
             .evaluate((element) => element.scrollWidth <= element.clientWidth),
         ).toBe(true)
+        const firstRowFields = mode === 'books' ? 2 : 3
+        for (const row of await table.locator('tbody tr').all()) {
+          const fields = await row.locator('td').evaluateAll((cells) =>
+            cells.map((cell) => ({
+              top: cell.getBoundingClientRect().top,
+              fits: cell.scrollWidth <= cell.clientWidth,
+            })),
+          )
+          const tops = fields.map((field) => field.top)
+          if (width === 1440) {
+            expect(new Set(tops).size).toBe(1)
+          } else {
+            expect(new Set(tops.slice(0, firstRowFields)).size).toBe(1)
+            expect(new Set(tops.slice(firstRowFields)).size).toBe(1)
+            expect(tops[firstRowFields]).toBeGreaterThan(tops[0])
+            expect(fields.every((field) => field.fits)).toBe(true)
+          }
+        }
         if (width === 320 || width === 1440)
           await page.screenshot({
             path: `.artifacts/verification/course-student-${mode}-${width}-${language}.png`,
