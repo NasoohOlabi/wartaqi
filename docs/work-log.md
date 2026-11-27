@@ -2555,3 +2555,9 @@ The local verification gate passed against disposable Postgres. The real-server 
 The owner asked to clear an accidental attendance mark directly from the session. Tapping the selected status again makes the session unmarked for that student and course. Clear events use the existing offline queue and retain their revision for subsequent edits. History preserves the original marks and can reverse the clear.
 
 Verification covers touch, keyboard, taps during delayed delivery, reload, conflict detection and the Student view against disposable Postgres. This release adds a nullable status to raw attendance events. Reload older open tabs to pick up the updated client. Deploy compatible readers before rolling back any write behavior. The PR records the release gate and Railway rollout.
+
+## 2026-11-27 13:49 Asia/Damascus — Use saved enrollments in Manage students
+
+The owner reported a repeatable save failure in course management. Production returned HTTP 409 when the browser tried to create a second enrollment for a student with an inactive roster record. Manage students now uses the full set of saved enrollments, so it shows the correct state and updates the existing enrollment ID.
+
+The browser regression covers withdrawing and rejoining across reloads in desktop English and mobile Arabic. It checks the original enrollment ID, level, grade, handbook receipt and inactive roster status. The PR records release checks and Railway verification.
