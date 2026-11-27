@@ -2423,3 +2423,9 @@ The course roster browser scenario passed for All columns, Groups and Books in E
 The owner asked for Android-standard placement on the Arabic student profile. The mobile top app bar now shows a 48px Back control at the leading edge, on the right in Arabic and the left in English. Its direction, accessible label and return destination follow the current language and student entry path. The desktop profile keeps its labelled Back control.
 
 The browser regression checks the leading position, icon direction, touch target, page width and return focus at 320, 360, 390 and 430px. The 360px Arabic deep link also exercises the numbered course layout and returns to the course-scoped roster. The fixtures are synthetic. Physical Android behavior requires a device check. The PR records release and Railway verification.
+
+## 2026-11-27 08:46 Asia/Damascus — Compact dashboard attendance controls
+
+The owner asked to tighten the attendance panel and replace the Add student text button with a person-plus icon. The date and attendance counts share a row. The attendance action and the icon share a second row on phones and fit alongside the date on desktop. The icon opens the existing Administrator creation form and uses a localized accessible label.
+
+Synthetic browser checks exercise the icon and check layout and overflow at 320, 360 and 1280px in Arabic and English. Browser emulation covers these widths. The PR records release checks and Railway verification.
