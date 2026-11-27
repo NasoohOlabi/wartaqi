@@ -2596,6 +2596,8 @@ At 17:19 Asia/Damascus, PR #222 incorporated the notebook write and readback upd
 
 At 17:33 Asia/Damascus, browser shard 2 timed out waiting for the legacy service worker to become redundant. Verify failed because it depends on that shard. The same PWA scenario passed 24 local runs on the reported head. After incorporating PR #226, core verification, eight focused browser cases and the disposable PostgreSQL course test passed. The PWA timeout remains specific to the observed CI run.
 
+At 17:52 Asia/Damascus, two CI shards failed on the legacy worker handoff and the update notice. A delayed precache reproduced the early notice assertion, and the full local PWA suite also caught an installed replacement waiting behind the active worker. The browser test now waits for Chromium to activate the replacement before it checks the notice, refresh and unsaved draft. Both delayed-update scenarios passed, and three runs of the desktop and mobile PWA suite passed all 66 cases. Core verification passed.
+
 ## 2026-11-27 16:01 Asia/Damascus — Show course membership changes on the first tap
 
 The owner reported that a slow enrollment save left the switch looking off. A second tap after the save could undo the enrollment. The switch now displays the requested state during the save and accepts another tap after it settles. A failed confirmation restores the last confirmed state. Retry uses the original operation and displays its pending change.

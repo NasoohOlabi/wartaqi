@@ -8,6 +8,7 @@ import { z } from 'zod'
 let server: Server
 let origin = ''
 const prefix = '/notebook/'
+const workerActivationTimeout = 40_000
 const assets = new Map<string, Buffer>()
 let workerRevision = 0
 let delayNavigation = false
@@ -91,6 +92,44 @@ test.afterAll(async () => {
 async function openInEnglish(page: Page) {
   await page.goto(origin + prefix)
   await page.getByRole('button', { name: 'English', exact: true }).click()
+}
+
+async function activateWorkerUpdate(page: Page, serveUpdate: () => void) {
+  const previous = await page.evaluateHandle(
+    async () => (await navigator.serviceWorker.ready).active,
+  )
+  try {
+    serveUpdate()
+    await page.evaluate(async () => {
+      await (await navigator.serviceWorker.ready).update()
+    })
+    await expect
+      .poll(
+        () =>
+          previous.evaluate(async (worker) => {
+            const registration = await navigator.serviceWorker.getRegistration()
+            return {
+              previous: worker?.state,
+              installing: registration?.installing?.state,
+              waiting: registration?.waiting?.state,
+              active: registration?.active?.state,
+            }
+          }),
+        // Chromium can wait for the outgoing worker to become idle before activation.
+        {
+          message: 'replacement worker activates after precaching',
+          timeout: workerActivationTimeout,
+        },
+      )
+      .toEqual({
+        previous: 'redundant',
+        installing: undefined,
+        waiting: undefined,
+        active: 'activated',
+      })
+  } finally {
+    await previous.dispose()
+  }
 }
 
 test('repository-scoped PWA installs its real manifest and opens the public shell offline', async ({
@@ -242,6 +281,7 @@ test('normal refresh upgrades a legacy worker without disturbing another tab', a
   page,
   context,
 }) => {
+  test.setTimeout(2 * workerActivationTimeout + 15_000)
   legacyWorker = true
   htmlVersion = 'one'
   try {
@@ -260,18 +300,11 @@ test('normal refresh upgrades a legacy worker without disturbing another tab', a
       const legacy = await caches.open('wartaq-' + encodeURIComponent('/notebook/') + '-legacy')
       await legacy.put('./assets/old-lazy.js', new Response('old lazy asset'))
       localStorage.setItem('synthetic-pending', 'preserved')
-      const oldWorker = (await navigator.serviceWorker.getRegistration())?.active
-      oldWorker?.addEventListener('statechange', () => {
-        if (oldWorker.state === 'redundant')
-          document.documentElement.dataset.oldWorker = 'redundant'
-      })
     })
-    htmlVersion = 'two'
-    legacyWorker = false
-    await page.evaluate(async () => {
-      await (await navigator.serviceWorker.getRegistration())?.update()
+    await activateWorkerUpdate(page, () => {
+      htmlVersion = 'two'
+      legacyWorker = false
     })
-    await expect(page.locator('html')).toHaveAttribute('data-old-worker', 'redundant')
     await page.reload()
     await expect(page.locator('meta[name=test-version]')).toHaveAttribute('content', 'two')
     await expect(secondPage.getByLabel('Note', { exact: true })).toHaveValue(
@@ -284,9 +317,8 @@ test('normal refresh upgrades a legacy worker without disturbing another tab', a
     expect(await secondPage.evaluate(() => localStorage.getItem('synthetic-pending'))).toBe(
       'preserved',
     )
-    workerRevision++
-    await page.evaluate(async () => {
-      await (await navigator.serviceWorker.getRegistration())?.update()
+    await activateWorkerUpdate(page, () => {
+      workerRevision++
     })
     await expect(page.locator('.update-notice')).toContainText('refresh this page')
     await expect(page.getByRole('button', { name: 'Refresh', exact: true })).toBeVisible()
