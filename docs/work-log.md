@@ -2577,3 +2577,11 @@ At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing
 The owner asked for a course-row menu action that opens teacher groups and lets administrators move individual students. **Manage groups** opens a course page with teacher accordions and an **Unassigned** group. Each move updates only the selected enrollment's teacher using the existing assignment endpoint. A failed save leaves the member in their last confirmed group and offers a retry.
 
 Synthetic Chromium checks cover the course menu, move, failed save, retry, reload and independent enrollment data on desktop and an Arabic phone. The course integration test passed against disposable PostgreSQL 17 and checked authorization, course scope, withdrawal and preservation of other enrollment fields. The PR records release and Railway checks. Production sign-in and physical-device behavior require separate verification.
+
+## 2026-11-27 16:01 Asia/Damascus — Show course membership changes on the first tap
+
+The owner reported that a slow enrollment save left the switch looking off. A second tap after the save could undo the enrollment. The switch now displays the requested state during the save and accepts another tap after it settles. A failed confirmation restores the last confirmed state. Retry uses the original operation and displays its pending change.
+
+Four focused Chromium checks passed on desktop English and mobile Arabic. They cover a held enrollment write and refresh, a blocked second tap, later withdrawal, failed rejoin and retry with the original enrollment ID, and the earlier inactive roster regression. The course suite passed against disposable PostgreSQL. The PR records the release checks and Railway verification.
+
+At 16:12 Asia/Damascus, PR #222 incorporated the enrollment switch from PR #221 and retained both course documentation changes. `bun run verify` and all eight focused Chromium checks passed across desktop and mobile, including group moves and membership retries.

@@ -8,6 +8,8 @@ Use synthetic identities and records. On desktop and mobile, Courses defaults to
 
 Save a membership change and check the localized toast appears without moving the heading and dismisses automatically. On phones, verify the toast fits above navigation. A failed save shows the in-page error and no success toast.
 
+Hold the enrollment response and check that the first tap moves the switch immediately. Tap again while the switch is locked and confirm only one request was sent. Release the response and verify a later tap can withdraw the saved enrollment. Force a failed save and confirm the switch returns to its last confirmed state, then retry and check that the requested state appears while Retry is pending.
+
 Open Manage students with an inactive roster student who is already enrolled. Confirm the switch and Handbook received reflect the saved values. Withdraw and rejoin across reloads and check that both writes use the existing enrollment ID, preserving the course level, scores, handbook receipt and roster status. Exercise the path in English on desktop and Arabic on a phone.
 
 Choose the **+** beside search, labelled **Add new student to this course**. Check that the icon stays in the search row at desktop and 320/390/430px widths, on the left in Arabic and right in English, with a 44px touch target. Verify the form retains course context and has one initial Level field. Cancel returns to course management without exposing accounts. Save must create one roster student and one active enrollment at the same level, then return to that course. Exercise Back/forward and reload. A lost-response retry must not create duplicates; failed course/teacher validation must leave no orphan student.
