@@ -560,7 +560,11 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
     )
     if (result.rowCount !== ids.length) throw new HttpError(409)
     return { saved: true }
-  } else if (path === '/api/admin/enrollments' || path === '/api/admin/enrollments/membership') {
+  } else if (
+    path === '/api/admin/enrollments' ||
+    path === '/api/admin/enrollments/membership' ||
+    path === '/api/admin/enrollments/save'
+  ) {
     const legacy = path === '/api/admin/enrollments'
     const enrollment = legacy
       ? enrollmentSchema
@@ -572,7 +576,8 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
       enrollment.studentId,
     ])
     if (!student.rows.length) throw new HttpError(400)
-    const level = enrollmentSchema.shape.level.parse(student.rows[0].group_name)
+    const explicitLevel = path === '/api/admin/enrollments/save' ? enrollment.level : undefined
+    const level = explicitLevel ?? enrollmentSchema.shape.level.parse(student.rows[0].group_name)
     const course = await db.query('SELECT id FROM courses WHERE id = $1 FOR SHARE', [
       enrollment.courseId,
     ])
@@ -617,7 +622,7 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
       await db.query(
         `INSERT INTO course_enrollments (id, course_id, student_id, level, active, teacher_id)
         VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (course_id, student_id)
-        DO UPDATE SET active = EXCLUDED.active, teacher_id = CASE WHEN $7 THEN EXCLUDED.teacher_id ELSE course_enrollments.teacher_id END`,
+        DO UPDATE SET active = EXCLUDED.active, teacher_id = CASE WHEN $7 THEN EXCLUDED.teacher_id ELSE course_enrollments.teacher_id END, level = COALESCE($8, course_enrollments.level)`,
         [
           enrollment.id,
           enrollment.courseId,
@@ -626,6 +631,7 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
           enrollment.active,
           enrollment.teacherId ?? null,
           enrollment.teacherId !== undefined,
+          explicitLevel ?? null,
         ],
       )
     }
@@ -857,6 +863,7 @@ export function createHandler(
         '/api/admin/enrollments',
         '/api/admin/enrollments/assignment',
         '/api/admin/enrollments/membership',
+        '/api/admin/enrollments/save',
         '/api/admin/enrollments/grades',
         '/api/admin/enrollments/decision',
         '/api/admin/enrollments/handbook',
@@ -885,6 +892,7 @@ export function createHandler(
         '/api/admin/enrollments',
         '/api/admin/enrollments/assignment',
         '/api/admin/enrollments/membership',
+        '/api/admin/enrollments/save',
         '/api/admin/enrollments/grades',
         '/api/admin/enrollments/decision',
         '/api/admin/enrollments/handbook',
@@ -912,6 +920,7 @@ export function createHandler(
         '/api/admin/enrollments',
         '/api/admin/enrollments/assignment',
         '/api/admin/enrollments/membership',
+        '/api/admin/enrollments/save',
         '/api/admin/enrollments/grades',
         '/api/admin/enrollments/decision',
         '/api/admin/enrollments/handbook',

@@ -2583,3 +2583,8 @@ Four focused Chromium checks passed on desktop English and mobile Arabic. They c
 The owner requested removal of session replay while preserving notebook sync. Removed browser capture, attendance snapshots, the administrator player and frame ingestion. Older clients receive a terminal response to uploads, and the hourly cleanup still expires historical recordings after three days. Website journey diagnostics and Web Vitals continue. Attendance row focus now uses the mark control's own class.
 
 Two signed-in synthetic Chromium sessions against a disposable Postgres verified offline attendance, reload, reconnection, propagation to the student and clearing the mark. Neither browser requested the replay endpoint. A separate database integration test verified rejection of legacy uploads, retirement of playback and independent three-day recording and 30-day diagnostics retention. Production verification is tracked on the PR.
+
+## 2026-11-27 16:24 Asia/Damascus ? MCP enrollment levels
+
+- Investigated repeated successful saves followed by old levels in the notebook. The membership handler ignored the supplied level and returned success. PR #219 addresses client readback scheduling.
+- Route explicit MCP levels through the administrator enrollment write and keep legacy membership payloads from replacing them. The disposable PostgreSQL regression covers write, readback and stale membership replay. Local bun run verify passed with 155 tests and 14 opt-in skips. Production readback requires deployment and authorized access.
