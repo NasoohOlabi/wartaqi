@@ -2461,3 +2461,9 @@ Synthetic browser checks cover Arabic and English at 320, 390 and 430px and wide
 The owner requested the same phone layout in Settings → Students and icon buttons for Edit and Add student. WhatsApp shares the number line, the pencil sits beside the name fields on phones, and the person-plus icon shares the heading toolbar.
 
 Synthetic browser checks cover English and Arabic on desktop and at 320, 390 and 430px. They check alignment, overflow, localized labels, 44px targets, form navigation and the existing student save flow. The PR records release checks and Railway verification. Native WhatsApp handoff remains unverified.
+
+## 2026-11-27 09:53 Asia/Damascus — Add course roster export formats
+
+The owner asked for CSV and Excel alongside the Contacts download in the course Students view. The download icon opens a localized menu for all three formats. CSV and Excel include the full accessible active course roster with names, phone numbers and the selected course level. Contacts still skips unusable numbers and reports the omission count in the menu.
+
+The roster browser scenario passed with desktop and emulated phone Chromium. It inspected all three synthetic downloads, including Arabic names, leading zeros, missing numbers, formula-like text and search-independent scope. It checked keyboard navigation and menu layout in English and Arabic from 320 to 1624px. The PR records release and Railway verification. Native Contacts import requires a device check.
