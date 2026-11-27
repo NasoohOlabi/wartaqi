@@ -6,8 +6,6 @@ import {
   diagnosticsRoleSchema,
 } from '../shared/diagnostics'
 import { readBoundedBody } from './profile'
-import { sessionReplay } from './sessionReplay'
-import { replayPath } from '../shared/sessionReplay'
 import {
   telegramConversationsPath,
   telegramConversationTurnsPath,
@@ -38,12 +36,22 @@ export function pruneDiagnostics(pool: Pool) {
   return pool.query(`DELETE FROM website_diagnostics WHERE ${expired}`)
 }
 
+// Preserve the original retention window for recordings made before retirement.
+export function pruneExpiredRecordings(pool: Pool) {
+  return pool.query(
+    "DELETE FROM website_session_replay WHERE received_at < now() - interval '3 days'",
+  )
+}
+
 export async function diagnostics(
   request: Request,
   pool: Pool,
   notebook: (request: Request) => Promise<Response>,
 ) {
   const url = new URL(request.url)
+  // Older open tabs discard frames on 400 but retry a 404 indefinitely.
+  if (url.pathname === '/api/diagnostics/replay')
+    return reply({ error: 'Session replay retired' }, request.method === 'POST' ? 400 : 404)
   const actorId = request.headers.get('x-user-id')
   if (!actorId) return reply({ error: 'Unauthorized' }, 401)
   const me = await notebook(new Request(new URL('/api/me', url), { headers: request.headers }))
@@ -59,7 +67,6 @@ export async function diagnostics(
   if (!account.success || account.data.account.invitationProfile?.requiresSetup)
     return reply({ error: 'Forbidden' }, 403)
   const role = account.data.account.role
-  if (url.pathname === replayPath) return sessionReplay(request, pool, actorId, role)
   if (url.pathname === '/api/diagnostics' && request.method === 'POST') {
     if (
       request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json'

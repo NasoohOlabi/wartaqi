@@ -2598,7 +2598,21 @@ At 16:37 Asia/Damascus, merged main `3c8e1ee` into PR #219 and kept both work-lo
 
 At 16:56 Asia/Damascus, merged main `f0927e3` after it moved student notes to profiles. The earlier release run passed 261 browser cases and had one mobile account-switch timeout. That case passed three consecutive reruns, and the separate history and dependency checks passed. All 10 focused desktop and emulated-phone cases passed on the combined tree, including profile notes, account switching and the delayed-read regressions. The deployed browser also reproduced both delays using synthetic API responses before the fix shipped.
 
+At 17:07 Asia/Damascus, merged main `cf5a66e` after the removal of session recording. The failed mobile CI trace showed a transparent color sample with Absent selected in the surrounding snapshots. The test still checks immediate selection and now waits for each selected background before comparing the three colors. All 24 focused desktop and emulated-phone repetitions and `bun run verify` passed.
+
+## 2026-11-27 16:06 Asia/Damascus — Retire session recordings
+
+The owner requested removal of session replay while preserving notebook sync. Removed browser capture, attendance snapshots, the administrator player and frame ingestion. Older clients receive a terminal response to uploads, and the hourly cleanup still expires historical recordings after three days. Website journey diagnostics and Web Vitals continue. Attendance row focus now uses the mark control's own class.
+
+Two signed-in synthetic Chromium sessions against a disposable Postgres verified offline attendance, reload, reconnection, propagation to the student and clearing the mark. Neither browser requested the replay endpoint. A separate database integration test verified rejection of legacy uploads, retirement of playback and independent three-day recording and 30-day diagnostics retention. Production verification is tracked on the PR.
+
 ## 2026-11-27 16:24 Asia/Damascus ? MCP enrollment levels
 
 - Investigated repeated successful saves followed by old levels in the notebook. The membership handler ignored the supplied level and returned success. PR #219 addresses client readback scheduling.
 - Route explicit MCP levels through the administrator enrollment write and keep legacy membership payloads from replacing them. The disposable PostgreSQL regression covers write, readback and stale membership replay. Local bun run verify passed with 155 tests and 14 opt-in skips. Production readback requires deployment and authorized access.
+
+## 2026-11-27 16:45 Asia/Damascus — Expand the website README
+
+The owner asked for a fuller description of Wartaq and diagrams. The README explains the public Qur’an course homepage, role permissions, attendance and follow-up, offline sync, and Telegram and MCP access. Two Mermaid diagrams show the session workflow and the path from a local mark to the notebook and student portal.
+
+All 12 relative links resolved. Both diagrams rendered in Chromium at 375 px and 920 px with accessible titles and descriptions. `bun run verify` passed on the updated base. `bun run verify:release` passed before the base update, with 155 unit tests and 258 browser tests passing. Fourteen database-dependent unit-suite cases and six browser cases were skipped locally. The PR records CI and the public checks after Railway deploys the merged commit.
