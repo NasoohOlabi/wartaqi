@@ -62,11 +62,17 @@ test('authenticated notebook supports attendance, notes and corrections', async 
   for (const mark of [present, excused, absent]) {
     await mark.press('Space')
     await expect(mark).toHaveAttribute('aria-pressed', 'true')
-    tileBackgrounds.add(await mark.evaluate((button) => getComputedStyle(button).backgroundColor))
+    await expect
+      .poll(async () => {
+        const color = await mark.evaluate((button) => getComputedStyle(button).backgroundColor)
+        if (color === 'rgba(0, 0, 0, 0)') return false
+        tileBackgrounds.add(color)
+        return true
+      })
+      .toBe(true)
     iconColors.add(await mark.locator('svg').evaluate((icon) => getComputedStyle(icon).color))
   }
   expect(tileBackgrounds.size).toBe(3)
-  expect([...tileBackgrounds]).not.toContain('rgba(0, 0, 0, 0)')
   expect(iconColors.size).toBe(3)
   await expect.poll(() => attendancePosts).toBe(3)
   await expect(absent).toBeFocused()

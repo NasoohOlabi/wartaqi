@@ -10,6 +10,8 @@ Sign in to open the dashboard. Use **Take attendance** and choose an open course
 
 ## Driving it with Playwright
 
+Hold the notebook read after one online mark is accepted. Mark another student and check that the second request succeeds while the read remains stalled. Reload and verify both marks.
+
 Open Attendance without a course and follow the course selection action. In Courses, choose an open course as current, then open Attendance and read the alphabetical roster without typing or expanding a group. Check the enrollment-specific Teacher and Level cells and mark a student by name. Check both Arabic and English on desktop and at 320/390/430px. A closed course permits historical inspection only.
 
 On Dashboard, check that each follow-up card fits its localized weekday and numeric day/month on one line. All six cards share a row when their labels fit and wrap on narrower phones. The top border is red for Absent, green for Present, amber for Excused and dashed for Unmarked. Screen readers still announce the localized status. `e2e/dashboard.spec.ts` checks the colors, weekday, date order and overflow in English and Arabic at 320/360/390/430/662/1280px.

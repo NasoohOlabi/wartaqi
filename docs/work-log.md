@@ -2584,6 +2584,22 @@ The owner reported that a slow enrollment save left the switch looking off. A se
 
 Four focused Chromium checks passed on desktop English and mobile Arabic. They cover a held enrollment write and refresh, a blocked second tap, later withdrawal, failed rejoin and retry with the original enrollment ID, and the earlier inactive roster regression. The course suite passed against disposable PostgreSQL. The PR records the release checks and Railway verification.
 
+## 2026-11-27 16:03 Asia/Damascus — Keep online writes moving during readback
+
+The owner reported that an edit made on a connected phone committed late and asked to fix delivery before changing conflict policy. Two production attendance records showed about 13 seconds between their device timestamps and database receipt. The available telemetry could not tie the reported edit to a particular client stall.
+
+Holding a post-save notebook read reproduced a second write stalling in attendance and course teacher assignment on desktop and emulated iPhone. The attendance drain now releases after upload and schedules readback independently. Course requests still send in submission order, while readback and retry handling run separately. Both browser regressions require the second write to succeed before releasing the held read and verify the result after reload. The PR records broader checks and Railway delivery. A physical phone and the original incident remain unverified.
+
+The sync design records the next phases: compare reliable user edit times for the same field, retain field history, and show automatic and manual conflict resolutions from the last seven days in Settings.
+
+At 16:30 Asia/Damascus, merged main `4b687e0` into PR #219. The course switch shows the pending membership during save and retry alongside the separate write and readback queues. All 10 focused desktop and emulated-phone cases passed, including the switch, course assignments and attendance under delayed readback. `bun run verify` passed. Fresh CI and Railway verification remain pending.
+
+At 16:37 Asia/Damascus, merged main `3c8e1ee` into PR #219 and kept both work-log entries. The browser code matches the earlier verified branch, and the MCP enrollment changes match main. `bun run verify` passed with 155 tests and 14 opt-in skips. The new branch requires fresh CI before release.
+
+At 16:56 Asia/Damascus, merged main `f0927e3` after it moved student notes to profiles. The earlier release run passed 261 browser cases and had one mobile account-switch timeout. That case passed three consecutive reruns, and the separate history and dependency checks passed. All 10 focused desktop and emulated-phone cases passed on the combined tree, including profile notes, account switching and the delayed-read regressions. The deployed browser also reproduced both delays using synthetic API responses before the fix shipped.
+
+At 17:07 Asia/Damascus, merged main `cf5a66e` after the removal of session recording. The failed mobile CI trace showed a transparent color sample with Absent selected in the surrounding snapshots. The test still checks immediate selection and now waits for each selected background before comparing the three colors. All 24 focused desktop and emulated-phone repetitions and `bun run verify` passed.
+
 ## 2026-11-27 16:06 Asia/Damascus — Retire session recordings
 
 The owner requested removal of session replay while preserving notebook sync. Removed browser capture, attendance snapshots, the administrator player and frame ingestion. Older clients receive a terminal response to uploads, and the hourly cleanup still expires historical recordings after three days. Website journey diagnostics and Web Vitals continue. Attendance row focus now uses the mark control's own class.
