@@ -101,6 +101,7 @@ export function WorkspaceNavigation({
               type="button"
               className="workspace-up size-12 shrink-0 items-center justify-center rounded-full text-white hover:bg-white/10"
               aria-label={back.label}
+              title={back.label}
               onClick={back.onClick}
             >
               <ArrowLeft className="icon-directional" size={24} aria-hidden="true" />

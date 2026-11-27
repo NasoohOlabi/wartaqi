@@ -18,6 +18,8 @@ Prefer mobile-first, page-oriented navigation: list pages open on saved records,
 
 Use available horizontal space for related controls and panels. Share a row when they fit naturally, then wrap on narrow screens. During UI verification, check wide desktop and narrow phone widths in English and Arabic for stranded controls, wasted rows, and horizontal overflow.
 
+Prefer familiar icons for buttons such as Export. Give icon buttons a localized accessible name, a tooltip, and a 44px touch target. If the icon may be unclear on its own, ask the user whether they prefer an icon or a text label.
+
 ## Validation and safety
 
 - Run `bun run verify` before completing any repository change. For UI changes use `.agents/skills/verify-halaqa/SKILL.md` and the affected feature map. Run `bun run verify:release` before stable promotion/publication. Fix failed checks; document provider checks that cannot run locally.

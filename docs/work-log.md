@@ -2420,7 +2420,7 @@ The course roster browser scenario passed for All columns, Groups and Books in E
 
 ## 2026-11-27 08:43 Asia/Damascus — Move mobile student Back into the top app bar
 
-The owner asked for Android-standard placement on the Arabic student profile. The mobile top app bar now shows a 48px Back control at the leading edge, on the right in Arabic and the left in English. Its direction, accessible label and return destination follow the current language and student entry path. The desktop profile keeps its labelled Back control.
+The owner asked for Android-standard placement on the Arabic student profile. The mobile top app bar now shows a 48px Back control at the leading edge, on the right in Arabic and the left in English. Its direction, accessible label, tooltip and return destination follow the current language and student entry path. The desktop profile keeps its labelled Back control.
 
 The browser regression checks the leading position, icon direction, touch target, page width and return focus at 320, 360, 390 and 430px. The 360px Arabic deep link also exercises the numbered course layout and returns to the course-scoped roster. The fixtures are synthetic. Physical Android behavior requires a device check. The PR records release and Railway verification.
 
@@ -2429,3 +2429,11 @@ The browser regression checks the leading position, icon direction, touch target
 The owner asked to tighten the attendance panel and replace the Add student text button with a person-plus icon. The date and attendance counts share a row. The attendance action and the icon share a second row on phones and fit alongside the date on desktop. The icon opens the existing Administrator creation form and uses a localized accessible label.
 
 Synthetic browser checks exercise the icon and check layout and overflow at 320, 360 and 1280px in Arabic and English. Browser emulation covers these widths. The PR records release checks and Railway verification.
+
+## 2026-11-27 08:51 Asia/Damascus — Fix the notebook roster heading
+
+The owner reported that the Export contacts label squeezed the Arabic Students heading into individual letters. The course roster now uses a localized 44px download icon. Export, Sort and Filter share the heading row when they fit and wrap together when space is tight. `AGENTS.md` records the icon preference and directs agents to ask when an icon alone may be unclear.
+
+The contact export scenario passed in desktop and emulated phone Chromium at 320, 360, 390, 430 and 1624px in English and Arabic. It checked the heading, toolbar and filtered-roster vCard download using synthetic records. The PR records release checks and deployment verification.
+
+At 08:58 Asia/Damascus, the full browser suite caught the narrower All students toolbar wrapping when it could share a row with the heading. Scoped wrapping to courses, where the export icon appears. Both course export checks and the mobile All students scenario passed on rerun.

@@ -525,6 +525,7 @@ test('compact roster opens by student name and sorts from its toolbar', async ({
     const logo = appBar.locator('.wartaq-logo')
     await expect(appBar.getByRole('button', { name: backName, exact: true })).toBeVisible()
     await expect(back).toHaveCount(1)
+    await expect(back).toHaveAttribute('title', backName)
     await expect(back.locator('svg')).toHaveCSS(
       'transform',
       ar ? 'matrix(-1, 0, 0, 1, 0, 0)' : 'none',
