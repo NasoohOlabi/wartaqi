@@ -2449,3 +2449,9 @@ At 08:58 Asia/Damascus, the full browser suite caught the narrower All students 
 The owner approved a two-row profile. The first row combines the full name and level badge, with WhatsApp at the far left in Arabic and far right in English. The next row combines the dial link, location pin, birth year and courses. Longer details wrap, and WhatsApp and dialing keep separate targets.
 
 Synthetic browser checks cover Arabic and English at 320, 390 and 430px and wide desktop. They exercise both link targets, profile and history geometry, and course-specific level display. The PR records release and Railway checks. Native WhatsApp handoff requires a physical device.
+
+## 2026-11-27 09:47 Asia/Damascus — Fit dashboard attendance cards on one line
+
+The owner asked to remove the visible status words from the follow-up cards. Each card shows the weekday and date on one line, with a red top border for Absent and a green top border for Present. Excused uses amber and unmarked uses a dashed border. Screen readers retain the localized status.
+
+The dashboard and theme browser checks passed with synthetic records. They cover date order, single-line fit at 320, 360, 390, 430 and 1280px in English and Arabic, status colors, and screen-reader text. The PR records the full release checks and Railway verification.
