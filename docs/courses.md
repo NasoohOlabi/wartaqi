@@ -38,6 +38,8 @@ Inactive enrollments remain available for historical attendance, corrections and
 
 On a student's profile, a warning names the selected course if the student has no active enrollment in it. Choose **General info** in the app bar to clear the course for that profile and see the student's roster level and attendance across accessible courses. The saved default course stays in effect when opening the bare app link.
 
+In **Student information**, administrators can review saved theory and practical scores, attendance rate and the effective Pass, Fail or Pending result by course. The summary includes closed courses and withdrawn enrollments. It uses the course's saved grading criteria, projected attendance and any saved result override. A missing score or unavailable attendance is shown with an em dash. Open **Attendance history** to see individual dates, marks and table controls. History starts collapsed in All students and closed courses, and opens by default in a selected open course.
+
 Grades omits the redundant Enrolled column; use Manage students to inspect or change current membership. Historical grades remain visible after withdrawal. Across the notebook, whole-number numeric levels display without a decimal suffix (`1.0` becomes `1`). Named levels and meaningful fractional values remain intact, blank course levels stay blank, and stored values are preserved.
 
 Level columns follow the page language. Values align right in Arabic and left in English, including numeric levels and names written in another script.
