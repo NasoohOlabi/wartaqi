@@ -239,7 +239,7 @@
 }
 @container course-list (min-width: 48rem) {
   .course-list-table th.table-actions-header {
-    width: 20rem;
+    width: 22rem;
   }
   .course-actions-inline {
     display: flex;

@@ -2571,3 +2571,9 @@ After a local save, the selected mark now stays visible for 650 ms, then the car
 The browser regression exercises the middle and end of a long roster, a repeat tap, reload, and reduced-motion focus on desktop and mobile Chromium. Before and after recordings use synthetic records in a 390 px phone viewport. The PR records release and Railway checks. Physical-device and authenticated production behavior require separate verification.
 
 At 15:36 Asia/Damascus, PR #218's second browser shard caught a row disappearing before its confirmation delay while an earlier sync was still settling after reload. The hold now follows the result of the specific local save, and a focused row hands off focus before it is removed. The browser regression covers both keyboard and pointer focus through this path.
+
+## 2026-11-27 16:00 Asia/Damascus — Manage course groups by teacher
+
+The owner asked for a course-row menu action that opens teacher groups and lets administrators move individual students. **Manage groups** opens a course page with teacher accordions and an **Unassigned** group. Each move updates only the selected enrollment's teacher using the existing assignment endpoint. A failed save leaves the member in their last confirmed group and offers a retry.
+
+Synthetic Chromium checks cover the course menu, move, failed save, retry, reload and independent enrollment data on desktop and an Arabic phone. The course integration test passed against disposable PostgreSQL 17 and checked authorization, course scope, withdrawal and preservation of other enrollment fields. The PR records release and Railway checks. Production sign-in and physical-device behavior require separate verification.

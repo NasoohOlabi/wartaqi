@@ -53,8 +53,9 @@ export function useQueryState() {
       z.union([z.uuid(), z.literal('none'), z.literal('all')]).safeParse(query.get('course'))
         .data ?? '',
     courseView:
-      z.enum(['create', 'edit', 'students', 'grades', 'history']).safeParse(query.get('courseView'))
-        .data ?? '',
+      z
+        .enum(['create', 'edit', 'students', 'groups', 'grades', 'history'])
+        .safeParse(query.get('courseView')).data ?? '',
     studentMode:
       z.enum(['all', 'groups', 'books']).safeParse(query.get('studentMode')).data ?? 'all',
     all: query.get('all') === '1',

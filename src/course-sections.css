@@ -53,6 +53,13 @@
 }
 
 @media (max-width: 480px) {
+  .workspace-sections {
+    gap: 0;
+  }
+  .workspace-sections a {
+    padding-inline: 0.25rem;
+    font-size: 0.875rem;
+  }
   .course-page-heading {
     font-size: 1.25rem;
     line-height: 1.3;

@@ -250,7 +250,8 @@ async function setupCourses(page: Page) {
       for (const entry of entries) {
         if (body.teacherId !== undefined) {
           entry.teacherId = body.teacherId
-          entry.teacherName = body.teacherId ? 'Admin' : null
+          entry.teacherName =
+            board.teachers.find((teacher) => teacher.teacherId === body.teacherId)?.name ?? null
         }
         if (body.kind === 'edit' && body.active !== undefined) entry.active = body.active
       }
@@ -1020,7 +1021,11 @@ test('course enrollment and same-day attendance stay separate', async ({ page },
     await expect(recordActions(courseList)).toHaveCount(0)
     const courseBGroup = courseList.getByRole('group', { name: 'Actions for Course B' })
     const icons = courseBGroup.getByRole('button')
-    await expect(icons).toHaveCount(6)
+    await expect(icons).toHaveCount(7)
+    await expect(courseBGroup.getByRole('button', { name: 'Manage groups' })).toHaveAttribute(
+      'title',
+      'Manage groups',
+    )
     const bounds = await icons.evaluateAll((buttons) =>
       buttons.map((button) => {
         const { left, right, top, width, height } = button.getBoundingClientRect()
@@ -1282,7 +1287,7 @@ test('course enrollment and same-day attendance stay separate', async ({ page },
     await page.setViewportSize({ width: 320, height: 844 })
     const tabs = page.getByRole('navigation', { name: 'Course sections' })
     const links = tabs.getByRole('link')
-    await expect(links).toHaveCount(3)
+    await expect(links).toHaveCount(4)
     const boxes = await links.evaluateAll((items) =>
       items.map((item) => {
         const r = item.getBoundingClientRect()
@@ -1368,6 +1373,99 @@ test('course management updates an existing enrollment for an inactive roster st
     { id: enrollA, level: '4', theory: 90, handbookReceived: true },
   ])
   expect(students[0].active).toBe(false)
+})
+
+test('course group accordions move one enrollment and preserve it on failure', async ({
+  page,
+}, testInfo) => {
+  const { assignments, board, enrollments, failNextAssignment, students } = await setupCourses(page)
+  const destinationId = '10000000-0000-4000-8000-000000000004'
+  board.teachers.push({ teacherId: destinationId, name: 'Destination Teacher', active: false })
+  students[0].active = false
+  board.students[0].active = false
+  Object.assign(enrollments[0], {
+    teacherId,
+    teacherName: 'Admin',
+    level: '4',
+    practical: 0,
+    theory: 91,
+    notes: 'Saved feedback',
+    handbookReceived: true,
+  })
+  enrollments.push({
+    ...enrollments[0],
+    id: '40000000-0000-4000-8000-000000000003',
+    studentId: secondStudentId,
+    teacherId: null,
+    teacherName: null,
+  })
+  const [original, otherCourse] = structuredClone(enrollments)
+  const ar = testInfo.project.name === 'mobile'
+  if (ar) {
+    await page.setViewportSize({ width: 320, height: 844 })
+    await page.addInitScript(() => localStorage.setItem('halaqa-language-preference', 'ar'))
+  }
+  await page.goto('/?page=app&view=courses')
+  const course = page.getByRole('row').filter({ hasText: 'Course A' })
+  if (!ar)
+    await page
+      .locator('.course-list-scroll')
+      .evaluate((container) => (container.style.maxInlineSize = '40rem'))
+  await recordActions(course).click()
+  await course.getByRole('button', { name: ar ? 'إدارة المجموعات' : 'Manage groups' }).click()
+  await expect(page).toHaveURL(/courseView=groups/)
+  const sections = page.getByRole('navigation', { name: ar ? 'أقسام الدورة' : 'Course sections' })
+  await expect(
+    sections.getByRole('link', { name: ar ? 'إدارة المجموعات' : 'Manage groups' }),
+  ).toHaveAttribute('aria-current', 'page')
+  const sectionTops = await sections
+    .getByRole('link')
+    .evaluateAll((links) => links.map((link) => link.getBoundingClientRect().top))
+  expect(new Set(sectionTops).size).toBe(1)
+
+  const group = (name: string) =>
+    page.locator('details').filter({
+      has: page.locator('summary').filter({ hasText: name }),
+    })
+  const source = group('Admin')
+  const destination = group('Destination Teacher')
+  const unassigned = group(ar ? 'غير معيّن' : 'Unassigned')
+  const moveName = `${ar ? 'نقل إلى مجموعة' : 'Move to group'}: Synthetic Student`
+  const move = source.getByRole('combobox', { name: moveName })
+  await expect(move).toBeHidden()
+  await source.locator('summary').click()
+  await expect(move).toBeVisible()
+  await unassigned.locator('summary').click()
+  await expect(unassigned.getByText('New Student', { exact: true })).toBeVisible()
+  await destination.locator('summary').click()
+  await expect(destination.getByRole('combobox')).toHaveCount(0)
+  expect((await move.boundingBox())?.height).toBeGreaterThanOrEqual(44)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    await page.evaluate(() => window.innerWidth),
+  )
+  if (ar) await page.screenshot({ path: '.artifacts/verification/course-groups-ar-320.png' })
+
+  failNextAssignment()
+  await move.selectOption(destinationId)
+  await expect(page.getByRole('alert').first()).toBeVisible()
+  await expect(move).toBeVisible()
+  expect(enrollments[0]).toEqual(original)
+  await page.getByRole('button', { name: ar ? 'إعادة المحاولة' : 'Retry', exact: true }).click()
+  await expect(destination.getByRole('combobox', { name: moveName })).toBeVisible()
+  await expect(move).toHaveCount(0)
+  const assignment = { kind: 'group', courseId: courseA, ids: [enrollA], teacherId: destinationId }
+  expect(assignments).toEqual([assignment, assignment])
+  expect(enrollments[0]).toEqual({
+    ...original,
+    teacherId: destinationId,
+    teacherName: 'Destination Teacher',
+  })
+  expect(enrollments[1]).toEqual(otherCourse)
+  expect(students[0].active).toBe(false)
+
+  await page.reload()
+  await destination.locator('summary').click()
+  await expect(destination.getByRole('combobox', { name: moveName })).toBeVisible()
 })
 
 test('course roster modes focus the table and save a group across searches', async ({
