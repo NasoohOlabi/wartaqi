@@ -1895,7 +1895,6 @@ test('grades, attendance, and withdrawal preserve course history', async ({ page
     .getByLabel('Attendance for Synthetic Student')
     .getByRole('button', { name: 'absent', exact: true })
     .click()
-  await page.getByRole('button', { name: 'Save attendance (1)' }).click()
   await expect.poll(() => events.length).toBe(2)
   await makeCurrent(page, 'Course A')
   await expect(

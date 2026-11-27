@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { compactHeader } from './headerLayout'
 import { mkdir } from 'node:fs/promises'
 import { makeEvent, type LedgerEvent } from '../shared/ledger'
+import { offlineAttendanceSyncSchema } from '../shared/offlineAttendance'
 import { acceptSyntheticSync } from './syntheticSync'
 
 test.use({ trace: 'off' })
@@ -263,7 +264,6 @@ test('sign in, reload and switch teacher without mixing notebook data', async ({
     .getByLabel('Attendance for Alpha Student')
     .getByRole('button', { name: 'present', exact: true })
     .click()
-  await page.getByRole('button', { name: 'Save attendance (1)' }).click()
   await expect(page.getByText('Saved on this device. Waiting to sync.')).toBeVisible()
   await expect(page.getByText('Changes accepted by Wartaq.')).toBeVisible()
   expect(events[users[0].id]).toHaveLength(1)
@@ -656,7 +656,6 @@ async function saveAttendance(page: Page, mark = 'present') {
     .getByLabel('Attendance for Alpha Student')
     .getByRole('button', { name: mark, exact: true })
     .click()
-  await page.getByRole('button', { name: 'Save attendance (1)' }).click()
 }
 
 async function installLegacyBatch(page: Page) {
@@ -700,7 +699,11 @@ test('storage write failure prevents authenticated writes', async ({ page }) => 
   await expect(page.getByRole('alert').first()).toContainText(
     'Could not save these changes on this device',
   )
-  await expect(page.getByRole('button', { name: 'Save attendance (1)' })).toBeEnabled()
+  const present = page
+    .getByLabel('Attendance for Alpha Student')
+    .getByRole('button', { name: 'present', exact: true })
+  await expect(present).toBeEnabled()
+  await expect(present).toHaveAttribute('aria-pressed', 'false')
   expect(posts).toBe(0)
 })
 
@@ -759,6 +762,51 @@ test('corrupted pending storage blocks authenticated writes', async ({ page }) =
   })
   await expect(page.getByRole('alert').first()).toContainText('saved batch is corrupted')
   expect(posts).toBe(0)
+})
+
+test('successive marks queue individually while the first delivery is held', async ({ page }) => {
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const requests: Array<ReturnType<typeof offlineAttendanceSyncSchema.parse>> = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url() === `${api}/attendance/sync`)
+      requests.push(offlineAttendanceSyncSchema.parse(request.postDataJSON()))
+  })
+  try {
+    await mockTeacher(page, async () => await gate)
+    await saveAttendance(page)
+    await expect.poll(() => requests.length).toBe(1)
+    await saveAttendance(page, 'absent')
+    await saveAttendance(page, 'excused')
+    await expect(
+      page.getByLabel('Attendance for Alpha Student').getByRole('button', { pressed: true }),
+    ).toHaveAccessibleName('excused')
+    await expect(page.getByRole('button', { name: 'My changes', exact: true })).toBeVisible()
+    expect(requests).toHaveLength(1)
+    release()
+    await expect.poll(() => requests.length).toBe(3)
+    const records = requests.flatMap(({ records }) => records)
+    expect(requests.every(({ records }) => records.length === 1)).toBe(true)
+    expect(records.map(({ event }) => event.payload.status)).toEqual([
+      'present',
+      'absent',
+      'excused',
+    ])
+    expect(records.map(({ expectedEventId }) => expectedEventId)).toEqual([
+      null,
+      records[0].event.id,
+      records[1].event.id,
+    ])
+    await expect(page.getByText('Changes accepted by Wartaq.')).toBeVisible()
+    await page.reload()
+    await expect(
+      page.getByLabel('Attendance for Alpha Student').getByRole('button', { pressed: true }),
+    ).toHaveAccessibleName('excused')
+  } finally {
+    release()
+  }
 })
 
 test('a second tab can queue locally while the first tab holds network delivery', async ({

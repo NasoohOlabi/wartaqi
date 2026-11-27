@@ -718,6 +718,7 @@ export async function queueNotebookOperations(
   userId: string,
   attendance: Omit<PendingAttendance, 'outcome'>[],
   students: StudentOperation[],
+  previousTapSnapshotKey?: string,
 ) {
   const marks = attendance.map((entry) => pendingSchema.parse({ ...entry, outcome: null }))
   const operations = students.map((operation) =>
@@ -726,21 +727,41 @@ export async function queueNotebookOperations(
   const db = await openDatabase()
   try {
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(['pending', 'studentPending'], 'readwrite')
+      const tx = db.transaction(['pending', 'studentPending', 'snapshots'], 'readwrite')
       const markStore = tx.objectStore('pending')
-      const markRequest = markStore.get(userId)
-      markRequest.onsuccess = () => {
-        const queue = z.array(pendingSchema).parse(markRequest.result ?? [])
-        for (const item of marks) {
-          const previous = queue.findLast((entry) => attendanceKey(entry) === attendanceKey(item))
-          queue.push({
-            ...item,
-            expectedEventId: previous?.event.id ?? item.expectedEventId,
-            ...(previous ? { expectedRevision: undefined } : {}),
-          })
+      // An earlier tap can move from pending to the saved snapshot before this write.
+      const snapshotRequest =
+        marks.length && previousTapSnapshotKey
+          ? tx.objectStore('snapshots').get(previousTapSnapshotKey)
+          : null
+      const queueMarks = (snapshot: OfflineSnapshot | null) => {
+        const markRequest = markStore.get(userId)
+        markRequest.onsuccess = () => {
+          const queue = z.array(pendingSchema).parse(markRequest.result ?? [])
+          for (const item of marks) {
+            const previous = queue.findLast((entry) => attendanceKey(entry) === attendanceKey(item))
+            const payload = item.event.payload
+            const current = snapshot?.attendance.find(
+              (entry) =>
+                entry.studentId === payload.studentId &&
+                entry.enrollmentId === payload.enrollmentId &&
+                entry.date === payload.date,
+            )
+            queue.push({
+              ...item,
+              expectedEventId:
+                previous?.event.id ??
+                (snapshot ? (current?.eventId ?? null) : item.expectedEventId),
+              ...(previous ? { expectedRevision: undefined } : {}),
+            })
+          }
+          markStore.put(queue, userId)
         }
-        markStore.put(queue, userId)
       }
+      if (snapshotRequest)
+        snapshotRequest.onsuccess = () =>
+          queueMarks(offlineSnapshotSchema.safeParse(snapshotRequest.result).data ?? null)
+      else queueMarks(null)
       const studentStore = tx.objectStore('studentPending')
       const studentRequest = studentStore.get(userId)
       studentRequest.onsuccess = () => {

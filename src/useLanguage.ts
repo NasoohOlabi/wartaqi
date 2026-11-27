@@ -26,7 +26,6 @@ const arabic = {
   'Discard pending retry': 'إلغاء إعادة المحاولة المعلّقة',
   'Loading records…': 'جارٍ تحميل السجلات…',
   'Who is here today?': 'من حاضر اليوم؟',
-  'Only marked students are saved.': 'يُحفظ الحضور للطلاب الذين حُدّدت حالتهم فقط.',
   'Session date': 'تاريخ الجلسة',
   'Add your students in Students, or adjust the group filter.':
     'أضف طلابك في قسم الطلاب أو غيّر مرشح المجموعة.',
@@ -35,7 +34,6 @@ const arabic = {
   present: 'حاضر',
   absent: 'غائب',
   excused: 'معذور',
-  'Save attendance': 'حفظ الحضور',
   'Add note': 'إضافة ملاحظة',
   'Add note for': 'إضافة ملاحظة للطالب',
   'Note for': 'ملاحظة للطالب',

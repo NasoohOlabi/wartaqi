@@ -2541,3 +2541,11 @@ The owner asked for a prominent explanation when a student has no enrollment in 
 Synthetic Chromium checks exercise the warning, preserved withdrawal history, course clearing, reload, the saved default and the return path from Manage students. English and Arabic layouts cover long names and numbered badges at 320px and on desktop. The PR records release and Railway checks. Physical-device and authenticated production behavior require separate verification.
 
 At 11:50 Asia/Damascus, Browser shard 2 caught a grades result staying Pending after a threshold save. Verify failed because it aggregates that shard. Holding the grade refresh across the threshold write reproduced the failure on desktop and mobile. Course and grade saves now wait for any earlier read before requesting a snapshot. The held-read test checks that the result becomes Pass using the saved scores and threshold.
+
+## 2026-11-27 11:51 Asia/Damascus - Save attendance on tap
+
+The owner asked for each attendance tap to save without a separate button or batch marking. Each choice updates its row immediately and uses the existing durable offline queue. Repeating the selected status leaves it in place. Successive taps keep their order, and append-only corrections remain available to administrators.
+
+Verification covers individual requests, rapid updates with sync delayed, offline reload, corrections and English and Arabic layouts. The PR records release and Railway verification. Authenticated browser verification uses synthetic fixtures.
+
+The local verification gate passed against disposable Postgres. The real-server browser test confirmed that a single offline tap survives reload, creates one attendance event and reaches a separate signed-in student. The updated phone layout and profile tests passed in both Chromium projects.

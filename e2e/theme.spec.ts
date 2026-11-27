@@ -76,6 +76,7 @@ test('dark attendance uses charcoal surfaces, a blue primary action and red abse
   await mockSyntheticNotebook(page, { role: 'teacher' })
   await page.goto('/?page=app')
   await page.getByRole('button', { name: /Continue attendance/ }).click()
+  await page.getByRole('button', { name: 'Show unmarked', pressed: true }).click()
   const group = page.getByRole('group', { name: 'Attendance for Omar' })
   const absent = group.getByRole('button', { name: 'absent', exact: true })
   await expect(group).toHaveCSS('background-color', 'rgb(45, 48, 50)')
@@ -83,7 +84,6 @@ test('dark attendance uses charcoal surfaces, a blue primary action and red abse
   await expect(absent).toHaveAttribute('aria-pressed', 'true')
   await expect(absent).toHaveCSS('color', 'rgb(239, 119, 119)')
   await expect(absent).toHaveCSS('outline-color', 'rgb(131, 185, 225)')
-  await page.getByRole('button', { name: 'Save attendance (1)' }).click()
   await page.getByRole('button', { name: 'Dashboard', exact: true }).click()
 
   const navigation = page.locator('.workspace-rail')
