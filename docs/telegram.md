@@ -48,20 +48,20 @@ The suite checks the answer, the tools called and the intended fallback. `--json
 | “Show attendance for Demo Recitation on 2026-11-23” | Staff see the session for the exact course and date.             |
 | “Mark Demo Lina absent”                             | The bot explains how to save the mark from the attendance menu.  |
 
-The production graph and Telegram update handler have separate tests. Run these for multi-step reads, fresh follow-ups, exact confirmation, conflicts and replay protection.
+The native worker tests cover multi-step reads, fresh follow-ups, exact confirmation, conflicts and replay protection. They supply synthetic Telegram, MCP and inference responses.
 
 ```powershell
-npm test -- tests/telegram-agent-tools.test.ts tests/telegram-agent-graph.test.ts tests/telegram-agent-delivery.test.ts
+cargo test --locked --manifest-path rust-telegram/Cargo.toml
 ```
 
-For a headless run with actual inference, MCP and database writes, start Docker and LM Studio on this computer, then run:
+To compare inference and database writes against the previous TypeScript implementation, start Docker and local LM Studio, then run:
 
 ```powershell
 powershell -NoProfile -File scripts/verify-telegram-agent-headless.ps1
 powershell -NoProfile -File scripts/verify-telegram-agent-headless.ps1 -Question 'Who was absent from Demo Recitation on 2026-11-21?'
 ```
 
-It uses disposable synthetic data and the actual worker. The local test supplies Telegram-shaped updates and captures the replies. It needs no Telegram account, bot token, or production database access.
+The comparison uses disposable synthetic data and captures replies to Telegram-shaped updates. It needs no Telegram account, bot token or production database access.
 
 Set `TELEGRAM_LANGGRAPH_ENABLED=1` to turn on the production graph. Browser-linked users with an expired token can open `/menu` to refresh it. Set the flag to `0` to return to the original help-only assistant. In that mode, Wartaq Administrators can review retained help exchanges for three days.
 
@@ -95,21 +95,20 @@ stateDiagram-v2
     Home --> Link: Unlink and start again
 ```
 
-| To change                                           | Edit                                        | Verification                           |
-| --------------------------------------------------- | ------------------------------------------- | -------------------------------------- |
-| Home and available destinations                     | `telegram/menu.ts`, `telegram/routes.ts`    | Telegram integration and route tests   |
-| Roster, attendance, notes or corrections            | `telegram/notebook/`                        | Telegram notebook tests                |
-| Course details, memberships, grades or Excel files  | `telegram/courses/`                         | Telegram course tests                  |
-| Profiles or invitations                             | `telegram/accounts/`                        | Telegram account tests                 |
-| Button delivery, command handling or callback page  | `telegram/runtime/`                         | Telegram runtime tests                 |
-| Browser linking, token refresh or permission checks | `telegram/auth.ts`, `telegram/transport.ts` | Telegram runtime and integration tests |
-| Teacher and Student phone sign-in                   | `telegram/runtime/`, `server/index.ts`      | Telegram runtime and database tests    |
+| To change                                           | Edit                                   |
+| --------------------------------------------------- | -------------------------------------- |
+| Menus, attendance, notes or corrections             | `rust-telegram/src/screens.rs`         |
+| Courses, memberships, grades or Excel files         | `rust-telegram/src/screens/courses.rs` |
+| Invitations, roster edits or account management     | `rust-telegram/src/screens/admin.rs`   |
+| Button delivery, commands or callback page          | `rust-telegram/src/worker.rs`          |
+| Browser linking, credential refresh or phone grants | `rust-telegram/src/auth.rs`            |
+| Assistant tools, decisions and approval receipts    | `rust-telegram/src/agent/`             |
 
-Add a destination to its workflow's route list and implement its screen. `Action.route` is derived from those lists, so misspelled button and prompt destinations fail type checking. Check the caller's available MCP tools before an action, and add a test that follows the real button or prompt through its side effect. Stored buttons from an older release can survive for fifteen minutes, so treat removed destinations as expired.
+Register new destinations in the native screen dispatcher. Check the caller's available MCP tools before an action, and verify the real button or prompt through its side effect. Stored buttons from an older release can survive for fifteen minutes. Removed destinations expire.
 
 ## Railway worker
 
-The local `telegram/Dockerfile` builds the worker with Node.js 24 and opens the existing encrypted SQLite state. The AppSuite worker remains on the earlier deployed image. Use the repository root as the build context, `main` as the source branch, Wait for CI, one replica and an always-on service. Attach a writable volume at `/data`. The public domain accepts the OAuth redirect at `/callback`. The worker receives Telegram updates through long polling. `/health` returns 200 after successful polling and 503 on a polling failure.
+`telegram/Dockerfile` builds the Rust worker and opens the existing encrypted SQLite state. The AppSuite worker remains on the earlier deployed image. Use the repository root as the build context, `main` as the source branch, Wait for CI, one replica and an always-on service. Attach a writable volume at `/data`. The public domain accepts the OAuth redirect at `/callback`. The worker receives Telegram updates through long polling. `/health` returns 200 after successful polling and 503 on a polling failure.
 
 | Worker variable          | Value                                                  |
 | ------------------------ | ------------------------------------------------------ |
@@ -143,6 +142,6 @@ railway logs --service wartaq-telegram --environment production --since 24h --fi
 
 Read the inference outcome and delivery outcome together. The events record the prompt version, configured model, timing, provider status and token usage when available. A transcript write failure is logged under the same trace. Railway logs contain metadata only. To reproduce an issue, use a synthetic question that describes the same workflow.
 
-When inference is configured, the worker logs a synthetic probe at startup. Check this outcome after a deployment. Telegram polling health is available independently at `/health`. To run the same probe on a local candidate with synthetic configuration, start the worker image with `node /app/bot.mjs --assistant-smoke`. The check emits a trace, makes no Telegram calls and exits with a failure status if it cannot get a usable answer.
+When inference is configured, the worker logs a synthetic probe at startup. Telegram polling health is available independently at `/health`. To run the same probe on a local candidate, start `wartaq-telegram --assistant-smoke` with the local inference configuration. The probe makes no Telegram calls and exits with a failure status if it cannot get a usable answer.
 
 To roll back a bot release, redeploy the previous successful worker image or take only the bot service offline. Keep its volume. Changes users already saved through Wartaq follow the website's normal correction and management workflows.

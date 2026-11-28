@@ -1,18 +1,11 @@
-FROM node:24-bookworm AS build
-WORKDIR /app
-COPY package.json package-lock.json ./
-COPY patches ./patches
-RUN npm ci --ignore-scripts && npm run postinstall
-COPY telegram ./telegram
-COPY shared ./shared
-COPY server/profile.ts server/http.ts ./server/
-RUN npm exec -- esbuild telegram/runtime.ts --bundle --platform=node --target=node24 --format=esm \
-    --packages=external --outfile=/app/bot.mjs
+FROM rust:1.93-bookworm AS build
+WORKDIR /app/rust-telegram
+COPY rust-common /app/rust-common
+COPY rust-telegram/Cargo.toml rust-telegram/Cargo.lock ./
+COPY rust-telegram/src ./src
+RUN cargo build --release --locked
 
-FROM node:24-bookworm
+FROM debian:bookworm-slim
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts
-COPY --from=build /app/bot.mjs ./bot.mjs
-ENV NODE_ENV=production
-CMD ["node", "/app/bot.mjs"]
+COPY --from=build /app/rust-telegram/target/release/wartaq-telegram /usr/local/bin/wartaq-telegram
+CMD ["wartaq-telegram"]

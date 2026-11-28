@@ -1,5 +1,11 @@
 # Work log
 
+## 2026-11-28 06:07 Asia/Damascus (UTC+03:00) - Move the Telegram worker to Rust
+
+The local Telegram image now runs the native worker with the existing encrypted SQLite state, poll offsets, browser linking, phone grants, menus and assistant approvals. The worker validates approvals against their original Telegram message and current grant, including supported receipts from the previous worker. The web and Telegram crates share their fuzzy matcher. Node.js serves the frontend build and the TypeScript comparison fixtures.
+
+The old and new worker containers matched all three tested HTTP statuses and response bodies on an isolated network. Fifteen native tests passed, including fourteen inside offline Linux Docker and the encrypted TypeScript/Rust state comparison on Windows. The final web pair matched 24 API responses and the OAuth/MCP journey. Seven more integration tests passed against the native web executable, covering OAuth state compatibility, refresh during session deletion, accounts and Telegram grants. All traffic and fixtures were synthetic. Railway and external Telegram and inference services were untouched.
+
 ## 2026-11-28 05:52 Asia/Damascus (UTC+03:00) - Move the web runtime to Rust
 
 The owner requested a local Docker comparison before removing Bun. The web image now runs a single Rust executable for the notebook, browser sessions, account administration, Socket.IO, OAuth, MCP and Telegram API endpoints. It preserves the PostgreSQL schema, session cookies and persisted OAuth grants. npm installs the frontend and test toolchain. The separate worker image uses Node.js while its native replacement is verified.

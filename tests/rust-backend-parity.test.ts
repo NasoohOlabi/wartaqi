@@ -184,6 +184,15 @@ parity(
           'vary',
           'cache-control',
         ]) {
+          if (header === 'content-type') {
+            // The Node reference omits the UTF-8 parameter the old web image sent.
+            const jsonType = (value: string | null) =>
+              value?.replace(/^application\/json\s*;\s*charset=utf-8$/i, 'application/json')
+            expect(jsonType(candidate.headers.get(header))).toBe(
+              jsonType(baseline.headers.get(header)),
+            )
+            continue
+          }
           if (
             header === 'vary' &&
             status === 200 &&
@@ -207,8 +216,12 @@ parity(
               : baseline.headers.get(header),
           )
         }
-        const expected: unknown = await baseline.json()
-        expect(await candidate.json()).toEqual(expected)
+        const reply = async (response: Response): Promise<unknown> => {
+          const body = await response.text()
+          return body ? JSON.parse(body) : undefined
+        }
+        const expected = await reply(baseline)
+        expect(await reply(candidate), `${path} response body`).toEqual(expected)
         return expected
       }
       await same('/api/me', 401)

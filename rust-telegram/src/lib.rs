@@ -1,18 +1,58 @@
+mod agent;
+pub mod assistant;
+mod auth;
+mod mcp;
 pub mod polling;
+mod screens;
 pub mod storage;
+pub mod worker;
 
 use std::time::Duration;
 
+use serde::Serialize;
+use serde_json::Value;
 use teloxide_core::{
     Bot, RequestError,
-    payloads::{
-        EditMessageTextSetters, GetUpdatesSetters, SendDocumentSetters, SendMessageSetters,
-    },
-    requests::{Request, Requester},
+    payloads::{EditMessageTextSetters, SendDocumentSetters, SendMessageSetters},
+    requests::{JsonRequest, Payload, Request, Requester},
     types::{
-        AllowedUpdate, InputFile, LinkPreviewOptions, MessageId, Recipient, ReplyMarkup, Update,
+        AllowedUpdate, InputFile, LinkPreviewOptions, MessageId, MessageKind, MessageOrigin,
+        ParseMode, Recipient, ReplyMarkup, Update, UpdateKind,
     },
 };
+
+#[derive(Serialize)]
+struct GetUpdates {
+    offset: i32,
+    timeout: u32,
+    allowed_updates: [AllowedUpdate; 2],
+}
+
+impl Payload for GetUpdates {
+    type Output = Vec<Value>;
+    const NAME: &'static str = "GetUpdates";
+
+    fn timeout_hint(&self) -> Option<Duration> {
+        Some(Duration::from_secs(u64::from(self.timeout)))
+    }
+}
+
+fn decode_update(value: Value) -> Option<Update> {
+    // Decode entries separately, passing JSON text so teloxide can borrow the update-kind key.
+    let mut update = serde_json::from_str::<Update>(&value.to_string()).ok()?;
+    if value["message"]["forward_date"].is_number()
+        && let UpdateKind::Message(message) = &mut update.kind
+        && let MessageKind::Common(common) = &mut message.kind
+        && common.forward_origin.is_none()
+    {
+        // Preserve the legacy Bot API forwarding marker for private input checks.
+        common.forward_origin = Some(MessageOrigin::HiddenUser {
+            date: message.date,
+            sender_user_name: "Forwarded".into(),
+        });
+    }
+    Some(update)
+}
 
 /// Telegram transport for the worker. The caller controls update processing and durable offsets.
 #[derive(Clone)]
@@ -36,13 +76,17 @@ impl Telegram {
     }
 
     pub async fn updates(&self, offset: i32, ready: bool) -> Result<Vec<Update>, RequestError> {
-        self.polling
-            .get_updates()
-            .offset(offset)
-            .timeout(if ready { 30 } else { 1 })
-            .allowed_updates([AllowedUpdate::Message, AllowedUpdate::CallbackQuery])
+        let payload = GetUpdates {
+            offset,
+            timeout: if ready { 30 } else { 1 },
+            allowed_updates: [AllowedUpdate::Message, AllowedUpdate::CallbackQuery],
+        };
+        Ok(JsonRequest::new(self.polling.clone(), payload)
             .send()
-            .await
+            .await?
+            .into_iter()
+            .filter_map(decode_update)
+            .collect())
     }
 
     pub async fn send_message(
@@ -51,6 +95,16 @@ impl Telegram {
         text: impl Into<String>,
         markup: Option<ReplyMarkup>,
     ) -> Result<teloxide_core::types::Message, RequestError> {
+        self.send(chat, text, markup, None).await
+    }
+
+    pub(crate) async fn send(
+        &self,
+        chat: impl Into<Recipient>,
+        text: impl Into<String>,
+        markup: Option<ReplyMarkup>,
+        mode: Option<ParseMode>,
+    ) -> Result<teloxide_core::types::Message, RequestError> {
         let mut request = self
             .api
             .send_message(chat, text)
@@ -58,6 +112,9 @@ impl Telegram {
             .link_preview_options(disabled_preview());
         if let Some(markup) = markup {
             request = request.reply_markup(markup);
+        }
+        if let Some(mode) = mode {
+            request = request.parse_mode(mode);
         }
         request.send().await
     }

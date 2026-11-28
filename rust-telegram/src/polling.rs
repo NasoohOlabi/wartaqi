@@ -1,5 +1,9 @@
 use std::{
     future::Future,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -16,7 +20,7 @@ const RECEIPT_TTL_MS: i64 = 6 * 24 * 60 * 60 * 1_000;
 pub struct Poller<'a> {
     telegram: &'a Telegram,
     storage: &'a Storage,
-    ready: bool,
+    ready: Arc<AtomicBool>,
     last_prune: Option<Instant>,
 }
 
@@ -25,13 +29,17 @@ impl<'a> Poller<'a> {
         Self {
             telegram,
             storage,
-            ready: false,
+            ready: Arc::default(),
             last_prune: None,
         }
     }
 
     pub fn ready(&self) -> bool {
-        self.ready
+        self.ready.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn readiness(&self) -> Arc<AtomicBool> {
+        self.ready.clone()
     }
 
     /// Processes a single provider batch. A validator checks the worker's input contract
@@ -57,8 +65,14 @@ impl<'a> Poller<'a> {
             self.last_prune = Some(Instant::now());
         }
         let offset = read_offset(self.storage)?;
-        let updates = self.telegram.updates(offset, self.ready).await?;
-        self.ready = true;
+        let updates = match self.telegram.updates(offset, self.ready()).await {
+            Ok(updates) => updates,
+            Err(error) => {
+                self.ready.store(false, Ordering::Relaxed);
+                return Err(error.into());
+            }
+        };
+        self.ready.store(true, Ordering::Relaxed);
         for update in updates {
             if matches!(update.kind, UpdateKind::Error(_)) || !validate(&update) {
                 notify_failure(update).await;
@@ -109,7 +123,7 @@ impl<'a> Poller<'a> {
                 .await
                 .is_err()
             {
-                self.ready = false;
+                self.ready.store(false, Ordering::Relaxed);
                 tokio::time::sleep(Duration::from_secs(3)).await;
             }
         }

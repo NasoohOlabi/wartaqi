@@ -12,8 +12,6 @@
 !shared/**
 !public/
 !public/**
-!server/
-!server/**
 !scripts/
 !scripts/precompress-assets.mjs
 !Dockerfile
@@ -22,7 +20,14 @@
 !rust-sync/Cargo.lock
 !rust-sync/src/
 !rust-sync/src/**
+!rust-common/
+!rust-common/Cargo.toml
+!rust-common/src/
+!rust-common/src/lib.rs
+!rust-telegram/
+!rust-telegram/Cargo.toml
+!rust-telegram/Cargo.lock
+!rust-telegram/src/
+!rust-telegram/src/**
 !telegram/
-!telegram/**/
-!telegram/**/*.ts
 !telegram/Dockerfile
