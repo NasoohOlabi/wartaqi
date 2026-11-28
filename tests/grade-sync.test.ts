@@ -1,4 +1,5 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { Pool } from 'pg'
 import { createHandler } from '../functions/notebook-service'
 import { gradeOperationSchema, gradeOutcomeSchema, gradePath } from '../shared/gradeSync'
@@ -136,7 +137,7 @@ integration(
         current: { practical: 82, theory: 70, notes: 'later device' },
       })
       expect(await outcome(earlierTimed)).toEqual({ status: 'accepted' })
-      await Bun.sleep(110)
+      await sleep(110)
       const expiresAt = new Date(Date.now() + 86400000).toISOString()
       await pool.query('UPDATE app_accounts SET expires_at = $2 WHERE auth_user_id = $1', [
         admin,

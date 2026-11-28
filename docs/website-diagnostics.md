@@ -2,7 +2,7 @@
 
 Wartaq no longer collects website journeys, click or write outcomes, Core Web Vitals, browser errors, or session recordings. Old Diagnostics bookmarks open Settings.
 
-Rust and Bun return HTTP 400 for same-origin uploads from older tabs so those clients discard their queued telemetry. The obsolete read routes return 404. Rust serves those responses directly in production, keeping the compatibility process asleep. Telegram conversation troubleshooting remains available in Administrator Settings.
+Both backend implementations return HTTP 400 for same-origin uploads from older tabs so those clients discard their queued telemetry. The obsolete read routes return 404. Rust serves those responses directly in production, keeping the compatibility process asleep. Telegram conversation troubleshooting remains available in Administrator Settings.
 
 After the new web deployment is healthy, apply [migration 022](../neon/022-retire-website-telemetry.sql) to remove `website_diagnostics` and `website_session_replay` from live PostgreSQL. Historical migrations 015–017 stay in sequence for existing installations. Full infrastructure backups can contain the retired tables until those backups expire. After restoring an older full archive, apply migration 022 before opening it to traffic.
 

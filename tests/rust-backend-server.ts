@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { z } from 'zod'
 
 const health = z.object({ ok: z.literal(true) })
@@ -6,7 +6,7 @@ const health = z.object({ ok: z.literal(true) })
 export async function startRustBackend(
   binary: string,
   databaseUrl: string,
-  fixtureOrigin: string | { hybridOrigin: string },
+  fixtureOrigin: string | { hybridOrigin: string; port?: string; native?: boolean },
   authSecret: string,
   workspaceOrigin = typeof fixtureOrigin === 'string' ? fixtureOrigin : fixtureOrigin.hybridOrigin,
   telegramWorkerSecret?: string,
@@ -15,10 +15,9 @@ export async function startRustBackend(
   const child = spawn(binary, [], {
     env: {
       ...process.env,
-      PORT: '0',
-      BUN_ORIGIN: undefined,
-      WARTAQ_WEB_RUNTIME: hybrid ? 'hybrid' : undefined,
-      ...(hybrid && { ASSET_DIR: 'dist', BETTER_AUTH_URL: workspaceOrigin }),
+      PORT: hybrid ? (fixtureOrigin.port ?? '0') : '0',
+      BETTER_AUTH_URL: hybrid ? workspaceOrigin : undefined,
+      ...(hybrid && { ASSET_DIR: 'dist' }),
       WORKSPACE_ORIGIN: workspaceOrigin,
       DATABASE_URL: databaseUrl,
       BETTER_AUTH_SECRET: authSecret,
@@ -28,17 +27,7 @@ export async function startRustBackend(
   })
   const exited = new Promise<void>((resolve) => child.once('close', () => resolve()))
   async function close() {
-    if (child.pid && child.exitCode === null && child.signalCode === null) {
-      if (hybrid && process.platform === 'win32') {
-        // Windows terminates the parent immediately, leaving its compatibility worker behind.
-        execFileSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], {
-          windowsHide: true,
-          stdio: 'ignore',
-        })
-      } else {
-        child.kill()
-      }
-    }
+    if (child.pid && child.exitCode === null && child.signalCode === null) child.kill()
     await exited
   }
   const deadline = AbortSignal.timeout(10000)

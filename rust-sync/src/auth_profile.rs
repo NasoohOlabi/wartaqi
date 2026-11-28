@@ -86,7 +86,7 @@ fn image_valid(image: &str) -> bool {
         _ => false,
     }
 }
-fn profile_valid(value: &Value) -> bool {
+pub(crate) fn profile_valid(value: &Value) -> bool {
     let Some(obj) = value.as_object() else {
         return false;
     };

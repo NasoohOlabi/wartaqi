@@ -1,4 +1,5 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
+import { spawnSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { Pool } from 'pg'
@@ -31,20 +32,21 @@ integration(
       resolve(directory, `v${index + 1}.json`),
     )
     const run = (command: string, file: string, dbUrl: string, succeeds = true) => {
-      const result = Bun.spawnSync(
-        [process.execPath, 'run', 'scripts/railway-transfer.ts', command, file],
+      const result = spawnSync(
+        process.execPath,
+        ['--import', 'tsx', 'scripts/railway-transfer.ts', command, file],
         {
           env: {
             ...process.env,
             DATABASE_URL_UNPOOLED: dbUrl,
             MIGRATION_TARGET_DATABASE_URL: dbUrl,
           },
-          stdout: 'pipe',
-          stderr: 'pipe',
+          encoding: 'utf8',
         },
       )
-      if (succeeds) expect(result.exitCode, result.stderr.toString()).toBe(0)
-      else expect(result.exitCode).not.toBe(0)
+      if (result.error) throw result.error
+      if (succeeds) expect(result.status, result.stderr).toBe(0)
+      else expect(result.status, result.stderr).toBe(1)
     }
     const migrate = async (pool: Pool, file: string) =>
       pool.query((await readFile(file, 'utf8')).replace(/^\uFEFF/, ''))

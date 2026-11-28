@@ -16,6 +16,7 @@ pub(crate) struct Access {
     pub can_read: bool,
     pub can_write: bool,
     pub ready: bool,
+    pub invitation: bool,
     pub user_id: String,
     pub name: String,
 }
@@ -24,7 +25,13 @@ pub(crate) struct Operation {
     pub path: &'static str,
     pub method: &'static str,
     pub body: Option<Value>,
+    pub edit: Option<EditVersion>,
     pub response: ResponseMapping,
+}
+
+pub(crate) struct EditVersion {
+    pub time: String,
+    pub id: String,
 }
 
 #[derive(PartialEq, Eq)]
@@ -33,56 +40,71 @@ pub(crate) enum ResponseMapping {
     Courses,
     History(Value),
     SavedCount(usize),
+    FindStudents(Value),
+    StudentDetails(Value),
+    AttendanceSummary,
+    AttendanceView(Value),
+    CourseWorkflow(Value),
+    CourseExport(Value),
+    Invitation,
+    Handoff,
 }
 
-// This inventory contains only tools whose handlers are implemented below.
-// Account handoffs, reports, workflows and the remaining writes still need ports.
-fn tools(access: &Access) -> Vec<(&'static str, &'static str, &'static str)> {
+fn tools(access: &Access) -> Vec<(&'static str, &'static str)> {
     let mut result = Vec::new();
+    if access.invitation && !access.ready {
+        result.push(("complete_invitation_setup", "/mcp/handoff/setup"));
+    }
+    if access.invitation && access.ready && access.write_scope {
+        result.push(("open_invitation_profile", "/mcp/handoff/profile"));
+    }
+    if admin_write(access) {
+        result.extend([
+            ("open_password_reset", "/mcp/handoff/reset"),
+            ("verify_account_phone", "/api/admin/accounts/verify-phone"),
+        ]);
+    }
     if access.read_scope {
         result.extend([
-            (
-                "get_account",
-                "Get the current application account and access permissions.",
-                "/api/me",
-            ),
-            (
-                "get_profile",
-                "Get your profile name and image.",
-                "/api/mcp/profile",
-            ),
+            ("get_account", "/api/me"),
+            ("get_profile", "/api/mcp/profile"),
         ]);
+    }
+    if access.write_scope {
+        result.push(("update_profile", "/api/mcp/profile"));
+        if access.invitation && access.ready {
+            result.push(("update_invitation_profile", "/api/me/invitation-profile"));
+        }
     }
     if !access.ready {
         return result;
     }
     if access.role == Role::Student {
         if access.read_scope {
-            result.push((
-                "get_my_attendance",
-                "Get your own projected attendance, including course names.",
-                "/api/student/attendance",
-            ));
+            result.push(("get_my_attendance", "/api/student/attendance"));
         }
         return result;
     }
     if access.read_scope && access.can_read {
-        result.push((
-            "list_courses",
-            "List accessible courses and whether they are open.",
-            "/api/notebook",
-        ));
-        result.push(("get_notebook", "Get your authorized roster, courses, enrollments, event history and notes. Attendance events use enrollment IDs to identify courses.", "/api/notebook"));
+        result.extend([
+            ("list_courses", "/api/notebook"),
+            ("find_students", "/api/notebook"),
+            ("get_student_details", "/api/notebook"),
+            ("get_course_attendance_view", "/api/notebook"),
+            ("get_notebook", "/api/notebook"),
+            ("get_attendance_summary", "/api/notebook"),
+        ]);
     }
     if access.write_scope && access.can_write {
-        result.push((
-            "update_student",
-            "Update an active assigned student’s name and contact details.",
-            "/api/student/update",
-        ));
-        result.push(("append_events", "Append attendance, tagged notes or corrections. Supply stable IDs and client times for safe retries. New attendance must reference an active enrollment in an open course.", "/api/events"));
+        result.extend([
+            ("update_student", "/api/student/update"),
+            ("append_events", "/api/events"),
+        ]);
         if access.read_scope && access.can_read {
-            result.push(("sync_attendance", "Compare and commit attendance records. Supply the expected event ID (or null) and stable event ID/time; returns per-record conflicts.", "/api/attendance/sync"));
+            result.extend([
+                ("sync_attendance", "/api/attendance/sync"),
+                ("sync_student", "/api/student/sync"),
+            ]);
         }
     }
     if access.role == Role::Administrator
@@ -90,425 +112,82 @@ fn tools(access: &Access) -> Vec<(&'static str, &'static str, &'static str)> {
         && access.can_write
         && access.read_scope
     {
-        result.push(("get_notebook_history", "Read administrator notebook history in server order, newest first. Reversals retain their target and undone records remain visible.", "/api/notebook"));
-        result.push((
-            "get_admin_board",
-            "Get accounts, teachers and full student register for administration.",
-            "/api/admin",
-        ));
+        result.extend([
+            ("get_course_workflow", "/mcp/course-workflow"),
+            ("get_notebook_history", "/api/notebook"),
+            ("get_admin_board", "/api/admin"),
+            ("export_course_report", "/mcp/course-report"),
+        ]);
+    }
+    if admin_write(access) {
+        result.extend([
+            ("invite_accounts", "/api/admin/accounts/invite"),
+            ("grant_account", "/api/admin/accounts/grant"),
+            ("disable_account", "/api/admin/accounts/disable"),
+            (
+                "reset_account_password",
+                "/api/admin/accounts/reset-password",
+            ),
+            ("save_student", "/api/admin/students"),
+            ("create_student_in_course", "/api/admin/students/enroll"),
+            ("save_course", "/api/admin/courses"),
+            ("set_course_status", "/api/admin/courses/status"),
+            ("set_course_thresholds", "/api/admin/courses/settings"),
+            ("save_enrollment", "/api/admin/enrollments/save"),
+            ("save_grades", "/api/admin/enrollments/grades"),
+            ("save_grade_decision", "/api/admin/enrollments/decision"),
+            ("set_handbook_received", "/api/admin/enrollments/handbook"),
+        ]);
     }
     result
 }
 
-fn student_schema(year: i32) -> Value {
-    let uuid_pattern = "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$";
-    let expected = json!({
-        "type": "object",
-        "properties": {
-            "firstName": {"type": "string"}, "lastName": {"type": "string"},
-            "group": {"type": "string"}, "whatsapp": {"type": ["string", "null"]},
-            "location": {"type": ["string", "null"]},
-            "birthYear": {"anyOf": [{"type": "integer", "minimum": -9007199254740991i64, "maximum": 9007199254740991i64}, {"type": "null"}]}
-        },
-        "required": ["firstName", "lastName", "group", "whatsapp", "location", "birthYear"],
-        "additionalProperties": false
-    });
-    json!({
-        "type": "object",
-        "properties": {
-            "firstName": {"type": "string", "minLength": 1, "maxLength": 200},
-            "lastName": {"type": "string", "maxLength": 200},
-            "group": {"type": "string", "maxLength": 100},
-            "whatsapp": {"anyOf": [{"type": "string", "maxLength": 40}, {"type": "null"}]},
-            "location": {"anyOf": [{"type": "string", "maxLength": 200}, {"type": "null"}]},
-            "birthYear": {"anyOf": [{"type": "integer", "minimum": 1900, "maximum": year}, {"type": "null"}]},
-            "studentId": {"type": "string", "format": "uuid", "pattern": uuid_pattern},
-            "expected": expected
-        },
-        "required": ["firstName", "lastName", "group", "whatsapp", "location", "birthYear", "studentId", "expected"],
-        "$schema": "http://json-schema.org/draft-07/schema#",
-        "additionalProperties": false
-    })
+pub(crate) fn admin_write(access: &Access) -> bool {
+    access.ready
+        && access.role == Role::Administrator
+        && access.read_scope
+        && access.write_scope
+        && access.can_read
+        && access.can_write
 }
 
-fn write_schema(name: &str) -> Option<Value> {
-    let schema = match name {
-        "append_events" => {
-            r#"
-{
-  "type": "object",
-  "properties": {
-    "events": {
-      "minItems": 1,
-      "maxItems": 500,
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-          },
-          "clientTime": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-          },
-          "payload": {
-            "oneOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "const": "student"
-                  },
-                  "studentId": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                  },
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 200
-                  },
-                  "group": {
-                    "type": "string",
-                    "maxLength": 100
-                  },
-                  "active": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "kind",
-                  "studentId",
-                  "name",
-                  "group",
-                  "active"
-                ]
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "const": "attendance"
-                  },
-                  "studentId": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                  },
-                  "enrollmentId": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                  },
-                  "date": {
-                    "type": "string",
-                    "format": "date",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                  },
-                  "status": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "enum": [
-                          "present",
-                          "absent",
-                          "excused",
-                          "early",
-                          "late"
-                        ]
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  }
-                },
-                "required": [
-                  "kind",
-                  "studentId",
-                  "date",
-                  "status"
-                ]
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "const": "note"
-                  },
-                  "studentId": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "uuid",
-                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                      },
-                      {
-                        "type": "string",
-                        "const": ""
-                      }
-                    ]
-                  },
-                  "date": {
-                    "type": "string",
-                    "format": "date",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                  },
-                  "tags": {
-                    "minItems": 1,
-                    "maxItems": 20,
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 60
-                    }
-                  },
-                  "text": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 10000
-                  }
-                },
-                "required": [
-                  "kind",
-                  "studentId",
-                  "date",
-                  "tags",
-                  "text"
-                ]
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "const": "reversal"
-                  },
-                  "targetId": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                  },
-                  "reason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 1000
-                  }
-                },
-                "required": [
-                  "kind",
-                  "targetId",
-                  "reason"
-                ]
-              }
-            ]
-          }
-        },
-        "required": [
-          "id",
-          "clientTime",
-          "payload"
-        ]
-      }
-    }
-  },
-  "required": [
-    "events"
-  ],
-  "$schema": "http://json-schema.org/draft-07/schema#"
-}
-"#
-        }
-        "sync_attendance" => {
-            r#"
-{
-  "type": "object",
-  "properties": {
-    "records": {
-      "minItems": 1,
-      "maxItems": 500,
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "event": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-              },
-              "clientTime": {
-                "type": "string",
-                "format": "date-time",
-                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-              },
-              "payload": {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "const": "attendance"
-                  },
-                  "studentId": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                  },
-                  "enrollmentId": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                  },
-                  "date": {
-                    "type": "string",
-                    "format": "date",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                  },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "present",
-                      "absent",
-                      "excused"
-                    ]
-                  }
-                },
-                "required": [
-                  "kind",
-                  "studentId",
-                  "enrollmentId",
-                  "date",
-                  "status"
-                ]
-              }
-            },
-            "required": [
-              "id",
-              "clientTime",
-              "payload"
-            ]
-          },
-          "expectedEventId": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "expectedRevision": {
-            "type": "string",
-            "const": "unknown"
-          }
-        },
-        "required": [
-          "event",
-          "expectedEventId"
-        ]
-      }
-    }
-  },
-  "required": [
-    "records"
-  ],
-  "$schema": "http://json-schema.org/draft-07/schema#"
-}
-"#
-        }
-        "get_notebook_history" => {
-            r#"
-{
-  "type": "object",
-  "properties": {
-    "courseId": {
-      "anyOf": [
-        {
-          "type": "string",
-          "format": "uuid",
-          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-        },
-        {
-          "type": "string",
-          "const": "none"
-        }
-      ]
-    },
-    "studentId": {
-      "type": "string",
-      "format": "uuid",
-      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-    },
-    "kind": {
-      "type": "string",
-      "enum": [
-        "student",
-        "attendance",
-        "note",
-        "reversal"
-      ]
-    },
-    "from": {
-      "type": "string",
-      "format": "date",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-    },
-    "to": {
-      "type": "string",
-      "format": "date",
-      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-    },
-    "offset": {
-      "default": 0,
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 9007199254740991
-    },
-    "limit": {
-      "default": 50,
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 100
-    }
-  },
-  "required": [
-    "courseId"
-  ],
-  "$schema": "http://json-schema.org/draft-07/schema#"
-}
-"#
-        }
-        _ => return None,
-    };
-    serde_json::from_str(schema).ok()
-}
+/// Wire metadata emitted by the legacy MCP SDK. Authorization and argument
+/// validation remain in the native dispatcher.
+static CATALOG: std::sync::LazyLock<Value> = std::sync::LazyLock::new(|| {
+    serde_json::from_str(include_str!("mcp_tool_catalog.json")).expect("valid MCP tool catalog")
+});
 
 pub(crate) fn discovery(access: &Access, year: i32) -> Vec<Value> {
-    tools(access).into_iter().map(|(name, description, _)| {
-        if name == "update_student" {
-            json!({"name": name, "description": description, "inputSchema": student_schema(year), "execution": {"taskSupport": "forbidden"}})
-        } else if name == "get_notebook_history" {
-            json!({"name": name, "description": description, "inputSchema": write_schema(name), "annotations": {"readOnlyHint": true}, "execution": {"taskSupport": "forbidden"}})
-        } else if let Some(schema) = write_schema(name) {
-            json!({"name": name, "description": description, "inputSchema": schema, "execution": {"taskSupport": "forbidden"}})
-        } else {
-            json!({"name": name, "description": description, "inputSchema": {"type": "object", "properties": {}}, "annotations": {"readOnlyHint": true}, "execution": {"taskSupport": "forbidden"}})
+    tools(access)
+        .into_iter()
+        .map(|(name, _)| {
+            let mut tool = CATALOG[name].clone();
+            update_birth_year(&mut tool["inputSchema"], year);
+            tool
+        })
+        .collect()
+}
+
+fn update_birth_year(schema: &mut Value, year: i32) {
+    match schema {
+        Value::Array(items) => {
+            for item in items {
+                update_birth_year(item, year);
+            }
         }
-    }).collect()
+        Value::Object(properties) => {
+            if properties
+                .get("minimum")
+                .is_some_and(|number| number == 1900)
+            {
+                properties.insert("maximum".into(), json!(year));
+            }
+            for value in properties.values_mut() {
+                update_birth_year(value, year);
+            }
+        }
+        _ => {}
+    }
 }
 
 const FIELDS: [&str; 6] = [
@@ -567,47 +246,157 @@ fn normalize_fields(input: &Value, update: bool, year: i32) -> Result<Value, ()>
     Ok(Value::Object(output))
 }
 
+fn edit_version(value: Option<&Value>) -> Result<Option<EditVersion>, ()> {
+    let Some(value) = value else { return Ok(None) };
+    let edit = value.as_object().filter(|edit| edit.len() == 2).ok_or(())?;
+    let time = edit
+        .get("time")
+        .and_then(Value::as_str)
+        .filter(|time| crate::ledger::iso_datetime(time))
+        .ok_or(())?;
+    let id = edit
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| valid_uuid(id))
+        .ok_or(())?;
+    Ok(Some(EditVersion {
+        time: time.to_owned(),
+        id: id.to_owned(),
+    }))
+}
+
 pub(crate) fn operation(
     access: &Access,
     name: &str,
     arguments: &Value,
     year: i32,
 ) -> Result<Operation, ()> {
-    let (_, _, path) = tools(access)
+    let (_, path) = tools(access)
         .into_iter()
-        .find(|(tool, _, _)| *tool == name)
+        .find(|(tool, _)| *tool == name)
         .ok_or(())?;
     if !arguments.is_object() {
         return Err(());
     }
-    if name == "get_notebook_history" {
+    if path.starts_with("/mcp/handoff/") {
+        if name == "open_password_reset"
+            && arguments.get("authUserId").is_some_and(|value| {
+                !value
+                    .as_str()
+                    .is_some_and(|id| (1..=256).contains(&id.encode_utf16().count()))
+            })
+        {
+            return Err(());
+        }
         return Ok(Operation {
             path,
             method: "GET",
-            body: None,
-            response: ResponseMapping::History(history_filter(arguments)?),
+            body: Some(arguments.clone()),
+            edit: None,
+            response: ResponseMapping::Handoff,
+        });
+    }
+    if path.starts_with("/api/admin/") || path == "/api/me/invitation-profile" {
+        let input = arguments
+            .get("input")
+            .filter(|value| value.is_object())
+            .cloned()
+            .ok_or(())?;
+        return Ok(Operation {
+            path,
+            method: "POST",
+            body: Some(input),
+            edit: if matches!(name, "invite_accounts" | "verify_account_phone") {
+                None
+            } else {
+                edit_version(arguments.get("edit"))?
+            },
+            response: if name == "invite_accounts" {
+                ResponseMapping::Invitation
+            } else {
+                ResponseMapping::Direct
+            },
         });
     }
     if matches!(name, "append_events" | "sync_attendance") {
         return attendance_operation(access, name, arguments, path);
+    }
+    if name == "update_profile" {
+        let input = arguments
+            .get("input")
+            .filter(|input| crate::auth_profile::profile_valid(input))
+            .ok_or(())?;
+        return Ok(Operation {
+            path,
+            method: "POST",
+            body: Some(input.clone()),
+            edit: edit_version(arguments.get("edit"))?,
+            response: ResponseMapping::Direct,
+        });
+    }
+    if name == "sync_student" {
+        let input = arguments
+            .get("operation")
+            .and_then(Value::as_object)
+            .ok_or(())?;
+        let operation = match input.get("kind").and_then(Value::as_str) {
+            Some("note") if input.len() == 2 => {
+                let event = event(input.get("event").ok_or(())?, &access.name)?;
+                if event["payload"]["kind"] != "note"
+                    || !event["payload"]["studentId"]
+                        .as_str()
+                        .is_some_and(valid_uuid)
+                {
+                    return Err(());
+                }
+                json!({"kind":"note", "event":event})
+            }
+            Some("profile-v1") => Value::Object(input.clone()),
+            _ => return Err(()),
+        };
+        return Ok(Operation {
+            path,
+            method: "POST",
+            body: Some(json!({"accountId":access.user_id, "operation":operation})),
+            edit: None,
+            response: ResponseMapping::Direct,
+        });
     }
     if name != "update_student" {
         return Ok(Operation {
             path,
             method: "GET",
             body: None,
-            response: if name == "list_courses" {
-                ResponseMapping::Courses
-            } else {
-                ResponseMapping::Direct
+            edit: None,
+            response: match name {
+                "list_courses" => ResponseMapping::Courses,
+                "get_notebook_history" => ResponseMapping::History(history_filter(arguments)?),
+                "find_students" => {
+                    ResponseMapping::FindStudents(crate::mcp_notebook::directory_filter(arguments)?)
+                }
+                "get_student_details" => {
+                    ResponseMapping::StudentDetails(crate::mcp_notebook::details_filter(arguments)?)
+                }
+                "get_attendance_summary" => ResponseMapping::AttendanceSummary,
+                "get_course_attendance_view" => ResponseMapping::AttendanceView(
+                    crate::mcp_notebook::attendance_filter(arguments)?,
+                ),
+                "get_course_workflow" => {
+                    ResponseMapping::CourseWorkflow(crate::mcp_courses::workflow_filter(arguments)?)
+                }
+                "export_course_report" => {
+                    ResponseMapping::CourseExport(crate::mcp_courses::export_filter(arguments)?)
+                }
+                _ => ResponseMapping::Direct,
             },
         });
     }
     let input = arguments.as_object().ok_or(())?;
-    if input.len() != 8
-        || input
-            .keys()
-            .any(|key| !FIELDS.contains(&key.as_str()) && key != "studentId" && key != "expected")
+    if input.len() != 8 + usize::from(input.contains_key("edit"))
+        || input.keys().any(|key| {
+            !FIELDS.contains(&key.as_str())
+                && !matches!(key.as_str(), "studentId" | "expected" | "edit")
+        })
     {
         return Err(());
     }
@@ -641,6 +430,7 @@ pub(crate) fn operation(
         path,
         method: "POST",
         body: Some(body),
+        edit: edit_version(input.get("edit"))?,
         response: ResponseMapping::Direct,
     })
 }
@@ -650,6 +440,9 @@ fn event(input: &Value, name: &str) -> Result<Value, ()> {
     let mut event = serde_json::Map::new();
     for key in ["id", "clientTime", "payload"] {
         event.insert(key.into(), source.get(key).ok_or(())?.clone());
+    }
+    if let Some(time) = source.get("editTime") {
+        event.insert("editTime".into(), time.clone());
     }
     event.insert("actor".into(), json!(name));
     event.insert("receivedAt".into(), json!(""));
@@ -700,6 +493,12 @@ fn attendance_operation(
             }
             result["expectedRevision"] = revision.clone();
         }
+        if let Some(time) = input.get("editTime") {
+            if !time.as_str().is_some_and(crate::ledger::iso_datetime) {
+                return Err(());
+            }
+            result["editTime"] = time.clone();
+        }
         parsed.push(result);
     }
     let body = if name == "append_events" {
@@ -716,15 +515,32 @@ fn attendance_operation(
         path,
         method: "POST",
         body: Some(body),
+        edit: None,
         response,
     })
 }
 
-pub(crate) fn map_success(mapping: &ResponseMapping, value: Value) -> Result<Value, &'static str> {
+pub(crate) fn map_success(
+    mapping: &ResponseMapping,
+    value: Value,
+    origin: &str,
+) -> Result<Value, &'static str> {
     match mapping {
         ResponseMapping::Direct => Ok(value),
         ResponseMapping::SavedCount(count) => Ok(json!({"saved": count})),
         ResponseMapping::History(filter) => history(&value, filter),
+        ResponseMapping::FindStudents(filter) => crate::mcp_notebook::find_students(&value, filter),
+        ResponseMapping::StudentDetails(filter) => {
+            crate::mcp_notebook::student_details(&value, filter)
+        }
+        ResponseMapping::AttendanceSummary => crate::mcp_notebook::attendance_summary(&value),
+        ResponseMapping::AttendanceView(filter) => {
+            crate::mcp_notebook::attendance_view(&value, filter, origin)
+        }
+        ResponseMapping::CourseWorkflow(filter) => crate::mcp_courses::workflow(&value, filter),
+        ResponseMapping::CourseExport(_)
+        | ResponseMapping::Invitation
+        | ResponseMapping::Handoff => Ok(value),
         ResponseMapping::Courses => {
             let courses = value
                 .get("courses")
@@ -871,11 +687,14 @@ fn history(snapshot: &Value, filter: &Value) -> Result<Value, &'static str> {
 }
 
 pub(crate) fn map_failure(mapping: &ResponseMapping, message: &str) -> String {
-    if *mapping == ResponseMapping::Courses {
-        "Unable to load courses".to_owned()
-    } else {
-        message.to_owned()
+    match mapping {
+        ResponseMapping::Courses => "Unable to load courses",
+        ResponseMapping::FindStudents(_) => "Unable to load students",
+        ResponseMapping::StudentDetails(_) => "Unable to load student",
+        ResponseMapping::Invitation => "Invitation could not be confirmed. Check accounts before retrying; reset a password if necessary.",
+        _ => message,
     }
+    .to_owned()
 }
 
 #[cfg(test)]
@@ -890,6 +709,7 @@ mod tests {
             can_read: true,
             can_write: true,
             ready: true,
+            invitation: false,
             user_id: "user-1".into(),
             name: "Teacher".into(),
         }
@@ -902,7 +722,15 @@ mod tests {
             .into_iter()
             .map(|tool| tool["name"].as_str().unwrap().to_owned())
             .collect();
-        assert_eq!(names, ["get_account", "get_profile", "get_my_attendance"]);
+        assert_eq!(
+            names,
+            [
+                "get_account",
+                "get_profile",
+                "update_profile",
+                "get_my_attendance"
+            ]
+        );
         assert!(operation(&student, "get_notebook", &json!({}), 2026).is_err());
         let mut teacher = access(Role::Teacher, true, false);
         assert!(operation(&teacher, "update_student", &json!({}), 2026).is_err());
@@ -933,7 +761,12 @@ mod tests {
             operation(&teacher, "append_events", &json!({"events":[event]}), 2026).unwrap();
         assert!(append.response == ResponseMapping::SavedCount(1));
         assert_eq!(
-            map_success(&append.response, json!({"private":true})).unwrap(),
+            map_success(
+                &append.response,
+                json!({"private":true}),
+                "https://wartaq.example"
+            )
+            .unwrap(),
             json!({"saved":1})
         );
     }
@@ -953,7 +786,7 @@ mod tests {
             {"id":"event-a","payload":{"kind":"attendance","studentId":"student","enrollmentId":"entry","date":"2026-11-27"}},
             {"id":"event-b","payload":{"kind":"reversal","targetId":"event-a"}}
         ]});
-        let result = map_success(&request.response, snapshot).unwrap();
+        let result = map_success(&request.response, snapshot, "https://wartaq.example").unwrap();
         assert_eq!(result["total"], 2);
         assert_eq!(result["records"][0]["target"]["id"], "event-a");
         assert_eq!(result["records"][1]["undone"], true);

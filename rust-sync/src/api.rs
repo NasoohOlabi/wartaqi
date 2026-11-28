@@ -10,14 +10,12 @@ use axum::{
 };
 use deadpool_postgres::{Manager, Pool, Runtime};
 use futures_util::StreamExt;
-use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_postgres::NoTls;
-use url::Url;
 
 use crate::{
-    access, auth_browser, auth_get_session, auth_invitation_profile, auth_profile, catalog,
-    catalog_legacy, grade_sync, ledger, ledger_writes, notebook_focus, notebook_history,
+    access, admin_accounts, auth_browser, auth_get_session, auth_invitation_profile, auth_profile,
+    catalog, catalog_legacy, grade_sync, ledger, ledger_writes, notebook_focus, notebook_history,
     notebook_student, notebook_summary, roster_admin, session_identity, staff_reads,
     student_writes, telegram_conversations, telegram_student, writes::Error,
 };
@@ -48,35 +46,24 @@ const TELEGRAM_INGEST_PATH: &str = "/api/telegram/conversations";
 const TELEGRAM_CONVERSATIONS_PATH: &str = "/api/diagnostics/telegram/conversations";
 const TELEGRAM_TURNS_PATH: &str = "/api/diagnostics/telegram/turns";
 
-pub(crate) fn retired_website_path(path: &str) -> bool {
-    matches!(
-        path,
-        REPLAY_PATH | RETIRED_DIAGNOSTICS_PATH | JOURNEYS_PATH | DIAGNOSTIC_EVENTS_PATH
-    )
-}
-
 #[derive(Clone)]
 pub(crate) struct Api {
     pool: Pool,
     origin: HeaderValue,
-    sessions: Sessions,
+    secret: Arc<str>,
+    secure: bool,
     telegram_worker_secret: Option<Arc<str>>,
-}
-
-#[derive(Clone)]
-enum Sessions {
-    Native { secret: Arc<str>, secure: bool },
-    Bun { url: Url, http: reqwest::Client },
 }
 
 pub(crate) fn create(
     database_url: &str,
-    origin: String,
-    bun_origin: Option<&Url>,
-    http: reqwest::Client,
-    secret: Option<String>,
+    origin: &str,
+    secret: Arc<str>,
     telegram_worker_secret: Option<String>,
 ) -> Result<Api, Box<dyn std::error::Error>> {
+    if secret.encode_utf16().count() < 32 {
+        return Err("BETTER_AUTH_SECRET must contain at least 32 characters".into());
+    }
     let mut db: tokio_postgres::Config = database_url.parse()?;
     db.connect_timeout(Duration::from_secs(10))
         .application_name("wartaq-rust-api")
@@ -86,23 +73,11 @@ pub(crate) fn create(
         .wait_timeout(Some(Duration::from_secs(10)))
         .runtime(Runtime::Tokio1)
         .build()?;
-    let sessions = match secret {
-        Some(secret) if secret.encode_utf16().count() >= 32 => Sessions::Native {
-            secret: secret.into(),
-            secure: origin.starts_with("https://"),
-        },
-        Some(_) => return Err("BETTER_AUTH_SECRET must contain at least 32 characters".into()),
-        None => Sessions::Bun {
-            url: bun_origin
-                .ok_or("BUN_ORIGIN is required without BETTER_AUTH_SECRET")?
-                .join("/api/auth/get-session")?,
-            http,
-        },
-    };
     Ok(Api {
         pool,
         origin: origin.parse()?,
-        sessions,
+        secret,
+        secure: origin.starts_with("https://"),
         telegram_worker_secret: telegram_worker_secret.map(Into::into),
     })
 }
@@ -125,36 +100,31 @@ impl Api {
             .route(TELEGRAM_CONVERSATIONS_PATH, any(handle))
             .route(TELEGRAM_TURNS_PATH, any(handle))
             .route("/api/telegram/student", any(telegram_student_request))
-            .route(TELEGRAM_INGEST_PATH, any(telegram_ingest));
-        if matches!(self.sessions, Sessions::Native { .. }) {
-            router = router.route("/api/auth/get-session", get(current_session));
-        }
-        for path in WRITE_PATHS {
+            .route(TELEGRAM_INGEST_PATH, any(telegram_ingest))
+            .route("/api/auth/get-session", get(current_session));
+        for path in WRITE_PATHS.iter().chain(admin_accounts::PATHS) {
             router = router.route(path, any(handle));
         }
-        let router = router.with_state(self.clone());
-        match &self.sessions {
-            Sessions::Native { secret, secure } => router
-                .merge(auth_browser::router(
-                    self.pool.clone(),
-                    self.origin.clone(),
-                    secret.clone(),
-                    *secure,
-                ))
-                .merge(auth_profile::router(
-                    self.pool.clone(),
-                    self.origin.clone(),
-                    secret.clone(),
-                    *secure,
-                ))
-                .merge(auth_invitation_profile::router(
-                    self.pool.clone(),
-                    self.origin.clone(),
-                    secret.clone(),
-                    *secure,
-                )),
-            Sessions::Bun { .. } => router,
-        }
+        router
+            .with_state(self.clone())
+            .merge(auth_browser::router(
+                self.pool.clone(),
+                self.origin.clone(),
+                self.secret.clone(),
+                self.secure,
+            ))
+            .merge(auth_profile::router(
+                self.pool.clone(),
+                self.origin.clone(),
+                self.secret.clone(),
+                self.secure,
+            ))
+            .merge(auth_invitation_profile::router(
+                self.pool.clone(),
+                self.origin.clone(),
+                self.secret.clone(),
+                self.secure,
+            ))
     }
 
     pub(crate) async fn authorize_socket(&self, headers: &HeaderMap, expected: &str) -> bool {
@@ -175,9 +145,6 @@ impl Api {
 }
 
 async fn current_session(State(state): State<Api>, request: Request) -> Response {
-    let Sessions::Native { ref secret, secure } = state.sessions else {
-        return error(StatusCode::NOT_FOUND, "Not found");
-    };
     let disable_refresh =
         url::form_urlencoded::parse(request.uri().query().unwrap_or("").as_bytes())
             .any(|(key, value)| key == "disableRefresh" && !value.is_empty());
@@ -186,8 +153,8 @@ async fn current_session(State(state): State<Api>, request: Request) -> Response
             auth_get_session::get_session(
                 &client,
                 request.headers(),
-                secret,
-                secure,
+                &state.secret,
+                state.secure,
                 disable_refresh,
             )
             .await
@@ -196,43 +163,14 @@ async fn current_session(State(state): State<Api>, request: Request) -> Response
     }
 }
 
-#[derive(Deserialize)]
-struct Session {
-    user: User,
-}
-
-#[derive(Deserialize)]
-struct User {
-    id: String,
-}
-
 async fn subject(
     state: &Api,
     db: &tokio_postgres::Client,
     headers: &HeaderMap,
     expected: &str,
 ) -> Option<String> {
-    let user_id = match &state.sessions {
-        Sessions::Native { secret, secure } => {
-            let token = session_identity::token(headers, secret, *secure)?;
-            session_identity::user_id(db, &token).await.ok()??
-        }
-        Sessions::Bun { url, http } => {
-            let cookie = headers.get(header::COOKIE)?;
-            let session: Session = http
-                .get(url.clone())
-                .header(header::COOKIE, cookie)
-                .send()
-                .await
-                .ok()?
-                .error_for_status()
-                .ok()?
-                .json()
-                .await
-                .ok()?;
-            session.user.id
-        }
-    };
+    let token = session_identity::token(headers, &state.secret, state.secure)?;
+    let user_id = session_identity::user_id(db, &token).await.ok()??;
     (user_id == expected && !expected.is_empty()).then_some(user_id)
 }
 
@@ -303,7 +241,9 @@ async fn handle(State(state): State<Api>, request: Request) -> Response {
             "/api/notebook" => Route::Notebook,
             "/api/student/attendance" => Route::StudentAttendance,
             "/api/admin" => Route::Admin,
-            path if WRITE_PATHS.contains(&path) => Route::Write,
+            path if WRITE_PATHS.contains(&path) || admin_accounts::PATHS.contains(&path) => {
+                Route::Write
+            }
             _ => return error(StatusCode::NOT_FOUND, "Not found"),
         };
         let required = if matches!(route, Route::Write) {
@@ -599,6 +539,15 @@ async fn authorized(
     } else {
         client.transaction().await?
     };
+    if admin_accounts::PATHS.contains(&path) {
+        admin_accounts::lock_auth(&tx, path).await?;
+        let Some(token) = session_identity::token(headers, &state.secret, state.secure) else {
+            return Ok(error(StatusCode::UNAUTHORIZED, "Unauthorized"));
+        };
+        if session_identity::user_id(&*tx, &token).await?.as_deref() != Some(&subject) {
+            return Ok(error(StatusCode::UNAUTHORIZED, "Unauthorized"));
+        }
+    }
     if headers.contains_key("x-edit-time") || headers.contains_key("x-edit-id") {
         let field = |name| {
             headers
@@ -716,7 +665,16 @@ async fn authorized(
                 return Err(Error::Forbidden);
             }
             let input = read_body(body).await?;
-            if matches!(path, "/api/admin/students" | "/api/admin/students/enroll") {
+            if admin_accounts::PATHS.contains(&path) {
+                admin_accounts::apply(
+                    &tx,
+                    path,
+                    &subject,
+                    input,
+                    admin_accounts::InvitationDelivery::Browser(&state.secret),
+                )
+                .await?
+            } else if matches!(path, "/api/admin/students" | "/api/admin/students/enroll") {
                 roster_admin::apply(&tx, path, input).await?
             } else if matches!(
                 path,

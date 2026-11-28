@@ -1,4 +1,6 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { Pool } from 'pg'
 import { z } from 'zod'
@@ -9,8 +11,9 @@ import { makeEvent } from '../shared/ledger'
 // Only point this at a disposable database; the test applies application migrations.
 const databaseUrl = process.env.TEST_STUDENT_NAMES_DATABASE_URL
 const integration = databaseUrl ? test : test.skip
+const title = 'student names survive migration, structured saves and legacy writes'
 
-integration('student names survive migration, structured saves and legacy writes', async () => {
+integration(title, { timeout: 30_000 }, async () => {
   const pool = new Pool({ connectionString: databaseUrl })
   const admin = crypto.randomUUID()
   const teacher = crypto.randomUUID()
@@ -67,6 +70,7 @@ integration('student names survive migration, structured saves and legacy writes
       'neon/014-verified-phone.sql',
       'neon/020-grade-sync-receipts.sql',
       'neon/021-edit-versions.sql',
+      'neon/023-compact-attendance.sql',
     ])
       await pool.query(await readFile(file, 'utf8'))
     const handler = createHandler(pool, async () => admin, ['https://app.example'])
@@ -139,28 +143,26 @@ integration('student names survive migration, structured saves and legacy writes
       200,
     )
     await mkdir('.local', { recursive: true })
-    const exportBackup = async (path: string) => {
-      const child = Bun.spawn([process.execPath, 'scripts/railway-transfer.ts', 'export', path], {
-        env: { ...process.env, DATABASE_URL_UNPOOLED: databaseUrl },
-        stdout: 'ignore',
-        stderr: 'ignore',
+    const run = async (args: string[], env: NodeJS.ProcessEnv) => {
+      const child = spawn(process.execPath, ['--import', 'tsx', ...args], {
+        env: { ...process.env, ...env },
+        stdio: 'ignore',
       })
-      return child.exited
+      const [code] = await once(child, 'close')
+      return code
     }
+    const exportBackup = (path: string) =>
+      run(['scripts/railway-transfer.ts', 'export', path], { DATABASE_URL_UNPOOLED: databaseUrl })
     expect(
       (await call({ ...fields, teacherId: null, firstName: 'First Middle', lastName: 'Last' }))
         .status,
     ).toBe(200)
     expect(await exportBackup(exportPath)).toBe(0)
-    const compare = Bun.spawn(
-      [process.execPath, 'scripts/railway-transfer.ts', 'compare', exportPath],
-      {
-        env: { ...process.env, MIGRATION_TARGET_DATABASE_URL: databaseUrl },
-        stdout: 'ignore',
-        stderr: 'ignore',
-      },
-    )
-    expect(await compare.exited).toBe(0)
+    expect(
+      await run(['scripts/railway-transfer.ts', 'compare', exportPath], {
+        MIGRATION_TARGET_DATABASE_URL: databaseUrl,
+      }),
+    ).toBe(0)
     const backup = z
       .object({
         version: z.literal(15),
@@ -222,15 +224,11 @@ integration('student names survive migration, structured saves and legacy writes
           },
         ]),
       )
-      const child = Bun.spawn(
-        [process.execPath, 'scripts/neon-admin.ts', 'students', 'upsert', importPath],
-        {
-          env: { ...process.env, DATABASE_URL_UNPOOLED: databaseUrl },
-          stdout: 'ignore',
-          stderr: 'ignore',
-        },
-      )
-      expect(await child.exited).toBe(0)
+      expect(
+        await run(['scripts/neon-admin.ts', 'students', 'upsert', importPath], {
+          DATABASE_URL_UNPOOLED: databaseUrl,
+        }),
+      ).toBe(0)
     }
     const profile = { whatsapp: '+٩٦٣ 123', location: 'Synthetic area', birthYear: 2000 }
     await importRoster(profile)

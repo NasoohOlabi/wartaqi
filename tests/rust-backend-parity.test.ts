@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
 import { createHash, randomBytes } from 'node:crypto'
 import { Pool } from 'pg'
 import { z } from 'zod'
@@ -11,12 +11,12 @@ const binary = process.env.TEST_RUST_SYNC_BINARY
 const parity = databaseUrl && binary ? test : test.skip
 
 parity(
-  'Rust and Bun return identical role-scoped reads and write outcomes',
+  'Rust and Node return identical role-scoped reads and write outcomes',
   async () => {
     if (!databaseUrl || !binary)
       throw new Error('A disposable database and Rust binary are required')
     const pool = new Pool({ connectionString: databaseUrl })
-    let bun: Awaited<ReturnType<typeof startIntegrationServer>> | undefined
+    let node: Awaited<ReturnType<typeof startIntegrationServer>> | undefined
     let rust: Awaited<ReturnType<typeof startRustBackend>> | undefined
     const uuid = () => crypto.randomUUID()
     const teacherId = uuid()
@@ -33,8 +33,8 @@ parity(
     try {
       const secret = randomBytes(32).toString('hex')
       const telegramWorkerSecret = randomBytes(32).toString('hex')
-      bun = await startIntegrationServer(databaseUrl, secret, telegramWorkerSecret)
-      const { origin } = bun
+      node = await startIntegrationServer(databaseUrl, secret, telegramWorkerSecret)
+      const { origin } = node
       rust = await startRustBackend(
         binary,
         databaseUrl,
@@ -611,9 +611,7 @@ parity(
       await pool.query('DELETE FROM neon_auth.session WHERE "userId" = $1', [users[2]])
       await same('/api/me', 401, { headers: student })
     } finally {
-      bun?.child.kill()
-      rust?.child.kill()
-      await Promise.all([bun?.child.exited, rust?.exited])
+      await Promise.all([node?.close(), rust?.close()])
       await pool.query('DELETE FROM events WHERE student_id = $1', [studentId])
       await pool.query('DELETE FROM telegram_conversation_turns WHERE trace = $1', [trace])
       await pool.query('DELETE FROM neon_auth.verification WHERE identifier = ANY($1::text[])', [

@@ -1,9 +1,10 @@
-﻿import { afterEach, expect, test } from 'bun:test'
+﻿import { afterEach, expect, test } from 'vitest-runner'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { Auth } from '../telegram/auth'
+import { createWorker } from '../telegram/runtime'
 import { Storage } from '../telegram/storage'
 
 const originalFetch = globalThis.fetch
@@ -11,8 +12,7 @@ afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
-test('configuration errors do not expose secret values', async () => {
-  const { createWorker } = await import('../telegram/runtime')
+test('configuration errors do not expose secret values', () => {
   try {
     createWorker({ TELEGRAM_BOT_TOKEN: 'synthetic-secret', PORT: 'invalid' })
     throw new Error('Expected invalid configuration to fail')
@@ -28,24 +28,21 @@ test('a code arriving during authorization discovery is not replaced', async () 
   const waiting = new Promise<void>((resolve) => {
     release = resolve
   })
-  globalThis.fetch = Object.assign(
-    async (input: string | URL | Request) => {
-      if (String(input).includes('oauth-protected-resource')) {
-        await waiting
-        return Response.json({
-          resource: 'https://wartaq.example/mcp',
-          authorization_servers: ['https://wartaq.example/api/auth'],
-        })
-      }
+  globalThis.fetch = async (input: string | URL | Request) => {
+    if (String(input).includes('oauth-protected-resource')) {
+      await waiting
       return Response.json({
-        issuer: 'https://wartaq.example/api/auth',
-        authorization_endpoint: 'https://wartaq.example/authorize',
-        token_endpoint: 'https://wartaq.example/token',
-        registration_endpoint: 'https://wartaq.example/register',
+        resource: 'https://wartaq.example/mcp',
+        authorization_servers: ['https://wartaq.example/api/auth'],
       })
-    },
-    { preconnect: originalFetch.preconnect },
-  )
+    }
+    return Response.json({
+      issuer: 'https://wartaq.example/api/auth',
+      authorization_endpoint: 'https://wartaq.example/authorize',
+      token_endpoint: 'https://wartaq.example/token',
+      registration_endpoint: 'https://wartaq.example/register',
+    })
+  }
   try {
     const auth = new Auth(store, 'https://wartaq.example', 'https://bot.example')
     const beginning = auth.begin('123')
@@ -64,63 +61,60 @@ test('repeated navigation preserves browser authorization and the pending privat
   const directory = mkdtempSync(join(tmpdir(), 'wartaq-link-'))
   const messages: Record<string, unknown>[] = []
   let tokenFails = false
-  globalThis.fetch = Object.assign(
-    async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input)
-      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
-      if (url.endsWith('/.well-known/oauth-protected-resource/mcp'))
-        return Response.json({
-          resource: 'https://wartaq.example/mcp',
-          authorization_servers: ['https://wartaq.example/api/auth'],
-        })
-      if (url.includes('/.well-known/oauth-authorization-server'))
-        return Response.json({
-          issuer: 'https://wartaq.example/api/auth',
-          authorization_endpoint: 'https://wartaq.example/authorize',
-          token_endpoint: 'https://wartaq.example/token',
-          registration_endpoint: 'https://wartaq.example/register',
-        })
-      if (url.endsWith('/register')) return Response.json({ client_id: 'synthetic-client' })
-      if (url.endsWith('/token') && tokenFails) return new Response(null, { status: 503 })
-      if (url.endsWith('/token'))
-        return Response.json({
-          access_token: 'synthetic-access',
-          refresh_token: 'synthetic-refresh',
-          expires_in: 3600,
-        })
-      if (new URL(url).origin === 'https://api.telegram.org') {
-        messages.push(body)
-        return Response.json({ ok: true, result: { message_id: 10 } })
-      }
-      if (url.endsWith('/mcp'))
-        return Response.json({
-          jsonrpc: '2.0',
-          id: body.id,
-          result:
-            body.method === 'tools/list'
-              ? { tools: [{ name: 'get_account' }] }
-              : {
-                  content: [
-                    {
-                      type: 'text',
-                      text: JSON.stringify({
-                        account: {
-                          id: '11111111-1111-4111-8111-111111111111',
-                          role: 'teacher',
-                          name: 'Synthetic',
-                          canRead: true,
-                          canWrite: true,
-                          expiresAt: null,
-                        },
-                      }),
-                    },
-                  ],
-                },
-        })
-      throw new Error('Unexpected request')
-    },
-    { preconnect: originalFetch.preconnect },
-  )
+  globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input)
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
+    if (url.endsWith('/.well-known/oauth-protected-resource/mcp'))
+      return Response.json({
+        resource: 'https://wartaq.example/mcp',
+        authorization_servers: ['https://wartaq.example/api/auth'],
+      })
+    if (url.includes('/.well-known/oauth-authorization-server'))
+      return Response.json({
+        issuer: 'https://wartaq.example/api/auth',
+        authorization_endpoint: 'https://wartaq.example/authorize',
+        token_endpoint: 'https://wartaq.example/token',
+        registration_endpoint: 'https://wartaq.example/register',
+      })
+    if (url.endsWith('/register')) return Response.json({ client_id: 'synthetic-client' })
+    if (url.endsWith('/token') && tokenFails) return new Response(null, { status: 503 })
+    if (url.endsWith('/token'))
+      return Response.json({
+        access_token: 'synthetic-access',
+        refresh_token: 'synthetic-refresh',
+        expires_in: 3600,
+      })
+    if (new URL(url).origin === 'https://api.telegram.org') {
+      messages.push(body)
+      return Response.json({ ok: true, result: { message_id: 10 } })
+    }
+    if (url.endsWith('/mcp'))
+      return Response.json({
+        jsonrpc: '2.0',
+        id: body.id,
+        result:
+          body.method === 'tools/list'
+            ? { tools: [{ name: 'get_account' }] }
+            : {
+                content: [
+                  {
+                    type: 'text',
+                    text: JSON.stringify({
+                      account: {
+                        id: '11111111-1111-4111-8111-111111111111',
+                        role: 'teacher',
+                        name: 'Synthetic',
+                        canRead: true,
+                        canWrite: true,
+                        expiresAt: null,
+                      },
+                    }),
+                  },
+                ],
+              },
+      })
+    throw new Error('Unexpected request')
+  }
   const worker = createWorker({
     TELEGRAM_BOT_TOKEN: 'synthetic',
     WARTAQI_ORIGIN: 'https://wartaq.example',
@@ -201,41 +195,38 @@ test('OAuth link requires a browser code in the original chat and persists encry
   let registrations = 0
   const revoked: string[] = []
   let revokeFails = false
-  globalThis.fetch = Object.assign(
-    async (input: string | URL | Request) => {
-      const url = String(input)
-      if (url.endsWith('/.well-known/oauth-protected-resource/mcp'))
-        return Response.json({
-          resource: `${origin}/mcp`,
-          authorization_servers: [`${origin}/api/auth`],
-        })
-      if (url.includes('/.well-known/oauth-authorization-server'))
-        return Response.json({
-          issuer: `${origin}/api/auth`,
-          authorization_endpoint: `${origin}/authorize`,
-          token_endpoint: `${origin}/token`,
-          registration_endpoint: `${origin}/register`,
-          revocation_endpoint: `${origin}/revoke`,
-        })
-      if (url.endsWith('/register')) {
-        registrations++
-        return Response.json({ client_id: 'synthetic-client' })
-      }
-      if (url.endsWith('/revoke')) {
-        revoked.push(url)
-        if (revokeFails) throw new Error('Synthetic outage')
-        return new Response(null, { status: 200 })
-      }
-      if (url.endsWith('/token'))
-        return Response.json({
-          access_token: 'synthetic-access-secret',
-          refresh_token: 'synthetic-refresh-secret',
-          expires_in: 3600,
-        })
-      throw new Error('Unexpected request')
-    },
-    { preconnect: originalFetch.preconnect },
-  )
+  globalThis.fetch = async (input: string | URL | Request) => {
+    const url = String(input)
+    if (url.endsWith('/.well-known/oauth-protected-resource/mcp'))
+      return Response.json({
+        resource: `${origin}/mcp`,
+        authorization_servers: [`${origin}/api/auth`],
+      })
+    if (url.includes('/.well-known/oauth-authorization-server'))
+      return Response.json({
+        issuer: `${origin}/api/auth`,
+        authorization_endpoint: `${origin}/authorize`,
+        token_endpoint: `${origin}/token`,
+        registration_endpoint: `${origin}/register`,
+        revocation_endpoint: `${origin}/revoke`,
+      })
+    if (url.endsWith('/register')) {
+      registrations++
+      return Response.json({ client_id: 'synthetic-client' })
+    }
+    if (url.endsWith('/revoke')) {
+      revoked.push(url)
+      if (revokeFails) throw new Error('Synthetic outage')
+      return new Response(null, { status: 200 })
+    }
+    if (url.endsWith('/token'))
+      return Response.json({
+        access_token: 'synthetic-access-secret',
+        refresh_token: 'synthetic-refresh-secret',
+        expires_in: 3600,
+      })
+    throw new Error('Unexpected request')
+  }
   try {
     const auth = new Auth(store, origin, 'https://bot.example')
     const [first] = await Promise.all([auth.begin('123'), auth.begin('456')])
@@ -309,56 +300,53 @@ test('private updates use bound, single-use choices and never replay a duplicate
   const deliveries: Record<string, unknown>[] = []
   let mcpCalls = 0
   let failMcp = false
-  globalThis.fetch = Object.assign(
-    async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input)
-      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
-      if (url.endsWith('/.well-known/oauth-protected-resource/mcp'))
-        return Response.json({
-          resource: 'https://wartaq.example/mcp',
-          authorization_servers: ['https://wartaq.example/api/auth'],
-        })
-      if (url.includes('/.well-known/oauth-authorization-server'))
-        return Response.json({
-          issuer: 'https://wartaq.example/api/auth',
-          authorization_endpoint: 'https://wartaq.example/authorize',
-          token_endpoint: 'https://wartaq.example/token',
-          registration_endpoint: 'https://wartaq.example/register',
-        })
-      if (url.endsWith('/register')) return Response.json({ client_id: 'synthetic-client' })
-      if (new URL(url).origin === 'https://api.telegram.org') {
-        deliveries.push({ method: url.split('/').at(-1), ...body })
-        return Response.json({ ok: true, result: { message_id: body.message_id ?? 10 } })
-      }
-      if (url.endsWith('/mcp')) {
-        mcpCalls++
-        if (failMcp) throw new Error('Synthetic uncertain delivery')
-        const result =
-          body.method === 'tools/list'
-            ? { tools: [{ name: 'get_account' }] }
-            : {
-                content: [
-                  {
-                    type: 'text',
-                    text: JSON.stringify({
-                      account: {
-                        id: '11111111-1111-4111-8111-111111111111',
-                        role: 'teacher',
-                        name: 'Synthetic',
-                        canRead: true,
-                        canWrite: true,
-                        expiresAt: null,
-                      },
-                    }),
-                  },
-                ],
-              }
-        return Response.json({ jsonrpc: '2.0', id: body.id, result })
-      }
-      throw new Error('Unexpected request')
-    },
-    { preconnect: originalFetch.preconnect },
-  )
+  globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input)
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
+    if (url.endsWith('/.well-known/oauth-protected-resource/mcp'))
+      return Response.json({
+        resource: 'https://wartaq.example/mcp',
+        authorization_servers: ['https://wartaq.example/api/auth'],
+      })
+    if (url.includes('/.well-known/oauth-authorization-server'))
+      return Response.json({
+        issuer: 'https://wartaq.example/api/auth',
+        authorization_endpoint: 'https://wartaq.example/authorize',
+        token_endpoint: 'https://wartaq.example/token',
+        registration_endpoint: 'https://wartaq.example/register',
+      })
+    if (url.endsWith('/register')) return Response.json({ client_id: 'synthetic-client' })
+    if (new URL(url).origin === 'https://api.telegram.org') {
+      deliveries.push({ method: url.split('/').at(-1), ...body })
+      return Response.json({ ok: true, result: { message_id: body.message_id ?? 10 } })
+    }
+    if (url.endsWith('/mcp')) {
+      mcpCalls++
+      if (failMcp) throw new Error('Synthetic uncertain delivery')
+      const result =
+        body.method === 'tools/list'
+          ? { tools: [{ name: 'get_account' }] }
+          : {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    account: {
+                      id: '11111111-1111-4111-8111-111111111111',
+                      role: 'teacher',
+                      name: 'Synthetic',
+                      canRead: true,
+                      canWrite: true,
+                      expiresAt: null,
+                    },
+                  }),
+                },
+              ],
+            }
+      return Response.json({ jsonrpc: '2.0', id: body.id, result })
+    }
+    throw new Error('Unexpected request')
+  }
   const worker = createWorker({
     TELEGRAM_BOT_TOKEN: 'synthetic',
     WARTAQI_ORIGIN: 'https://wartaq.example',
@@ -476,46 +464,43 @@ test.each(['en', 'ar'])('phone button accepts its own native contact in %s', asy
   const directory = mkdtempSync(join(tmpdir(), 'wartaq-phone-'))
   const messages: Record<string, unknown>[] = []
   const requests: Record<string, unknown>[] = []
-  globalThis.fetch = Object.assign(
-    async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input)
-      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
-      if (url.endsWith('/.well-known/oauth-protected-resource/mcp'))
+  globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input)
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
+    if (url.endsWith('/.well-known/oauth-protected-resource/mcp'))
+      return Response.json({
+        resource: 'https://wartaq.example/mcp',
+        authorization_servers: ['https://wartaq.example/api/auth'],
+      })
+    if (url.includes('/.well-known/oauth-authorization-server'))
+      return Response.json({
+        issuer: 'https://wartaq.example/api/auth',
+        authorization_endpoint: 'https://wartaq.example/authorize',
+        token_endpoint: 'https://wartaq.example/token',
+        registration_endpoint: 'https://wartaq.example/register',
+      })
+    if (url.endsWith('/register')) return Response.json({ client_id: 'client' })
+    if (url.endsWith('/api/telegram/student')) {
+      requests.push(body)
+      if (body.action === 'login-phone')
+        return Response.json({ token: 'synthetic-token', role: 'student' })
+      if (body.action === 'attendance')
         return Response.json({
-          resource: 'https://wartaq.example/mcp',
-          authorization_servers: ['https://wartaq.example/api/auth'],
+          student: {
+            studentId: '11111111-1111-4111-8111-111111111111',
+            name: 'Synthetic',
+            group: '',
+          },
+          attendance: [],
         })
-      if (url.includes('/.well-known/oauth-authorization-server'))
-        return Response.json({
-          issuer: 'https://wartaq.example/api/auth',
-          authorization_endpoint: 'https://wartaq.example/authorize',
-          token_endpoint: 'https://wartaq.example/token',
-          registration_endpoint: 'https://wartaq.example/register',
-        })
-      if (url.endsWith('/register')) return Response.json({ client_id: 'client' })
-      if (url.endsWith('/api/telegram/student')) {
-        requests.push(body)
-        if (body.action === 'login-phone')
-          return Response.json({ token: 'synthetic-token', role: 'student' })
-        if (body.action === 'attendance')
-          return Response.json({
-            student: {
-              studentId: '11111111-1111-4111-8111-111111111111',
-              name: 'Synthetic',
-              group: '',
-            },
-            attendance: [],
-          })
-        return Response.json({ ok: true })
-      }
-      if (new URL(url).origin === 'https://api.telegram.org') {
-        messages.push(body)
-        return Response.json({ ok: true, result: { message_id: 100 + messages.length } })
-      }
-      throw new Error('Unexpected request')
-    },
-    { preconnect: originalFetch.preconnect },
-  )
+      return Response.json({ ok: true })
+    }
+    if (new URL(url).origin === 'https://api.telegram.org') {
+      messages.push(body)
+      return Response.json({ ok: true, result: { message_id: 100 + messages.length } })
+    }
+    throw new Error('Unexpected request')
+  }
   const worker = createWorker({
     TELEGRAM_BOT_TOKEN: 'synthetic',
     WARTAQI_ORIGIN: 'https://wartaq.example',
@@ -611,41 +596,38 @@ test.each(['en', 'ar'])('phone denial and browser recovery in %s', async (lang) 
   let discoveryFails = true
   let discoveryCalls = 0
   let denied = true
-  globalThis.fetch = Object.assign(
-    async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input)
-      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
-      if (url.endsWith('/.well-known/oauth-protected-resource/mcp')) {
-        discoveryCalls++
-        if (discoveryFails) return new Response(null, { status: 503 })
-        return Response.json({
-          resource: 'https://wartaq.example/mcp',
-          authorization_servers: ['https://wartaq.example/api/auth'],
-        })
-      }
-      if (url.includes('/.well-known/oauth-authorization-server'))
-        return Response.json({
-          issuer: 'https://wartaq.example/api/auth',
-          authorization_endpoint: 'https://wartaq.example/authorize',
-          token_endpoint: 'https://wartaq.example/token',
-          registration_endpoint: 'https://wartaq.example/register',
-        })
-      if (url.endsWith('/register')) return Response.json({ client_id: 'client' })
-      if (url.endsWith('/token'))
-        return Response.json({
-          access_token: 'synthetic-access',
-          refresh_token: 'synthetic-refresh',
-        })
-      if (url.endsWith('/api/telegram/student'))
-        return new Response(null, { status: denied ? 403 : 503 })
-      if (new URL(url).origin === 'https://api.telegram.org') {
-        messages.push(body)
-        return Response.json({ ok: true, result: { message_id: 100 + messages.length } })
-      }
-      throw new Error('Unexpected request')
-    },
-    { preconnect: originalFetch.preconnect },
-  )
+  globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input)
+    const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
+    if (url.endsWith('/.well-known/oauth-protected-resource/mcp')) {
+      discoveryCalls++
+      if (discoveryFails) return new Response(null, { status: 503 })
+      return Response.json({
+        resource: 'https://wartaq.example/mcp',
+        authorization_servers: ['https://wartaq.example/api/auth'],
+      })
+    }
+    if (url.includes('/.well-known/oauth-authorization-server'))
+      return Response.json({
+        issuer: 'https://wartaq.example/api/auth',
+        authorization_endpoint: 'https://wartaq.example/authorize',
+        token_endpoint: 'https://wartaq.example/token',
+        registration_endpoint: 'https://wartaq.example/register',
+      })
+    if (url.endsWith('/register')) return Response.json({ client_id: 'client' })
+    if (url.endsWith('/token'))
+      return Response.json({
+        access_token: 'synthetic-access',
+        refresh_token: 'synthetic-refresh',
+      })
+    if (url.endsWith('/api/telegram/student'))
+      return new Response(null, { status: denied ? 403 : 503 })
+    if (new URL(url).origin === 'https://api.telegram.org') {
+      messages.push(body)
+      return Response.json({ ok: true, result: { message_id: 100 + messages.length } })
+    }
+    throw new Error('Unexpected request')
+  }
   const worker = createWorker({
     TELEGRAM_BOT_TOKEN: 'synthetic',
     WARTAQI_ORIGIN: 'https://wartaq.example',

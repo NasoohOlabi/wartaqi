@@ -17,35 +17,36 @@ impl Credential {
     }
 }
 
-// This is the private worker's first gate. MCP host/origin and method validation
-// remain the transport's responsibility after identification.
-pub(crate) async fn identify(
-    db: &Client,
-    headers: &HeaderMap,
-    secret: Option<&str>,
-) -> Result<Option<Credential>, tokio_postgres::Error> {
-    let supplied = headers
-        .get(header::AUTHORIZATION)
-        .map(|value| value.as_bytes())
-        .unwrap_or_default();
+pub(crate) struct GrantPrefix(String);
+
+pub(crate) fn grant_prefix(headers: &HeaderMap, secret: Option<&str>) -> Option<GrantPrefix> {
+    let authorizations = headers.get_all(header::AUTHORIZATION);
+    let mut authorizations = authorizations.iter();
+    let supplied = authorizations.next()?.as_bytes();
     let expected = format!("Bearer {}", secret.unwrap_or_default());
     #[allow(deprecated)]
     if secret.is_none_or(str::is_empty)
+        || authorizations.next().is_some()
         || ring::constant_time::verify_slices_are_equal(supplied, expected.as_bytes()).is_err()
     {
-        return Ok(None);
+        return None;
     }
-    let Some(token) = headers
-        .get("x-telegram-grant")
-        .and_then(|value| value.to_str().ok())
-        .filter(|token| telegram_student::valid_token(token))
-    else {
-        return Ok(None);
-    };
-    let prefix = format!(
+    let grants = headers.get_all("x-telegram-grant");
+    let mut grants = grants.iter();
+    let token = grants.next()?.to_str().ok()?;
+    if grants.next().is_some() || !telegram_student::valid_token(token) {
+        return None;
+    }
+    Some(GrantPrefix(format!(
         "wartaq:telegram:{}:",
         telegram_student::hash(token.as_bytes())
-    );
+    )))
+}
+
+pub(crate) async fn identify(
+    db: &Client,
+    GrantPrefix(prefix): GrantPrefix,
+) -> Result<Option<Credential>, tokio_postgres::Error> {
     let Some(row) = db.query_opt("SELECT identifier FROM neon_auth.verification WHERE starts_with(identifier, $1) AND \"expiresAt\" > now()", &[&prefix]).await? else {
         return Ok(None);
     };
@@ -69,7 +70,7 @@ pub(crate) async fn authorize(
     let Some(grant) = access::load(tx, credential.subject()).await? else {
         return Ok(None);
     };
-    if grant.role() != "teacher" {
+    if grant.is_admin() || grant.is_student() {
         return Ok(None);
     }
     let row = tx
@@ -91,7 +92,7 @@ pub(crate) async fn authorize(
 
 #[cfg(test)]
 mod tests {
-    use super::{authorize, identify};
+    use super::{authorize, grant_prefix, identify};
     use crate::telegram_student::{binding, hash};
     use axum::http::{HeaderMap, HeaderValue, header};
 
@@ -118,16 +119,9 @@ mod tests {
             HeaderValue::from_static("Bearer synthetic-secret"),
         );
         headers.insert("x-telegram-grant", HeaderValue::from_str(&token).unwrap());
-        assert!(
-            identify(&db, &headers, Some("wrong"))
-                .await
-                .unwrap()
-                .is_none()
-        );
-        let credential = identify(&db, &headers, Some("synthetic-secret"))
-            .await
-            .unwrap()
-            .unwrap();
+        assert!(grant_prefix(&headers, Some("wrong")).is_none());
+        let prefix = grant_prefix(&headers, Some("synthetic-secret")).unwrap();
+        let credential = identify(&db, prefix).await.unwrap().unwrap();
         let tx = db.transaction().await.unwrap();
         assert!(authorize(&tx, &credential).await.unwrap().is_some());
         tx.commit().await.unwrap();

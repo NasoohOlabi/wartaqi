@@ -1,6 +1,6 @@
 ﻿*
 !package.json
-!bun.lock
+!package-lock.json
 !patches/
 !patches/**
 !index.html
@@ -14,8 +14,8 @@
 !public/**
 !server/
 !server/**
-!functions/
-!functions/notebook-service.ts
+!scripts/
+!scripts/precompress-assets.mjs
 !Dockerfile
 !rust-sync/
 !rust-sync/Cargo.toml

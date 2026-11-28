@@ -1,4 +1,4 @@
-﻿import { afterAll, expect, test } from 'bun:test'
+﻿import { afterAll, expect, test } from 'vitest-runner'
 import { randomBytes } from 'node:crypto'
 import { Pool } from 'pg'
 import { z } from 'zod'
@@ -11,7 +11,7 @@ const databaseUrl = process.env.TEST_RAILWAY_DATABASE_URL
 const integration = databaseUrl ? test : test.skip
 const secret = randomBytes(32).toString('hex')
 let pool: Pool | undefined
-let server: ReturnType<typeof Bun.spawn> | undefined
+let server: Awaited<ReturnType<typeof startIntegrationServer>> | undefined
 const ids: string[] = []
 const studentId = crypto.randomUUID()
 const teacherId = crypto.randomUUID()
@@ -23,7 +23,7 @@ const otherStudentId = crypto.randomUUID()
 const otherEnrollmentId = crypto.randomUUID()
 
 afterAll(async () => {
-  server?.kill()
+  await server?.close()
   if (!pool) return
   const db = await pool.connect()
   try {
@@ -57,7 +57,7 @@ integration('Telegram phone grants follow student and teacher access', async () 
     if (previousSecret === undefined) delete process.env.TELEGRAM_WORKER_SECRET
     else process.env.TELEGRAM_WORKER_SECRET = previousSecret
   })
-  server = started.child
+  server = started
   const password = randomBytes(32).toString('hex')
   const staffPassword = randomBytes(32).toString('hex')
   const user = await createIdentity(pool, 'Synthetic student', password)

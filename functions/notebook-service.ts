@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { profileUpdateSchema, validProfileUpdate } from '../server/profile'
 import { saveGradeEdit } from '../server/gradeSync'
 import {
@@ -1333,7 +1334,7 @@ export function createHandler(
               ? operation.event.payload
               : {
                   kind: 'contact_receipt',
-                  fingerprint: new Bun.CryptoHasher('sha256')
+                  fingerprint: createHash('sha256')
                     .update(JSON.stringify({ subject, operation }))
                     .digest('hex'),
                 }

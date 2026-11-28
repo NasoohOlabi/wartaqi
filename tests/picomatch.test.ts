@@ -1,11 +1,11 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
+import { spawnSync } from 'node:child_process'
 
 test('build tools use the patched ReDoS-safe glob parser', () => {
-  const result = Bun.spawnSync(['node', 'scripts/check-picomatch.cjs'], {
-    stdout: 'pipe',
-    stderr: 'pipe',
+  const result = spawnSync(process.execPath, ['scripts/check-picomatch.cjs'], {
+    encoding: 'utf8',
     timeout: 2000,
   })
-  expect(new TextDecoder().decode(result.stderr)).toBe('')
-  expect(result.exitCode).toBe(0)
+  expect(result.stderr).toBe('')
+  expect(result.status).toBe(0)
 })

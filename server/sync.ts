@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises'
-import { Server as BunEngine } from '@socket.io/bun-engine'
+import type { IncomingMessage, Server as HttpServer, ServerResponse } from 'node:http'
 import { Client } from 'pg'
 import { Server } from 'socket.io'
 import { z } from 'zod'
@@ -66,23 +66,33 @@ function listenForChanges(databaseUrl: string, invalidate: (hint?: 'ledger') => 
 export function createWorkspaceSync({
   authorize,
   databaseUrl,
-  handle,
   origin,
+  server,
 }: {
   authorize: (headers: Headers, userId: string) => Promise<boolean>
   databaseUrl: string
-  handle: (request: Request) => Promise<Response>
   origin: string
+  server: HttpServer
 }) {
-  const engine = new BunEngine({
+  const io = new Server<Record<never, never>, WorkspaceEvents>(server, {
     path: socketPath,
+    serveClient: false,
     maxHttpBufferSize: 4096,
-    async allowRequest(request) {
-      if (!request.headers.has('cookie')) throw new Error('Unauthorized')
-    },
   })
-  const io = new Server<Record<never, never>, WorkspaceEvents>({ serveClient: false })
-  io.bind(engine)
+  io.engine.use((request: IncomingMessage, response: ServerResponse, next: () => void) => {
+    // Apply the origin check to the handshake and requests carrying an existing SID.
+    const from = request.headers.origin
+    const site = request.headers['sec-fetch-site']
+    if ((from && from !== origin) || (site && site !== 'same-origin')) {
+      response.writeHead(403).end('Forbidden')
+      return
+    }
+    if (!request.headers.cookie) {
+      response.writeHead(403, { 'content-type': 'application/json' }).end('{"code":4,"message":{}}')
+      return
+    }
+    next()
+  })
   io.use(async (socket, next) => {
     try {
       const auth = handshakeSchema.safeParse(socket.handshake.auth)
@@ -103,24 +113,7 @@ export function createWorkspaceSync({
   const stopListening = listenForChanges(databaseUrl, (hint) =>
     hint ? io.emit('workspace:changed', hint) : io.emit('workspace:changed'),
   )
-  const { fetch: socketFetch, websocket, idleTimeout } = engine.handler()
-
   return {
-    serve: {
-      websocket,
-      idleTimeout,
-      fetch(request: Request, server: Parameters<typeof socketFetch>[1]) {
-        const path = new URL(request.url).pathname
-        if (path !== socketPath) return handle(request)
-        // A same-origin polling GET can omit Origin. Reject foreign Origin and
-        // browser cross-site metadata on upgrades and existing polling SIDs too.
-        const from = request.headers.get('origin')
-        const site = request.headers.get('sec-fetch-site')
-        if ((from && from !== origin) || (site && site !== 'same-origin'))
-          return new Response('Forbidden', { status: 403 })
-        return socketFetch(request, server)
-      },
-    },
     async close() {
       await Promise.all([stopListening(), io.close()])
     },

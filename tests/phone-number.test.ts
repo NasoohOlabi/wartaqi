@@ -1,4 +1,4 @@
-﻿import { expect, test } from 'bun:test'
+﻿import { expect, test } from 'vitest-runner'
 import { phoneNumber } from '../src/phoneFormat'
 
 test('formats and dials staff phone values conservatively', () => {

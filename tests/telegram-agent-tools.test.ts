@@ -1,5 +1,6 @@
-﻿import { describe, expect, test } from 'bun:test'
+﻿import { describe, expect, test } from 'vitest-runner'
 import { z } from 'zod'
+import { listenFetch } from '../server/http'
 import { Mcp, type McpTool } from '../telegram/transport'
 import { payloadSchema } from '../shared/ledger'
 import {
@@ -120,9 +121,8 @@ describe('agent MCP policy', () => {
   })
   test('collects paged catalog and detects cursor loops', async () => {
     let repeated = false
-    const server = Bun.serve({
-      port: 0,
-      fetch: async (request) => {
+    const server = await listenFetch(
+      async (request) => {
         const body = z
           .object({ params: z.object({ cursor: z.string().optional() }) })
           .parse(await request.json())
@@ -134,14 +134,15 @@ describe('agent MCP policy', () => {
           },
         })
       },
-    })
+      { hostname: '127.0.0.1', port: 0 },
+    )
     try {
-      const mcp = new Mcp(server.url.origin, 'token')
+      const mcp = new Mcp(server.origin, 'token')
       expect([...(await mcp.tools())]).toEqual(['find_students', 'list_courses'])
       repeated = true
       await expect(mcp.catalog()).rejects.toThrow()
     } finally {
-      server.stop(true)
+      await server.close()
     }
   })
 })

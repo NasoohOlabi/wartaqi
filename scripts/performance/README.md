@@ -1,12 +1,12 @@
 ﻿# Local performance lab
 
-Run the lab from PowerShell with Bun, Node, Docker Desktop and Playwright Chromium. It uses dedicated containers on `wartaq-perf-lab`, synthetic logins and a loopback-only web port. Each run clones one database template and drops its clone afterward.
+Run the lab from PowerShell with Node.js 24, npm 11, Docker Desktop and Playwright Chromium. It uses dedicated containers on `wartaq-perf-lab`, synthetic logins and a loopback-only web port. Each run clones one database template and drops its clone afterward.
 
 Build the baseline image from the pinned source revision before measuring a candidate. This comparison used `7f5ae9a` and PostgreSQL migrations through 022 for its baseline.
 
 ```powershell
-bun install --frozen-lockfile
-bunx playwright install chromium
+npm ci
+npm exec -- playwright install chromium
 ./scripts/performance/prepare.ps1 -ThroughMigration 22
 ./scripts/performance/build.ps1 -Tag wartaq-perf:baseline
 ./scripts/performance/run.ps1 -Image wartaq-perf:baseline -Label baseline-a -Mode hplus
@@ -26,6 +26,8 @@ For the compact schema comparison, prepare the baseline templates with `./script
 
 Use `-IsolateDatabase` to restore the same fixture into a fresh PostgreSQL container for each run when other scenarios might have changed the shared cluster's working set. `-Mode lan-preparation -Fixture large` checks that the large administrator notebook prepares a full offline copy on a fast link and opens its course summary after disconnecting.
 
-When registry downloads are unavailable in Docker, `build.ps1 -UseCachedRuntime` uses the existing `wartaqi:routed-web-current` dependency image and the same Bookworm Rust compiler as the production Dockerfile. It expects the cached Cargo registry archive under `.artifacts/performance`. The baseline lock comparison found identical package entries except for the removed `web-vitals` dependency. The candidate replaces the app source, built frontend and Rust executable in the cached image. The normal production Dockerfile is the portable path.
+For a runtime comparison, run `./scripts/performance/pair.ps1 -ControlImage wartaq-perf:candidate -CandidateImage wartaq-runtime:native-v1 -Label runtime-ab` after preparing the current migrations. The two web containers receive the same requests against separate copies of the small fixture. The report stores response digests and statuses. Add `-KeepRunning` to inspect the two loopback endpoints on ports 48717 and 48727. Stop `wartaq-pair-control` and `wartaq-pair-candidate` and drop `wartaq_pair_control` and `wartaq_pair_candidate` on the disposable `wartaq-perf-db` before re-creating a retained pair.
+
+When Cargo registry downloads are unavailable in Docker, run `cargo fetch --locked --manifest-path rust-sync/Cargo.toml` on the host and use `build.ps1 -UseCachedRuntime`. It builds the frontend with the installed npm packages and builds Rust in an offline Docker container using the host Cargo registry and the same Bookworm compiler as the Dockerfile.
 
 Reports and the generated fixture password live in the ignored `.artifacts/performance` directory. Stop only the named `wartaq-perf-db` container when finished. The lab has no provider connection.

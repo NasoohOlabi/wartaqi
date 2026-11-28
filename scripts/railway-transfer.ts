@@ -397,7 +397,7 @@ async function main() {
   const [command, path] = process.argv.slice(2)
   if (!path || !['export', 'import', 'compare'].includes(command ?? ''))
     throw new Error(
-      'Usage: bun scripts/railway-transfer.ts export|import|compare .local/backup.json',
+      'Usage: npm exec -- tsx scripts/railway-transfer.ts export|import|compare .local/backup.json',
     )
   const file = privateFile(path)
   const connectionString =

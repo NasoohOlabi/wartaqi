@@ -1,5 +1,6 @@
-﻿import { expect, test } from 'bun:test'
+﻿import { expect, test } from 'vitest-runner'
 import { createServer } from 'node:http'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { Server } from 'socket.io'
 import { subscribeWorkspaceChanges } from '../src/syncStream'
 
@@ -7,7 +8,7 @@ async function until(check: () => boolean, timeout = 6000) {
   const deadline = Date.now() + timeout
   while (!check()) {
     if (Date.now() > deadline) throw new Error('Timed out waiting for sync')
-    await Bun.sleep(20)
+    await sleep(20)
   }
 }
 
@@ -110,14 +111,14 @@ test('workspace transport delivers, reconnects, falls back from a blackhole, and
     unsubscribe = undefined
 
     websocketMode = 'healthy'
-    await Bun.sleep(300)
+    await sleep(300)
     const deniedPolling = polling
     const deniedUpgrades = upgrades
     unsubscribe = subscribeWorkspaceChanges('denied', () => {
       refreshes++
     })
     await until(() => upgrades > deniedUpgrades)
-    await Bun.sleep(2300)
+    await sleep(2300)
     expect(polling).toBe(deniedPolling)
     expect(connections).toBe(6)
   } finally {

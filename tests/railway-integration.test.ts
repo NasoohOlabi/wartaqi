@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'bun:test'
+import { afterAll, expect, test } from 'vitest-runner'
 import { Pool } from 'pg'
 import { z } from 'zod'
 import { neonAdminBoardSchema } from '../shared/neon'
@@ -8,7 +8,7 @@ import { createIdentity } from './integration-identity'
 // Set only to a disposable database with the Railway and application migrations applied.
 const databaseUrl = process.env.TEST_RAILWAY_DATABASE_URL
 const integration = databaseUrl ? test : test.skip
-let server: ReturnType<typeof Bun.spawn> | undefined
+let server: Awaited<ReturnType<typeof startIntegrationServer>> | undefined
 let pool: Pool | undefined
 let userId = ''
 let adminId = ''
@@ -20,7 +20,7 @@ const enrollmentId = crypto.randomUUID()
 const password = 'synthetic-password-12345'
 
 afterAll(async () => {
-  server?.kill()
+  await server?.close()
   if (!pool) return
   await pool.query('DELETE FROM events WHERE student_id = $1', [studentId])
   if (userId) {
@@ -44,8 +44,8 @@ integration(
   async () => {
     if (!databaseUrl) throw new Error('Disposable database is required')
     pool = new Pool({ connectionString: databaseUrl })
-    const { origin, child } = await startIntegrationServer(databaseUrl)
-    server = child
+    server = await startIntegrationServer(databaseUrl)
+    const { origin } = server
     const phone = '+12025550205'
     userId = await createIdentity(pool, 'Synthetic user', password)
     await pool.query(

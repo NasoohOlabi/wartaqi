@@ -1,5 +1,13 @@
 # Work log
 
+## 2026-11-28 05:52 Asia/Damascus (UTC+03:00) - Move the web runtime to Rust
+
+The owner requested a local Docker comparison before removing Bun. The web image now runs a single Rust executable for the notebook, browser sessions, account administration, Socket.IO, OAuth, MCP and Telegram API endpoints. It preserves the PostgreSQL schema, session cookies and persisted OAuth grants. npm installs the frontend and test toolchain. The separate worker image uses Node.js while its native replacement is verified.
+
+Two loopback web containers replayed 24 matching API responses and a complete OAuth login, consent, PKCE token exchange and MCP initialization against separate copies of one synthetic PostgreSQL fixture. The candidate image contains neither Node.js nor Bun. Both images completed the H+ teacher and student journey with no incomplete responses or HTTP errors. In this pair of H+ runs, web CPU was 1.75 versus 0.66 seconds and peak web container memory was 244 versus 37 MiB. The desktop and mobile suite passed 264 cases. Separate OAuth tests transferred persisted clients and grants in both directions between Rust and the reference server.
+
+The candidate was built in Docker using the locked Cargo cache after crates.io downloads from Docker timed out. The database, images and traffic were local and synthetic. Public CIMD/JWKS network calls and Railway deployment were outside the exercise.
+
 ## 2026-11-27 20:54 Asia/Damascus (UTC+03:00) - Open a dialog to move a course student
 
 The owner asked to replace the group dropdown with an icon button. Manage groups now shows a two-arrow Move icon on the student row with a localized tooltip and accessible name. The dialog names the student and lists available teachers and Unassigned. Choosing a destination saves the course assignment. Cancel and Escape restore keyboard focus to the button. The destination list can scroll while Cancel stays visible.

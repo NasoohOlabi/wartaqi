@@ -140,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn bun_and_rust_read_each_others_sqlite_state() -> Result<()> {
+    fn node_and_rust_read_each_others_sqlite_state() -> Result<()> {
         let mut random = [0; 16];
         SystemRandom::new()
             .fill(&mut random)
@@ -154,31 +154,31 @@ mod tests {
             .parent()
             .ok_or("missing repository root")?;
         let run = |code: &str| -> Result<()> {
-            let status = std::process::Command::new("bun")
+            let status = std::process::Command::new("node")
                 .current_dir(root)
-                .arg("-e")
+                .args(["--import", "tsx", "--input-type=module", "--eval"])
                 .arg(code)
                 .arg(&path)
                 .arg(&key)
                 .status()?;
             if !status.success() {
-                return Err("Bun compatibility check failed".into());
+                return Err("Node.js storage compatibility check failed".into());
             }
             Ok(())
         };
         run(
-            "import { Storage } from './telegram/storage'; const s = new Storage(process.argv[1], process.argv[2]); s.set('bun', { token: 'synthetic', count: 7 }); s.close()",
+            "import { Storage } from './telegram/storage.ts'; const s = new Storage(process.argv[1], process.argv[2]); s.set('node', { token: 'synthetic', count: 7 }); s.close()",
         )?;
         {
             let storage = Storage::open(&path, &key)?;
             assert_eq!(
-                storage.get("bun")?,
+                storage.get("node")?,
                 Some(json!({"token":"synthetic","count":7}))
             );
             storage.set("rust", &json!({"name":"مرحبا","offset":42}), 0)?;
         }
         run(
-            "import { Storage } from './telegram/storage'; const s = new Storage(process.argv[1], process.argv[2]); const v = s.get('rust'); s.close(); if (JSON.stringify(v) !== JSON.stringify({name:'مرحبا',offset:42})) process.exit(1)",
+            "import { Storage } from './telegram/storage.ts'; const s = new Storage(process.argv[1], process.argv[2]); const v = s.get('rust'); s.close(); if (JSON.stringify(v) !== JSON.stringify({name:'مرحبا',offset:42})) process.exit(1)",
         )?;
         std::fs::remove_file(path)?;
         Ok(())

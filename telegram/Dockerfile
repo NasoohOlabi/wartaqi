@@ -1,15 +1,18 @@
-FROM oven/bun:1.3.0 AS build
+FROM node:24-bookworm AS build
 WORKDIR /app
-COPY package.json bun.lock ./
+COPY package.json package-lock.json ./
 COPY patches ./patches
-RUN HUSKY=0 bun install --frozen-lockfile --production --ignore-scripts
+RUN npm ci --ignore-scripts && npm run postinstall
 COPY telegram ./telegram
 COPY shared ./shared
-COPY server/profile.ts ./server/profile.ts
-RUN bun build ./telegram/runtime.ts --target=bun --outfile=/app/bot.js
+COPY server/profile.ts server/http.ts ./server/
+RUN npm exec -- esbuild telegram/runtime.ts --bundle --platform=node --target=node24 --format=esm \
+    --packages=external --outfile=/app/bot.mjs
 
-FROM oven/bun:1.3.0
+FROM node:24-bookworm
 WORKDIR /app
-COPY --from=build /app/bot.js ./bot.js
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+COPY --from=build /app/bot.mjs ./bot.mjs
 ENV NODE_ENV=production
-CMD ["bun", "/app/bot.js"]
+CMD ["node", "/app/bot.mjs"]

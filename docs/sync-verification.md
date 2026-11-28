@@ -23,8 +23,8 @@ For rollback preserve existing receipt and ledger filters, IndexedDB pending IDs
 
 ## Reproducing the checks
 
-Run `bun run verify:release` with the repository Bun version. To exercise real database delivery, point `TEST_RAILWAY_DATABASE_URL` at a **disposable** Postgres with the Railway and notebook migrations applied. CI creates fresh databases and performs these migrations before testing.
+Run `npm run verify:release` with the repository Node.js version. To exercise real database delivery, point `TEST_RAILWAY_DATABASE_URL` at a **disposable** Postgres with the Railway and notebook migrations applied. CI creates fresh databases and performs these migrations before testing.
 
-- `bun test tests/sync-transport.test.ts tests/grade-sync.test.ts` exercises actual socket transports, SQL transactions, listener recovery and grade receipts.
-- `bun run build` followed by `bunx playwright test e2e/workspace-sync.spec.ts --project=chromium` starts the real Bun server, signs in separate synthetic users in isolated browser contexts, takes one offline, saves, reloads, reconnects, and checks the student UI and database count. It also holds a student GET open while verifying that saved data renders.
-- `bun run verify:ui` exercises scoped storage, field conflicts, failure and retry, pending records, warm launches and English/Arabic layouts through normal screens. These synthetic HTTP cases complement the real server test. Physical browser storage eviction and installed-app behavior require separate device testing.
+- `npm test -- tests/sync-transport.test.ts tests/grade-sync.test.ts` exercises actual socket transports, SQL transactions, listener recovery and grade receipts.
+- `npm run build` followed by `npm exec -- playwright test e2e/workspace-sync.spec.ts --project=chromium` starts the local Node.js server, signs in separate synthetic users in isolated browser contexts, takes one offline, saves, reloads, reconnects, and checks the student UI and database count. It also holds a student GET open while verifying that saved data renders.
+- `npm run verify:ui` exercises scoped storage, field conflicts, failure and retry, pending records, warm launches and English/Arabic layouts through normal screens. These synthetic HTTP cases complement the real server test. Physical browser storage eviction and installed-app behavior require separate device testing.

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest-runner'
 import { z } from 'zod'
 import { createProductionAgent, agentContextSchema } from '../telegram/runtime/agent-graph'
 import { hasPrivateAgentInput } from '../telegram/runtime/agent-input'

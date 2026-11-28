@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
 import { matchesText, rankStudents } from '../src/studentSearch'
 import type { Student } from '../shared/ledger'
 

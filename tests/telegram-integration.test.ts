@@ -1,4 +1,4 @@
-﻿import { afterAll, expect, test } from 'bun:test'
+﻿import { afterAll, expect, test } from 'vitest-runner'
 import { randomBytes } from 'node:crypto'
 import { Pool } from 'pg'
 import { z } from 'zod'
@@ -7,7 +7,7 @@ import { renderBot } from '../telegram/menu'
 import { Storage } from '../telegram/storage'
 import { Mcp } from '../telegram/transport'
 import type { Action, Screen } from '../telegram/types'
-import { startIntegrationServer } from './integration-server'
+import { navigationRedirect, startIntegrationServer } from './integration-server'
 import { createIdentity } from './integration-identity'
 
 const databaseUrl = process.env.TEST_RAILWAY_DATABASE_URL
@@ -20,11 +20,11 @@ let userId = ''
 let clientId = ''
 let createdStudentId = ''
 let pool: Pool | undefined
-let server: ReturnType<typeof Bun.spawn> | undefined
+let server: Awaited<ReturnType<typeof startIntegrationServer>> | undefined
 let storage: Storage | undefined
 
 afterAll(async () => {
-  server?.kill()
+  await server?.close()
   storage?.close()
   if (!pool) return
   for (const table of [
@@ -61,7 +61,7 @@ integration(
     if (!databaseUrl) throw new Error('A disposable migrated database is required')
     pool = new Pool({ connectionString: databaseUrl })
     const started = await startIntegrationServer(databaseUrl)
-    server = started.child
+    server = started
     const { origin } = started
     userId = await createIdentity(pool, 'Telegram synthetic', password)
     await pool.query(
@@ -81,8 +81,7 @@ integration(
     const authorize = new URL(await auth.begin('synthetic-chat'))
     clientId = authorize.searchParams.get('client_id') ?? ''
     expect(clientId).not.toBe('')
-    const response = await fetch(authorize, { redirect: 'manual' })
-    const login = new URL(response.headers.get('location') ?? '', origin)
+    const login = new URL((await navigationRedirect(authorize)) ?? '', origin)
     expect(login.pathname).toBe('/mcp/login')
     const post = (path: string, body: unknown, cookie?: string, user?: string) =>
       fetch(new URL(path, origin), {

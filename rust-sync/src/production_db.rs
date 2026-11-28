@@ -51,11 +51,18 @@ pub(crate) async fn maintain(pool: Pool) {
                 &[],
             )
             .await?;
+            // Leave time for the last second of a proof's accepted clock window.
+            db.execute(
+                r#"DELETE FROM neon_auth.verification WHERE starts_with(identifier, 'dpop-proof:')
+                   AND "expiresAt" < now() - interval '1 minute'"#,
+                &[],
+            )
+            .await?;
             Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
         }
         .await;
         if result.is_err() {
-            eprintln!("Telegram conversation cleanup failed");
+            eprintln!("Database cleanup failed");
         }
     }
 }

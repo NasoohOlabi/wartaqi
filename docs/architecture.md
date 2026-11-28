@@ -1,6 +1,6 @@
 # Architecture and decisions
 
-React uses same-origin Better Auth sessions and a Bun API backed by Railway Postgres. `app_accounts` maps authenticated identities to Administrator, Teacher or Student; `teachers`, `students`, `events`, `courses` and `course_enrollments` hold roster, ledger and course data. The internal `neon_auth` schema and some filenames retain their names for compatibility. See [roles](roles.md) and [Railway setup](railway-setup.md).
+React uses same-origin Better Auth sessions and a Rust API backed by Railway Postgres. `app_accounts` maps authenticated identities to Administrator, Teacher or Student; `teachers`, `students`, `events`, `courses` and `course_enrollments` hold roster, ledger and course data. The internal `neon_auth` schema and some filenames retain their names for compatibility. See [roles](roles.md) and [Railway setup](railway-setup.md).
 
 The server enforces the [role permissions](roles.md), grant expiry and current assignment on each request. Reassignment changes the staff scope of historical events while student access follows the linked student ID.
 
@@ -24,7 +24,7 @@ Administrator notebooks with more than 8,000 events can open a smaller view firs
 
 `src/useLedger.ts` persists a batch before sending and blocks new submissions while delivery is uncertain. Pending operations take a browser-wide Web Lock and the original account lock for compatibility with older open tabs. Retries and discards read the current stored batch again under those locks. Corrupt or unavailable storage and unsupported locks fail closed. A retry reads first and removes already visible IDs. The API enforces unique IDs so a retry cannot create another event for the same ID. The server checks duplicate IDs against the stored actor, assignment, PostgreSQL timestamp and payload. This legacy batch requires explicit retry. Pending storage is private data; reconcile it before clearing. Form drafts are memory-only. Active views also subscribe to workspace changes and revalidate on reconnect.
 
-`bun run verify` checks the code and build; `bun run verify:ui` drives synthetic browser paths. Neither replaces live Railway verification. See the [verification skill](../.agents/skills/verify-halaqa/SKILL.md).
+`npm run verify` checks the code and build; `npm run verify:ui` drives synthetic browser paths. Neither replaces live Railway verification. See the [verification skill](../.agents/skills/verify-halaqa/SKILL.md).
 
 ### Offline teacher notebook
 

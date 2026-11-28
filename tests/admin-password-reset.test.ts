@@ -1,4 +1,4 @@
-﻿import { expect, test } from 'bun:test'
+﻿import { expect, test } from 'vitest-runner'
 import { hashPassword, verifyPassword } from 'better-auth/crypto'
 import { neonAdminPasswordResetSchema } from '../shared/neon'
 

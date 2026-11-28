@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'vitest-runner'
 import { createWorker } from '../telegram/runtime'
 import { assistantConfig, createAssistant } from '../telegram/runtime/assistant'
 
@@ -13,12 +13,9 @@ test('provider and delivery failures never log raw content or errors', async () 
   console.info = (...args: unknown[]) => {
     logs.push(args.map(String).join(' '))
   }
-  globalThis.fetch = Object.assign(
-    async () => {
-      throw new Error('private-provider-error')
-    },
-    { preconnect: originalFetch.preconnect },
-  )
+  globalThis.fetch = async () => {
+    throw new Error('private-provider-error')
+  }
   const assistant = createAssistant(
     assistantConfig({
       LM_STUDIO_BASE_URL: 'https://model.example',
@@ -67,9 +64,7 @@ test('provider body failures and unsafe finish metadata produce safe diagnostics
   ]
   try {
     for (const response of responses) {
-      globalThis.fetch = Object.assign(async () => response(), {
-        preconnect: originalFetch.preconnect,
-      })
+      globalThis.fetch = async () => response()
       expect(await assistant.smoke('smoke')).toBe(false)
     }
     const output = logs.join('\n')
@@ -85,22 +80,19 @@ test('provider body failures and unsafe finish metadata produce safe diagnostics
 test('private questions reach inference while protected flows stay separate', async () => {
   const requests: string[] = []
   const messages: string[] = []
-  globalThis.fetch = Object.assign(
-    async (input: string | URL | Request, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body))
-      const url = new URL(input instanceof Request ? input.url : input)
-      if (url.origin === 'https://api.telegram.org') {
-        messages.push(body.text)
-        return Response.json({ ok: true, result: { message_id: 1 } })
-      }
-      expect(url.href).toBe('https://model.example/v1/chat/completions')
-      requests.push(JSON.stringify(body))
-      return Response.json({
-        choices: [{ finish_reason: 'stop', message: { content: 'Use /menu.' } }],
-      })
-    },
-    { preconnect: originalFetch.preconnect },
-  )
+  globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body))
+    const url = new URL(input instanceof Request ? input.url : input)
+    if (url.origin === 'https://api.telegram.org') {
+      messages.push(body.text)
+      return Response.json({ ok: true, result: { message_id: 1 } })
+    }
+    expect(url.href).toBe('https://model.example/v1/chat/completions')
+    requests.push(JSON.stringify(body))
+    return Response.json({
+      choices: [{ finish_reason: 'stop', message: { content: 'Use /menu.' } }],
+    })
+  }
   const worker = createWorker({
     TELEGRAM_BOT_TOKEN: 'token',
     WARTAQI_ORIGIN: 'https://wartaq.example',
@@ -182,25 +174,22 @@ test('transcripts follow delivery and exclude chat IDs and obvious secrets', asy
   const bodies: Array<Record<string, unknown>> = []
   const order: string[] = []
   let failDelivery = false
-  globalThis.fetch = Object.assign(
-    async (input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(input instanceof Request ? input.url : input)
-      if (url.origin === 'https://model.example') {
-        return Response.json({
-          choices: [{ finish_reason: 'stop', message: { content: 'Contact 1234567.' } }],
-        })
-      }
-      expect(url.origin).toBe('https://wartaq.example')
-      expect(url.pathname).toBe('/api/telegram/conversations')
-      expect(init?.redirect).toBe('error')
-      expect(init?.signal).toBeDefined()
-      expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${'s'.repeat(32)}`)
-      order.push('transcript')
-      bodies.push(JSON.parse(String(init?.body)))
-      return new Response(null, { status: failDelivery ? 503 : 204 })
-    },
-    { preconnect: originalFetch.preconnect },
-  )
+  globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : input)
+    if (url.origin === 'https://model.example') {
+      return Response.json({
+        choices: [{ finish_reason: 'stop', message: { content: 'Contact 1234567.' } }],
+      })
+    }
+    expect(url.origin).toBe('https://wartaq.example')
+    expect(url.pathname).toBe('/api/telegram/conversations')
+    expect(init?.redirect).toBe('error')
+    expect(init?.signal).toBeDefined()
+    expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${'s'.repeat(32)}`)
+    order.push('transcript')
+    bodies.push(JSON.parse(String(init?.body)))
+    return new Response(null, { status: failDelivery ? 503 : 204 })
+  }
   const assistant = createAssistant(
     assistantConfig({
       LM_STUDIO_BASE_URL: 'https://model.example',

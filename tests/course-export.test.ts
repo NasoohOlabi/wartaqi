@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
 import { unzipSync, strFromU8 } from 'fflate'
 import { courseWorkbook, courseExportRows, type CourseExportOptions } from '../src/courseExport'
 import { courseSchema, enrollmentSchema } from '../shared/neon'

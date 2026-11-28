@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest-runner'
 import { makeEvent, eventSchema, projectEvents, type LedgerEvent } from '../shared/ledger'
 describe('append-only projection', () => {
   const studentId = crypto.randomUUID()

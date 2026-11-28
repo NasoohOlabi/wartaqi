@@ -56,7 +56,7 @@ pub(crate) fn token(headers: &HeaderMap, secret: &str, secure: bool) -> Option<S
 }
 
 pub(crate) async fn user_id(
-    db: &tokio_postgres::Client,
+    db: &impl tokio_postgres::GenericClient,
     token: &str,
 ) -> Result<Option<String>, tokio_postgres::Error> {
     Ok(db.query_opt(

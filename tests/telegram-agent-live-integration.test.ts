@@ -1,4 +1,4 @@
-﻿import { expect, test } from 'bun:test'
+﻿import { expect, test } from 'vitest-runner'
 import { randomBytes } from 'node:crypto'
 import { Pool } from 'pg'
 import { z } from 'zod'
@@ -32,7 +32,7 @@ live(
     const initialEvent = crypto.randomUUID()
     const phone = `+1202${String(Math.floor(Math.random() * 10000000)).padStart(7, '0')}`
     let user = ''
-    let server: ReturnType<typeof Bun.spawn> | undefined
+    let server: Awaited<ReturnType<typeof startIntegrationServer>> | undefined
     let worker: ReturnType<typeof createWorker> | undefined
     const original = globalThis.fetch
     try {
@@ -42,7 +42,7 @@ live(
         if (previous === undefined) delete process.env.TELEGRAM_WORKER_SECRET
         else process.env.TELEGRAM_WORKER_SECRET = previous
       })
-      server = started.child
+      server = started
       user = await createIdentity(pool, 'Synthetic teacher', randomBytes(32).toString('hex'))
       await pool.query(
         "INSERT INTO teachers (id, auth_user_id, name, access_mode) VALUES ($1, $2, 'Synthetic teacher', 'read_write')",
@@ -89,40 +89,37 @@ live(
       let modelRequests = 0
       const toolCalls: string[] = []
       const messages: { text: string; id: number; confirm?: string }[] = []
-      globalThis.fetch = Object.assign(
-        async (input: string | URL | Request, init?: RequestInit) => {
-          const url = new URL(input instanceof Request ? input.url : input)
-          const body = z.record(z.string(), z.unknown()).parse(JSON.parse(String(init?.body)))
-          if (url.origin === 'https://api.telegram.org') {
-            if (url.pathname.endsWith('/sendMessage')) {
-              const markup = z
-                .object({
-                  inline_keyboard: z.array(z.array(z.object({ callback_data: z.string() }))),
-                })
-                .optional()
-                .parse(body.reply_markup)
-              messages.push({
-                text: z.string().parse(body.text),
-                id: messages.length + 1,
-                confirm: markup?.inline_keyboard[0]?.[0]?.callback_data,
+      globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+        const url = new URL(input instanceof Request ? input.url : input)
+        const body = z.record(z.string(), z.unknown()).parse(JSON.parse(String(init?.body)))
+        if (url.origin === 'https://api.telegram.org') {
+          if (url.pathname.endsWith('/sendMessage')) {
+            const markup = z
+              .object({
+                inline_keyboard: z.array(z.array(z.object({ callback_data: z.string() }))),
               })
-              return Response.json({ ok: true, result: { message_id: messages.length } })
-            }
-            return Response.json({ ok: true, result: true })
+              .optional()
+              .parse(body.reply_markup)
+            messages.push({
+              text: z.string().parse(body.text),
+              id: messages.length + 1,
+              confirm: markup?.inline_keyboard[0]?.[0]?.callback_data,
+            })
+            return Response.json({ ok: true, result: { message_id: messages.length } })
           }
-          if (url.origin === 'https://model.example') {
-            modelRequests++
-            return original(new URL('/v1/chat/completions', modelUrl), init)
-          }
-          if (url.origin === 'https://app.example') {
-            if (body.method === 'tools/call')
-              toolCalls.push(z.object({ name: z.string() }).parse(body.params).name)
-            return original(new URL(url.pathname + url.search, started.origin), init)
-          }
-          throw new Error('Unexpected outbound request')
-        },
-        { preconnect: original.preconnect },
-      )
+          return Response.json({ ok: true, result: true })
+        }
+        if (url.origin === 'https://model.example') {
+          modelRequests++
+          return original(new URL('/v1/chat/completions', modelUrl), init)
+        }
+        if (url.origin === 'https://app.example') {
+          if (body.method === 'tools/call')
+            toolCalls.push(z.object({ name: z.string() }).parse(body.params).name)
+          return original(new URL(url.pathname + url.search, started.origin), init)
+        }
+        throw new Error('Unexpected outbound request')
+      }
       worker = createWorker({
         TELEGRAM_BOT_TOKEN: 'synthetic',
         WARTAQI_ORIGIN: 'https://app.example',
@@ -222,7 +219,7 @@ live(
     } finally {
       globalThis.fetch = original
       worker?.store.close()
-      server?.kill()
+      await server?.close()
       if (user) {
         const db = await pool.connect()
         try {

@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'bun:test'
+import { afterAll, expect, test } from 'vitest-runner'
 import { Pool } from 'pg'
 import { z } from 'zod'
 import { startIntegrationServer } from './integration-server'
@@ -6,13 +6,13 @@ import { createIdentity } from './integration-identity'
 
 const databaseUrl = process.env.TEST_RAILWAY_DATABASE_URL
 const integration = databaseUrl ? test : test.skip
-let server: ReturnType<typeof Bun.spawn> | undefined
+let server: Awaited<ReturnType<typeof startIntegrationServer>> | undefined
 let pool: Pool | undefined
 const requestId = crypto.randomUUID()
 let adminId = ''
 const adminTeacherId = crypto.randomUUID()
 afterAll(async () => {
-  server?.kill()
+  await server?.close()
   if (!pool) return
   const rows = await pool.query(
     'SELECT auth_user_id, teacher_id, student_id FROM app_accounts WHERE invitation_request_id = $1',
@@ -42,8 +42,8 @@ integration(
   async () => {
     if (!databaseUrl) throw new Error('Disposable database required')
     pool = new Pool({ connectionString: databaseUrl })
-    const { origin, child } = await startIntegrationServer(databaseUrl)
-    server = child
+    server = await startIntegrationServer(databaseUrl)
+    const { origin } = server
     const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
       fetch(`${origin}${path}`, {
         method: 'POST',

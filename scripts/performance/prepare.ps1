@@ -37,7 +37,7 @@ $artifactRoot = '.artifacts/performance'
 New-Item -ItemType Directory -Force -Path $artifactRoot | Out-Null
 $env:WARTAQ_PERF_PASSWORD = [guid]::NewGuid().ToString('N') + 'Perf!'
 Set-Content -NoNewline -LiteralPath "$artifactRoot/fixture-password.local" -Value $env:WARTAQ_PERF_PASSWORD
-$hash = (bun --eval "import { hashPassword } from 'better-auth/crypto'; console.log(await hashPassword(process.env.WARTAQ_PERF_PASSWORD))").Trim()
+$hash = (node --input-type=module --eval "import { hashPassword } from 'better-auth/crypto'; console.log(await hashPassword(process.env.WARTAQ_PERF_PASSWORD))").Trim()
 if ($LASTEXITCODE -or !$hash) { throw 'Failed to generate a disposable password hash.' }
 Remove-Item Env:WARTAQ_PERF_PASSWORD
 

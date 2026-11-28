@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
 import { neonAccountSchema } from '../shared/neon'
 import { authorizeLocalGrant, clearOfflineAccess } from '../src/offlineAccess'
 
@@ -20,17 +20,14 @@ test('private read memory is purged on account and grant changes and ignores sta
   })
   const seen: (string | null)[] = []
   let pending: ReturnType<typeof Promise.withResolvers<Response>> | undefined
-  globalThis.fetch = Object.assign(
-    async (_input: string | URL | Request, init?: RequestInit) => {
-      const validator = new Headers(init?.headers).get('if-none-match')
-      seen.push(validator)
-      if (pending && String(_input).endsWith('/api/notebook')) return pending.promise
-      return validator
-        ? new Response(null, { status: 304 })
-        : Response.json({ value: seen.length }, { headers: { ETag: 'W/"one"' } })
-    },
-    { preconnect: originalFetch.preconnect },
-  )
+  globalThis.fetch = async (_input: string | URL | Request, init?: RequestInit) => {
+    const validator = new Headers(init?.headers).get('if-none-match')
+    seen.push(validator)
+    if (pending && String(_input).endsWith('/api/notebook')) return pending.promise
+    return validator
+      ? new Response(null, { status: 304 })
+      : Response.json({ value: seen.length }, { headers: { ETag: 'W/"one"' } })
+  }
   try {
     const { request } = await import('../src/neon')
     const account = neonAccountSchema.parse({

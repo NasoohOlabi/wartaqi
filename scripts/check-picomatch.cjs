@@ -6,7 +6,7 @@ const { dirname, join } = require('node:path')
 
 // Check the actual copies used by each build tool before allowing the patched advisory.
 const copies = new Set(
-  ['vite', 'lint-staged', 'tinyglobby', 'fdir'].map((tool) =>
+  ['vite', 'vitest-runner', 'lint-staged', 'tinyglobby', 'fdir'].map((tool) =>
     createRequire(require.resolve(tool)).resolve('picomatch'),
   ),
 )

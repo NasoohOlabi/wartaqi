@@ -37,14 +37,14 @@ flowchart TD
 
 ## How an attendance mark is saved
 
-The React and TypeScript frontend runs as an installable web app. Bun serves the site, Better Auth, and the notebook API on the same origin. Railway PostgreSQL stores the roster, enrollments, and attendance events.
+The React and TypeScript frontend runs as an installable web app. Rust serves the site, notebook API, OAuth and MCP on the same origin. Railway PostgreSQL stores the roster, enrollments, and attendance events.
 
 ```mermaid
 flowchart TD
     accTitle: How an attendance mark is saved
     accDescr: The browser saves a mark locally, then sends it to the API. An accepted mark reaches the notebook and student portal. A conflicting mark stays available for review.
     A[Mark attendance] --> B[Save in IndexedDB]
-    B -->|Online| C[Bun checks access]
+    B -->|Online| C[Server checks access]
     C -->|Accepted| D[PostgreSQL saves the event]
     C -->|Conflict| E[Review in My changes]
     D --> F[Staff notebook]
@@ -60,13 +60,13 @@ Open the notebook online once to save the authorized roster on your device. Atte
 
 ## Run it locally
 
-Use Bun 1.3.0. The dev server opens the public site shell. For authenticated use, configure a disposable PostgreSQL database and serve the built app through Bun. [Local auth and database setup](docs/railway-setup.md)
+Use Node.js 24 and npm 11. The dev server opens the public site shell. For authenticated use, configure a disposable PostgreSQL database and serve the built app with Docker. [Local auth and database setup](docs/railway-setup.md)
 
 ```powershell
-bun install --frozen-lockfile
-bun run dev
+npm ci
+npm run dev
 ```
 
-Run `bun run verify` for repository checks and `bun run verify:ui` for synthetic browser coverage. [Contributing guide](CONTRIBUTING.md) · [Browser verification](.agents/skills/verify-halaqa/SKILL.md)
+Run `npm run verify` for repository checks and `npm run verify:ui` for synthetic browser coverage. [Contributing guide](CONTRIBUTING.md) · [Browser verification](.agents/skills/verify-halaqa/SKILL.md)
 
 **Status** · v0.1.0 in development. Verified changes deploy from `main` to Railway. [Releases](docs/releases.md) · [Security](SECURITY.md)

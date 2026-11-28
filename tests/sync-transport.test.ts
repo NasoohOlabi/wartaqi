@@ -1,6 +1,7 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
 import { randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { Pool } from 'pg'
 import { Server } from 'socket.io'
 import { io, type Socket } from 'socket.io-client'
@@ -13,7 +14,7 @@ import { startRustBackend } from './rust-backend-server'
 // Only use a disposable, migrated database.
 const databaseUrl = process.env.TEST_RAILWAY_DATABASE_URL
 const rustBinary = process.env.TEST_RUST_SYNC_BINARY
-const implementations = rustBinary ? ['Bun', 'Rust'] : ['Bun']
+const implementations = rustBinary ? ['Node', 'Rust'] : ['Node']
 if (rustBinary && !databaseUrl) throw new Error('Rust parity requires TEST_RAILWAY_DATABASE_URL')
 const integration = (databaseUrl ? test : test.skip).each(implementations)
 
@@ -66,18 +67,18 @@ test('ledger hints refresh data but not grants, and cannot postpone grant repair
     ledger++
   })
   const until = async (condition: () => boolean) => {
-    for (let i = 0; i < 100 && !condition(); i++) await Bun.sleep(20)
+    for (let i = 0; i < 100 && !condition(); i++) await sleep(20)
     expect(condition()).toBe(true)
   }
   try {
     await until(() => server.sockets.sockets.size === 1 && grant > 0 && ledger > 0)
-    await Bun.sleep(100)
+    await sleep(100)
     const baseGrant = grant
     const baseLedger = ledger
     for (const time of [30000, 60000, 90000, 119000]) {
       now = time
       server.emit('workspace:changed', 'ledger')
-      await Bun.sleep(70)
+      await sleep(70)
       interval()
     }
     expect(grant).toBe(baseGrant)
@@ -150,7 +151,7 @@ integration(
       ])
       const secret = randomBytes(32).toString('hex')
       server = await startIntegrationServer(
-        implementation === 'Bun' ? target.href : databaseUrl,
+        implementation === 'Node' ? target.href : databaseUrl,
         secret,
       )
       const { origin } = server
@@ -168,7 +169,7 @@ integration(
       }
       let firstPid = await listenerId()
       for (let attempt = 0; firstPid === undefined && attempt < 20; attempt++) {
-        await Bun.sleep(25)
+        await sleep(25)
         firstPid = await listenerId()
       }
       expect(firstPid).toBeDefined()
@@ -268,7 +269,7 @@ integration(
         await writer.query("UPDATE teachers SET name = 'Rolled back sync name' WHERE id = $1", [
           teacherId,
         ])
-        await Bun.sleep(100)
+        await sleep(100)
         expect(hints).toEqual([])
         await writer.query('ROLLBACK')
       } finally {
@@ -312,9 +313,7 @@ integration(
       expect(await connect(first)).toBe('Unauthorized')
     } finally {
       for (const socket of sockets) socket.disconnect()
-      relay?.child.kill()
-      server?.child.kill()
-      await Promise.all([relay?.exited, server?.child.exited])
+      await Promise.all([relay?.close(), server?.close()])
       if (userId) {
         await pool.query('DELETE FROM app_accounts WHERE auth_user_id = $1', [userId])
         await pool.query('DELETE FROM teachers WHERE id = $1', [teacherId])

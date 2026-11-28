@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
 import { renderBot } from '../telegram/menu'
 import { isBotRoute, routeGroup, routeGroups } from '../telegram/routes'
 

@@ -91,7 +91,7 @@ pub(crate) async fn apply(
             };
             if tx.execute("UPDATE course_enrollments SET practical = $2::text::numeric, theory = $3::text::numeric, notes = COALESCE($4, notes) WHERE id = $1::text::uuid", &[&id, &practical, &theory, &notes]).await? == 0 { return Err(Error::Invalid) }
         }
-        "/api/admin/enrollments/membership" => {
+        "/api/admin/enrollments/membership" | "/api/admin/enrollments/save" => {
             strict(
                 &body,
                 &[
@@ -120,12 +120,17 @@ pub(crate) async fn apply(
                 Some(Value::String(value)) if valid_uuid(value) => Some(value.as_str()),
                 _ => return Err(Error::Invalid),
             };
-            if let Some(level) = body.get("level") {
-                let level = level.as_str().ok_or(Error::Invalid)?;
-                if js_trim(level).encode_utf16().count() > 200 {
-                    return Err(Error::Invalid);
-                }
-            }
+            let explicit_level = body
+                .get("level")
+                .map(|level| {
+                    level
+                        .as_str()
+                        .map(js_trim)
+                        .filter(|level| level.encode_utf16().count() <= 200)
+                        .ok_or(Error::Invalid)
+                })
+                .transpose()?;
+            let explicit_level = explicit_level.filter(|_| path == "/api/admin/enrollments/save");
             tx.query_one(
                 "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
                 &[&course],
@@ -139,7 +144,7 @@ pub(crate) async fn apply(
                 .await?
                 .ok_or(Error::Invalid)?;
             let level: String = student_row.get(0);
-            let level = js_trim(&level);
+            let level = explicit_level.unwrap_or_else(|| js_trim(&level));
             if level.encode_utf16().count() > 200 {
                 return Err(Error::Invalid);
             }
@@ -173,7 +178,7 @@ pub(crate) async fn apply(
                 return Err(Error::Invalid);
             }
             let teacher_present = body.get("teacherId").is_some();
-            tx.execute("INSERT INTO course_enrollments (id, course_id, student_id, level, active, teacher_id) VALUES ($1::text::uuid, $2::text::uuid, $3::text::uuid, $4, $5, $6::text::uuid) ON CONFLICT (course_id, student_id) DO UPDATE SET active = EXCLUDED.active, teacher_id = CASE WHEN $7 THEN EXCLUDED.teacher_id ELSE course_enrollments.teacher_id END", &[&id, &course, &student, &level, &active, &teacher, &teacher_present]).await?;
+            tx.execute("INSERT INTO course_enrollments (id, course_id, student_id, level, active, teacher_id) VALUES ($1::text::uuid, $2::text::uuid, $3::text::uuid, $4, $5, $6::text::uuid) ON CONFLICT (course_id, student_id) DO UPDATE SET active = EXCLUDED.active, teacher_id = CASE WHEN $7 THEN EXCLUDED.teacher_id ELSE course_enrollments.teacher_id END, level = COALESCE($8, course_enrollments.level)", &[&id, &course, &student, &level, &active, &teacher, &teacher_present, &explicit_level]).await?;
         }
         "/api/admin/enrollments/assignment" => {
             let kind = body
