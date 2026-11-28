@@ -2708,3 +2708,13 @@ Railway attributed roughly 99% of project egress charges to the web service. The
 Local Bun verification against disposable Postgres, Rust tests, Rust/Bun parity and transport recovery passed. Chromium verified offline save, reload and student delivery with zero website telemetry requests. Retired Settings bookmarks passed on desktop and mobile in English and Arabic. Verified gzip and cache headers against the running Rust hybrid and verified migration 022 with disposable Postgres. The release still requires CI, exact-commit Railway health and the production purge. Billing savings need a later comparable usage window.
 
 The broader Settings regression needed its expected navigation updated from five links to four. The administrator Settings and bilingual phone-link cases passed on both Playwright projects after the update.
+
+## 2026-11-28 06:57 Asia/Damascus - Audit the Rust rewrite
+
+The owner requested an architecture audit and Markdown tasks for future agents. Reviewed published `7f5ae9a` and the committed local native rewrite `394b13f`. Updated the agent instructions, architecture overview, delivery index and browser test description. The audit records twelve open tasks, each with a runtime, source evidence and an acceptance check. Application code and the separate rewrite checkout were outside the edit scope.
+
+On disposable Postgres 17, the same synthetic teacher read one event before migration 023 and with the native reader afterward. The published reader returned HTTP 400 after packing while its health check still returned 200. A synthetic administrator's enrollment save returned 404 on the native executable and 200 on the published handler, which stored the requested course level. Replaying an identical edit in a second transaction returned SQLSTATE `W0001`.
+
+Published web and Telegram Cargo suites passed (28 and 4 tests). The candidate web, worker and shared search suites passed (47, 15 and 1). Eleven release-binary integration and parity tests passed across nine files. Three integration tests had exceeded their time limits with a debug binary. Testing used disposable databases and a complete archive of the candidate with frozen dependencies. The private LM Studio integration and live account or worker operations were outside this audit.
+
+The published branch passed `bun run verify:release` with the Rust parity and hybrid browser binaries enabled: 170 tests passed and one optional integration skipped. Chromium desktop and mobile passed 264 cases with six skips. All 27 relative Markdown links in the indexed audit documents resolved. Railway deployment verification for this documentation change follows the PR merge.
