@@ -50,3 +50,18 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT FROM events e JOIN original o USING (id) WHERE e.id = '10000000-0000-4000-8000-000000000001' AND wartaq_event_payload(e.payload, e.payload_packed, e.student_id, e.enrollment_id) = o.payload) THEN RAISE EXCEPTION 'same retry differs'; END IF;
   IF EXISTS (SELECT FROM events e JOIN original o USING (id) WHERE e.id = '10000000-0000-4000-8000-000000000001' AND wartaq_event_payload(e.payload, e.payload_packed, e.student_id, e.enrollment_id) = jsonb_set(o.payload, '{status}', '"absent"')) THEN RAISE EXCEPTION 'changed retry matched'; END IF;
 END $$;
+CREATE TEMP TABLE canonical_before_rollback AS
+  SELECT id, sequence, wartaq_event_payload(payload, payload_packed, student_id, enrollment_id) AS payload
+  FROM events;
+BEGIN;
+DROP TRIGGER wartaq_pack_event ON events;
+UPDATE events
+SET payload = wartaq_event_payload(payload, payload_packed, student_id, enrollment_id), payload_packed = false
+WHERE payload_packed;
+COMMIT;
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT FROM events e FULL JOIN canonical_before_rollback c USING (id)
+    WHERE e.id IS NULL OR c.id IS NULL OR e.sequence <> c.sequence OR e.payload <> c.payload OR e.payload_packed
+  ) THEN RAISE EXCEPTION 'rollback changed legacy reads or a post-cutover event'; END IF;
+END $$;

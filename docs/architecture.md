@@ -1,6 +1,6 @@
 # Architecture and decisions
 
-React uses same-origin Better Auth sessions and a Rust API backed by Railway Postgres. `app_accounts` maps authenticated identities to Administrator, Teacher or Student; `teachers`, `students`, `events`, `courses` and `course_enrollments` hold roster, ledger and course data. The internal `neon_auth` schema and some filenames retain their names for compatibility. See [roles](roles.md) and [Railway setup](railway-setup.md).
+React uses same-origin Better Auth sessions and a Rust API backed by Railway Postgres. `app_accounts` maps authenticated identities to Administrator, Teacher or Student. The `teachers`, `students`, `events`, `courses` and `course_enrollments` tables hold roster, ledger and course data. The internal `neon_auth` schema and some filenames retain their names for compatibility. Consult the [runtime map and audit tasks](rust-architecture-audit.md), [roles](roles.md) and [Railway setup](railway-setup.md).
 
 The server enforces the [role permissions](roles.md), grant expiry and current assignment on each request. Reassignment changes the staff scope of historical events while student access follows the linked student ID.
 

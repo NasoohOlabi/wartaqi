@@ -36,6 +36,7 @@ const WRITE_PATHS: &[&str] = &[
     "/api/admin/enrollments/handbook",
     "/api/admin/enrollments/grades",
     "/api/admin/enrollments/membership",
+    "/api/admin/enrollments/save",
     "/api/admin/enrollments/assignment",
 ];
 const REPLAY_PATH: &str = "/api/diagnostics/replay";

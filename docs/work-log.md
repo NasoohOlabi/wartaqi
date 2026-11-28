@@ -1,5 +1,11 @@
 # Work log
 
+## 2026-11-28 07:11 Asia/Damascus (UTC+03:00) - Integrate the Rust architecture audit
+
+Main advanced to `9332fac` before PR #231 merged. The release branch retains the audit and both work-log histories. The Rust web server now registers the existing administrator enrollment-save handler. A release-binary HTTP regression first reproduced the 404, then passed with explicit, blank and omitted course levels, an unchanged roster level and Teacher denial.
+
+Disposable PostgreSQL verification covered the staged migration, exact retries and rollback. The original hybrid image and the native image served identical teacher and student views before activation and after unpacking, including a mark stored after activation. The earlier release verification and the new CI run cover the unchanged browser surface. The new audit retains its remaining follow-up tasks.
+
 ## 2026-11-28 06:58 Asia/Damascus (UTC+03:00) - Check asset compression deterministically in CI
 
 The production-image smoke test failed because Linux curl advertised Brotli and gzip, and the Rust server selected Brotli. The smoke test now requests and verifies each encoding explicitly. The disposable PostgreSQL probes use the configured role and database over TCP.
@@ -2768,3 +2774,13 @@ Two paired H+ runs with fresh containers transferred about 1.60 MB across 113 re
 The large administrator Dashboard failed in both full-response trials. The scoped path passed first open, durable attendance, summary totals, student notes, a correction and older History. The large teacher journey passed offline reload and student delivery. A fast local read prepared the large administrator notebook and opened its summary offline. Docker tests covered exact retries, cross-grant cache invalidation, the database migration and backup round-trips. The comparisons use synthetic data and simulated network timing. The branch and measurements remain local.
 
 After 95 seconds of idle time, the warmed classroom run used 0.30 CPU-seconds and 55 MB of working memory during active work, down from 1.42 CPU-seconds and 211 MB. The journey also passed with WebSocket upgrades silently dropped. The browser case that clears attendance now waits for the matching acknowledgement before reloading. The account-switch fixture opens Students before simulating a different active account and verifies that the next denial closes access, including when a background read arrives first. Both cases passed three focused runs on desktop and mobile.
+
+## 2026-11-28 06:57 Asia/Damascus - Audit the Rust rewrite
+
+The owner requested an architecture audit and Markdown tasks for future agents. Reviewed published `7f5ae9a` and the committed local native rewrite `394b13f`. Updated the agent instructions, architecture overview, delivery index and browser test description. The audit records twelve open tasks, each with a runtime, source evidence and an acceptance check. Application code and the separate rewrite checkout were outside the edit scope.
+
+On disposable Postgres 17, the same synthetic teacher read one event before migration 023 and with the native reader afterward. The published reader returned HTTP 400 after packing while its health check still returned 200. A synthetic administrator's enrollment save returned 404 on the native executable and 200 on the published handler, which stored the requested course level. Replaying an identical edit in a second transaction returned SQLSTATE `W0001`.
+
+Published web and Telegram Cargo suites passed (28 and 4 tests). The candidate web, worker and shared search suites passed (47, 15 and 1). Eleven release-binary integration and parity tests passed across nine files. Three integration tests had exceeded their time limits with a debug binary. Testing used disposable databases and a complete archive of the candidate with frozen dependencies. The private LM Studio integration and live account or worker operations were outside this audit.
+
+The published branch passed `bun run verify:release` with the Rust parity and hybrid browser binaries enabled: 170 tests passed and one optional integration skipped. Chromium desktop and mobile passed 264 cases with six skips. All 27 relative Markdown links in the indexed audit documents resolved. Railway deployment verification for this documentation change follows the PR merge.

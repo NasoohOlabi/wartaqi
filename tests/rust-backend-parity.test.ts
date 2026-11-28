@@ -459,6 +459,31 @@ parity(
         200,
         post(admin, { ...membership, active: true }),
       )
+      const saveEnrollment = `${rust.origin}/api/admin/enrollments/save`
+      const activeEnrollment = { ...membership, active: true }
+      for (const [input, expectedLevel] of [
+        [{ ...activeEnrollment, level: 'Explicit level' }, 'Explicit level'],
+        [{ ...activeEnrollment, level: '' }, ''],
+        [activeEnrollment, ''],
+      ] as const) {
+        expect((await fetch(saveEnrollment, post(admin, input))).status).toBe(200)
+        expect(
+          (
+            await pool.query(
+              'SELECT e.level, s.group_name FROM course_enrollments e JOIN students s ON s.id = e.student_id WHERE e.id = $1',
+              [enrollmentIds[0]],
+            )
+          ).rows,
+        ).toEqual([{ level: expectedLevel, group_name: 'Roster level' }])
+      }
+      expect(
+        (await fetch(saveEnrollment, post(teacher, { ...activeEnrollment, level: 'Rejected' })))
+          .status,
+      ).toBe(403)
+      expect(
+        (await pool.query('SELECT level FROM course_enrollments WHERE id = $1', [enrollmentIds[0]]))
+          .rows,
+      ).toEqual([{ level: '' }])
       await same(
         '/api/admin/enrollments/assignment',
         200,

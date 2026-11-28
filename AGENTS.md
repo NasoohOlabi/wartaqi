@@ -4,6 +4,8 @@ Implementation and public publication were authorized on 2026-11-13. Preserve hi
 
 Independent attendance and tagged-note app. React/TypeScript + Vite frontend, Rust web server with Better Auth-compatible sessions, OAuth and Railway Postgres. Auth tables retain the `neon_auth` schema name for compatibility. Six application tables serve roles, roster and courses: `app_accounts` maps Auth identities to Administrator, Teacher or Student, alongside `teachers`, `students`, `courses`, `course_enrollments` and append-only `events`. Read `docs/courses.md` before changing enrollment or course attendance semantics. Add no further tables without a concrete requirement. Students receive only their own projected attendance, never notes or raw events. Role approval is server-owned; signup grants no application access. Database credentials and signing secrets stay server-side and private local environment. Read `docs/architecture.md` before changing event semantics or retries.
 
+Before changing a Rust route, storage format, Telegram worker or release gate, identify the runtime in the target commit and consult the [architecture audit and open tasks](docs/rust-architecture-audit.md). The root Dockerfile and web router establish what ships.
+
 Teacher access and student profile fields are documented in `docs/assigned-roster.md`. Preserve the full student register, including inactive historical students with no teacher assignment. Ignore the unmaintained old/former source flag. Keep real roster data and credentials outside Git.
 
 For role approval, roster import or access withdrawal, follow the private-input CLI in `docs/railway-setup.md`.

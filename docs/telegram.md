@@ -108,7 +108,7 @@ Register new destinations in the native screen dispatcher. Check the caller's av
 
 ## Railway worker
 
-`telegram/Dockerfile` builds the Rust worker and opens the existing encrypted SQLite state. The AppSuite worker remains on the earlier deployed image. Use the repository root as the build context, `main` as the source branch, Wait for CI, one replica and an always-on service. Attach a writable volume at `/data`. The public domain accepts the OAuth redirect at `/callback`. The worker receives Telegram updates through long polling. `/health` returns 200 after successful polling and 503 on a polling failure.
+`telegram/Dockerfile` builds the Rust worker, which opens the existing encrypted SQLite state. Use the repository root as the build context, `main` as the source branch, Wait for CI, one replica and an always-on service. Attach a writable volume at `/data`. The public domain accepts the OAuth redirect at `/callback`. The worker receives Telegram updates through long polling. `/health` returns 200 after successful polling and 503 on a polling failure.
 
 | Worker variable          | Value                                                  |
 | ------------------------ | ------------------------------------------------------ |
