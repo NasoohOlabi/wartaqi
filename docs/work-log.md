@@ -1,5 +1,11 @@
 # Work log
 
+## 2026-11-28 06:58 Asia/Damascus (UTC+03:00) - Check asset compression deterministically in CI
+
+The production-image smoke test failed because Linux curl advertised Brotli and gzip, and the Rust server selected Brotli. The smoke test now requests and verifies each encoding explicitly. The disposable PostgreSQL probes use the configured role and database over TCP.
+
+Reproduced the original assertion against the local Rust container with Linux curl. Explicit Brotli and gzip requests passed the encoding and immutable cache checks.
+
 ## 2026-11-28 06:45 Asia/Damascus (UTC+03:00) - Prepare the Rust production rollout
 
 The owner authorized publication. The running web image reads the original attendance payload directly. Migration 023 now adds the Rust reader without changing stored payloads. Migration 025 enables packing after the old web image is removed. Migration 024 can run before the switch. The release procedure records the rollback order and leaves any space-reclaiming table rewrite for scheduled maintenance.

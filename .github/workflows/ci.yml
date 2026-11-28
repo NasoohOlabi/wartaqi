@@ -24,7 +24,7 @@ jobs:
         ports:
           - 127.0.0.1:5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d notebook_test"
           --health-interval 2s
           --health-timeout 3s
           --health-retries 15
@@ -90,7 +90,10 @@ jobs:
           POSTGRES_DB: notebook_test
         ports:
           - 127.0.0.1:5432:5432
-        options: --health-cmd pg_isready --health-interval 2s --health-retries 15
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U postgres -d notebook_test"
+          --health-interval 2s
+          --health-retries 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: docker build -t wartaq-web .
@@ -108,9 +111,11 @@ jobs:
           shell=$(curl -fsS "$BETTER_AUTH_URL/")
           asset=$(printf '%s\n' "$shell" | sed -n 's/.*src="\.\/\(assets\/[^"]*\.js\)".*/\1/p')
           test -n "$asset"
-          curl --compressed -fsS -D "$RUNNER_TEMP/asset-headers" -o /dev/null "$BETTER_AUTH_URL/$asset"
-          grep -qi '^content-encoding: gzip' "$RUNNER_TEMP/asset-headers"
-          grep -qi '^cache-control: .*immutable' "$RUNNER_TEMP/asset-headers"
+          for encoding in br gzip; do
+            curl --compressed -H "Accept-Encoding: $encoding" -fsS -D "$RUNNER_TEMP/asset-headers" -o /dev/null "$BETTER_AUTH_URL/$asset"
+            grep -qi "^content-encoding: $encoding" "$RUNNER_TEMP/asset-headers"
+            grep -qi '^cache-control: .*immutable' "$RUNNER_TEMP/asset-headers"
+          done
           curl -fsS "$BETTER_AUTH_URL/api/auth/get-session" | jq -e '. == null'
           curl -fsS "$BETTER_AUTH_URL/.well-known/oauth-protected-resource/mcp" | jq -e --arg resource "$BETTER_AUTH_URL/mcp" '.resource == $resource'
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
