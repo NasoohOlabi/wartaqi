@@ -1,5 +1,11 @@
 # Work log
 
+## 2026-11-28 06:37 Asia/Damascus (UTC+03:00) - Restore Bun dependency management
+
+The owner asked to keep Bun for package management. Local setup, CI and the Docker frontend build use the frozen Bun lockfile, native dependency patching and Bun audit. Node.js runs the build, tests and repository scripts. The migration preserved every remaining direct dependency version.
+
+The clean install, `npm run verify` and dependency audit passed. Verification included 158 passing tests and 16 optional tests skipped. The web image built locally with cached Cargo dependencies. A check inside each runtime image confirmed the Rust executable was present and Bun and Node.js were absent. All work stayed local.
+
 ## 2026-11-28 06:15 Asia/Damascus (UTC+03:00) - Verify the native runtime images
 
 Both checked-in Dockerfiles built with the locked Cargo cache. The native web image replayed the control traffic, and the 480-student administrator fixture completed dashboard, attendance, summary, correction and history checks over simulated H+. `npm run verify:release` passed 173 automated tests and 264 browser cases, including offline delivery through the Rust web process. It skipped two optional integration tests and six browser cases. The test launcher now takes a public origin directly, with the transitional runtime flag removed. All services in this verification were local or synthetic.

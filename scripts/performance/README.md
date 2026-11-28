@@ -1,11 +1,11 @@
 ﻿# Local performance lab
 
-Run the lab from PowerShell with Node.js 24, npm 11, Docker Desktop and Playwright Chromium. It uses dedicated containers on `wartaq-perf-lab`, synthetic logins and a loopback-only web port. Each run clones one database template and drops its clone afterward.
+Run the lab from PowerShell with Bun 1.3.0, Node.js 24, npm 11, Docker Desktop and Playwright Chromium. It uses dedicated containers on `wartaq-perf-lab`, synthetic logins and a loopback-only web port. Each run clones one database template and drops its clone afterward.
 
 Build the baseline image from the pinned source revision before measuring a candidate. This comparison used `7f5ae9a` and PostgreSQL migrations through 022 for its baseline.
 
 ```powershell
-npm ci
+bun install --frozen-lockfile
 npm exec -- playwright install chromium
 ./scripts/performance/prepare.ps1 -ThroughMigration 22
 ./scripts/performance/build.ps1 -Tag wartaq-perf:baseline

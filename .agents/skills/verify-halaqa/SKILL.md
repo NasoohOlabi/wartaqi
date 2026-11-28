@@ -7,7 +7,7 @@ description: Verify the Halaqa notebook UI after attendance, note, roster, corre
 
 Read root `AGENTS.md` and the affected entries in [features/README.md](features/README.md). Run from the repository root in PowerShell. Use synthetic data for recorded evidence; never record real identities, records or credentials.
 
-1. Install dependencies with `npm ci`, configure hooks with `npm run setup:security`, and install Chromium with `npm exec -- playwright install chromium` when needed.
+1. Install dependencies with `bun install --frozen-lockfile`, configure hooks with `npm run setup:security`, and install Chromium with `npm exec -- playwright install chromium` when needed.
 2. Run `npm run verify` and `npm run verify:ui`. The UI harness builds verification mode, launches its own preview on port 4173, and refuses to reuse an existing server. If that port is occupied, preserve the process and set `$env:PLAYWRIGHT_PORT='4273'` before running.
 3. Drive the affected user controls and assert resulting state and side effects described in the feature map. The historically named `e2e/neon.spec.ts` and `e2e/roles.spec.ts` intercept synthetic same-origin `/api/auth` and `/api` routes; they do not contact live Auth. Preserve synthetic `.artifacts/playwright-report/`, test results and relevant screenshots. Do not claim native installation from simulated prompt tests.
 4. For real sessions, run the built app with `node --import tsx server/start.ts` against a configured disposable database. `TEST_RAILWAY_DATABASE_URL` enables `tests/railway-integration.test.ts` against a migrated disposable database only. Live provider checks use synthetic accounts and records, disable tracing and clean up fixtures; see [Railway setup](../../../docs/railway-setup.md).

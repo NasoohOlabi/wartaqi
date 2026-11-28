@@ -1,21 +1,21 @@
 # Contributing
 
-Start with [AGENTS.md](AGENTS.md) and the [task list](docs/implementation-plan.md). Use PowerShell and Node.js 24 and npm 11; dependency installation is locked in CI.
+Start with [AGENTS.md](AGENTS.md) and the [task list](docs/implementation-plan.md). Use PowerShell, Bun 1.3.0 for dependencies, and Node.js 24 with npm 11 for scripts. CI installs from `bun.lock`.
 
 ```powershell
-npm ci
+bun install --frozen-lockfile
 npm run setup:security
 npm exec -- playwright install chromium
 npm run verify:release
 ```
 
-`npm ci` enables Husky hooks. The secret scanner bootstrap downloads pinned Gitleaks 8.30.1 and checks its release SHA-256. Pre-commit formats staged files, scans staged changes, typechecks, tests and lints. Pre-push verifies the build and scans all local Git history. Missing scanners fail closed. CI also runs Ruff formatting, Python lint, the workbook preparation tests and all database integration suites on disposable PostgreSQL databases. The lint gate covers repository JavaScript and TypeScript and fails on warnings and obsolete suppressions. CI independently repeats checks; local hooks are convenience gates, not a security boundary. Keep the `source-map-js` override until its parents resolve a patched version without it.
+`bun install` enables Husky hooks. The secret scanner bootstrap downloads pinned Gitleaks 8.30.1 and checks its release SHA-256. Pre-commit formats staged files, scans staged changes, typechecks, tests and lints. Pre-push verifies the build and scans all local Git history. Missing scanners fail closed. CI also runs Ruff formatting, Python lint, the workbook preparation tests and all database integration suites on disposable PostgreSQL databases. The lint gate covers repository JavaScript and TypeScript and fails on warnings and obsolete suppressions. CI independently repeats checks; local hooks are convenience gates, not a security boundary. Keep the `source-map-js` override until its parents resolve a patched version without it.
 
 GitHub Actions runs the core checks and three Playwright shards in parallel on standard Linux runners. `Verify` requires all four jobs to pass on PRs and on `main`. Each shard uploads its own HTML report and keeps failure traces. Run `npm run verify:ui -- --shard=1/3` to reproduce an individual shard locally, or omit `--shard` for the full browser suite.
 
 ## Atomic Git work
 
-The release audit is `npm run security:audit`; see [Security](SECURITY.md) for the pinned picomatch backport and its checked, advisory-specific exception. Use Node.js 24 and npm 11 to match CI and Docker.
+The release audit is `npm run security:audit`. See [Security](SECURITY.md) for the pinned picomatch backport and its checked, advisory-specific exception.
 
 1. Inspect `git status --short` and the existing diff. Identify unrelated/user work and preserve it. Obtain permission before making a worktree.
 2. Create a descriptive `feat/`, `fix/`, `docs/` or `chore/` branch from the intended base. Give each Terra worker disjoint file ownership; the orchestrator is the sole committer in a shared checkout.
@@ -30,4 +30,4 @@ Use the PR template: concrete outcome, linked acceptance/task ID, proof, remaini
 
 Release policy lives in [docs/releases.md](docs/releases.md). Agents read the root instruction file instead of duplicating policy in model-specific files. Future UI work updates the local verification feature map; `maintain-verification-skill` audits it when requested.
 
-CI and `verify:release` use `npm run security:audit`. It prints every finding and applies only the dated development-only exception documented in [SECURITY.md](SECURITY.md); production findings and all other advisories fail. Raw `npm audit` still exposes the excepted finding.
+CI and `verify:release` use `npm run security:audit`. It prints every finding and applies only the dated development-only exception documented in [SECURITY.md](SECURITY.md); production findings and all other advisories fail. A direct `bun audit` reports registry findings for the published package version.

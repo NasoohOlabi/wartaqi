@@ -8,7 +8,7 @@ Teacher access and student profile fields are documented in `docs/assigned-roste
 
 For role approval, roster import or access withdrawal, follow the private-input CLI in `docs/railway-setup.md`.
 
-Use PowerShell, Node.js 24 and npm 11. No worktrees without asking. Keep responses concise. This file is the canonical instruction source for every agent; host-specific instruction files only point here.
+Use PowerShell, Bun 1.3.0 for dependencies, and Node.js 24 with npm 11 for scripts. No worktrees without asking. Keep responses concise. This file is the canonical instruction source for every agent; host-specific instruction files only point here.
 
 ## Agent routing
 

@@ -3,52 +3,21 @@ import { z } from 'zod'
 
 const advisoryUrl = 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf'
 const expires = Date.parse('2026-12-01T00:00:00Z')
-const finding = z.union([z.string().min(1), z.object({ name: z.string(), url: z.url() })])
-const reportSchema = z.object({
-  auditReportVersion: z.literal(2),
-  vulnerabilities: z.record(
-    z.string(),
-    z.object({ name: z.string(), via: z.array(finding).min(1) }),
-  ),
-  metadata: z.object({ vulnerabilities: z.object({ total: z.number().int().nonnegative() }) }),
-})
+const reportSchema = z.record(z.string(), z.array(z.looseObject({ url: z.url() })).min(1))
 
 export function reviewAudit(report: unknown, now = Date.now()) {
-  const { vulnerabilities, metadata } = reportSchema.parse(report)
-  const packages = Object.keys(vulnerabilities)
-  const unreviewed = () =>
-    new Error('Unreviewed dependency advisory; see the full audit report above')
-  if (packages.length !== metadata.vulnerabilities.total) throw new Error('Incomplete audit report')
-  if (!packages.length) return 0
-
-  const reviewed = new Set<string>()
-  while (reviewed.size < packages.length) {
-    const before = reviewed.size
-    for (const name of packages) {
-      const entry = vulnerabilities[name]
-      if (entry.name !== name) throw unreviewed()
-      if (
-        entry.via.every((item) =>
-          typeof item === 'string'
-            ? reviewed.has(item)
-            : name === 'picomatch' && item.name === name && item.url === advisoryUrl,
-        )
-      ) {
-        reviewed.add(name)
-      }
-    }
-    // npm can list dependants as vulnerabilities via a package name rather than an advisory URL.
-    if (reviewed.size === before) throw unreviewed()
-  }
-  if (now >= expires)
+  const findings = Object.entries(reportSchema.parse(report)).flatMap(([name, advisories]) =>
+    advisories.map((advisory) => ({ name, advisory })),
+  )
+  if (findings.some(({ name, advisory }) => name !== 'picomatch' || advisory.url !== advisoryUrl))
+    throw new Error('Unreviewed dependency advisory; see the full audit report above')
+  if (findings.length && now >= expires)
     throw new Error('The development-only picomatch exception expired; review SECURITY.md')
-  return packages.length
+  return findings.length
 }
 
 if (import.meta.main) {
-  const cli = process.env.npm_execpath
-  if (!cli) throw new Error('Run npm run security:audit')
-  const audit = spawnSync(process.execPath, [cli, 'audit', '--json'], {
+  const audit = spawnSync('bun', ['audit', '--json'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'inherit'],
   })
@@ -61,9 +30,10 @@ if (import.meta.main) {
     console.warn(
       'Verified local picomatch backport; registry advisory above remains excepted until 2026-12-01. Production has no exception. See SECURITY.md.',
     )
-    const production = spawnSync(process.execPath, [cli, 'audit', '--omit=dev'], {
+    const production = spawnSync('bun', ['audit', '--prod'], {
       stdio: 'inherit',
     })
+    if (production.error) throw production.error
     if (production.status !== 0) throw new Error('Production dependency audit failed')
   }
 }

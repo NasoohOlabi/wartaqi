@@ -60,10 +60,10 @@ Open the notebook online once to save the authorized roster on your device. Atte
 
 ## Run it locally
 
-Use Node.js 24 and npm 11. The dev server opens the public site shell. For authenticated use, configure a disposable PostgreSQL database and serve the built app with Docker. [Local auth and database setup](docs/railway-setup.md)
+Use Bun 1.3.0 for dependencies and Node.js 24 with npm 11 for scripts. The dev server opens the public site shell. For authenticated use, configure a disposable PostgreSQL database and serve the built app with Docker. [Local auth and database setup](docs/railway-setup.md)
 
 ```powershell
-npm ci
+bun install --frozen-lockfile
 npm run dev
 ```
 

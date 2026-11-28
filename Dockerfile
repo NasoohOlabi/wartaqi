@@ -1,8 +1,9 @@
 FROM node:24-bookworm AS build
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY --from=oven/bun:1.3.0 /usr/local/bin/bun /usr/local/bin/bun
+COPY package.json bun.lock ./
 COPY patches ./patches
-RUN npm ci --ignore-scripts && npm run postinstall
+RUN bun install --frozen-lockfile --ignore-scripts
 COPY index.html vite.config.ts tsconfig*.json ./
 COPY src ./src
 COPY shared ./shared
