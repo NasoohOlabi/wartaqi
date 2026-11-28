@@ -42,7 +42,7 @@ export async function startIntegrationServer(
     return startRustBackend(
       process.env.TEST_RUST_WEB_BINARY,
       databaseUrl,
-      { hybridOrigin: slot.origin, port, native: true },
+      { publicOrigin: slot.origin, port },
       authSecret,
       slot.origin,
       telegramWorkerSecret,

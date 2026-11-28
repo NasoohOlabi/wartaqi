@@ -6,18 +6,18 @@ const health = z.object({ ok: z.literal(true) })
 export async function startRustBackend(
   binary: string,
   databaseUrl: string,
-  fixtureOrigin: string | { hybridOrigin: string; port?: string; native?: boolean },
+  fixtureOrigin: string | { publicOrigin: string; port?: string },
   authSecret: string,
-  workspaceOrigin = typeof fixtureOrigin === 'string' ? fixtureOrigin : fixtureOrigin.hybridOrigin,
+  workspaceOrigin = typeof fixtureOrigin === 'string' ? fixtureOrigin : fixtureOrigin.publicOrigin,
   telegramWorkerSecret?: string,
 ) {
-  const hybrid = typeof fixtureOrigin !== 'string'
+  const publicWeb = typeof fixtureOrigin !== 'string'
   const child = spawn(binary, [], {
     env: {
       ...process.env,
-      PORT: hybrid ? (fixtureOrigin.port ?? '0') : '0',
-      BETTER_AUTH_URL: hybrid ? workspaceOrigin : undefined,
-      ...(hybrid && { ASSET_DIR: 'dist' }),
+      PORT: publicWeb ? (fixtureOrigin.port ?? '0') : '0',
+      BETTER_AUTH_URL: publicWeb ? workspaceOrigin : undefined,
+      ...(publicWeb && { ASSET_DIR: 'dist' }),
       WORKSPACE_ORIGIN: workspaceOrigin,
       DATABASE_URL: databaseUrl,
       BETTER_AUTH_SECRET: authSecret,

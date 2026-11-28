@@ -1,5 +1,9 @@
 # Work log
 
+## 2026-11-28 06:15 Asia/Damascus (UTC+03:00) - Verify the native runtime images
+
+Both checked-in Dockerfiles built with the locked Cargo cache. The native web image replayed the control traffic, and the 480-student administrator fixture completed dashboard, attendance, summary, correction and history checks over simulated H+. `npm run verify:release` passed 173 automated tests and 264 browser cases, including offline delivery through the Rust web process. It skipped two optional integration tests and six browser cases. The test launcher now takes a public origin directly, with the transitional runtime flag removed. All services in this verification were local or synthetic.
+
 ## 2026-11-28 06:07 Asia/Damascus (UTC+03:00) - Move the Telegram worker to Rust
 
 The local Telegram image now runs the native worker with the existing encrypted SQLite state, poll offsets, browser linking, phone grants, menus and assistant approvals. The worker validates approvals against their original Telegram message and current grant, including supported receipts from the previous worker. The web and Telegram crates share their fuzzy matcher. Node.js serves the frontend build and the TypeScript comparison fixtures.

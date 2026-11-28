@@ -71,7 +71,7 @@ integration(
       native = await startRustBackend(
         binary,
         database,
-        { hybridOrigin: legacy.origin, port: '0', native: true },
+        { publicOrigin: legacy.origin, port: '0' },
         secret,
         legacy.origin,
       )
