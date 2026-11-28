@@ -311,6 +311,11 @@ integration(
       })
       expect(deniedProfile.status).toBe(403)
       expect(await connect(first)).toBe('Unauthorized')
+      if (relay && process.platform !== 'win32') {
+        expect(second.connected).toBe(true)
+        await relay.close()
+        expect(relay.child.exitCode).toBe(0)
+      }
     } finally {
       for (const socket of sockets) socket.disconnect()
       await Promise.all([relay?.close(), server?.close()])

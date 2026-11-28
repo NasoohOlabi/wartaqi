@@ -371,9 +371,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
-            drop(stop_polls);
             task.abort();
-            io.close().await;
+            // Let pending polls consume their Engine.IO close packets before canceling them.
+            let _ = tokio::time::timeout(Duration::from_secs(2), io.close()).await;
+            drop(stop_polls);
         })
         .await?;
     Ok(())

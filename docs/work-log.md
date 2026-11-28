@@ -1,5 +1,11 @@
 # Work log
 
+## 2026-11-28 07:24 Asia/Damascus (UTC+03:00) - Drain Socket.IO polling before shutdown
+
+The production-image job timed out in the Rust transport test. A disposable Linux container reproduced a shutdown hang with active long polls. Canceling those polls before Socket.IO closes can prevent Engine.IO from delivering its close packet. Rust now gives Socket.IO two seconds to close before releasing pending HTTP polls. The integration test keeps a polling client connected for the Linux shutdown assertion and bounds fixture cleanup.
+
+The old image hung with ten connected polling clients. The rebuilt Linux image exited with status zero in eight runs of the same scenario. The validation used synthetic sessions and a cloned local database.
+
 ## 2026-11-28 07:11 Asia/Damascus (UTC+03:00) - Integrate the Rust architecture audit
 
 Main advanced to `9332fac` before PR #231 merged. The release branch retains the audit and both work-log histories. The Rust web server now registers the existing administrator enrollment-save handler. A release-binary HTTP regression first reproduced the 404, then passed with explicit, blank and omitted course levels, an unchanged roster level and Teacher denial.

@@ -28,7 +28,14 @@ export async function startRustBackend(
   const exited = new Promise<void>((resolve) => child.once('close', () => resolve()))
   async function close() {
     if (child.pid && child.exitCode === null && child.signalCode === null) child.kill()
-    await exited
+    const kill = setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    }, 5000)
+    try {
+      await exited
+    } finally {
+      clearTimeout(kill)
+    }
   }
   const deadline = AbortSignal.timeout(10000)
   try {
