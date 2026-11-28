@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
 import { accounts } from '../telegram/accounts'
 import type { Action, BotContext, Screen } from '../telegram/types'
 

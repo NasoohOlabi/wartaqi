@@ -1,4 +1,5 @@
 mod access;
+mod admin_accounts;
 mod api;
 mod assets;
 mod auth_browser;
@@ -8,17 +9,28 @@ mod auth_profile;
 mod auth_sign_in;
 mod catalog;
 mod catalog_legacy;
-mod compat_http;
-mod compat_process;
 mod credentials;
 mod device_sessions;
 mod grade_sync;
 mod ledger;
 mod ledger_writes;
-#[cfg(test)]
+mod mcp_consent;
+mod mcp_courses;
 mod mcp_discovery;
-#[cfg(test)]
+mod mcp_http;
+mod mcp_notebook;
+mod mcp_operations;
 mod mcp_tools;
+mod mcp_workbook;
+mod notebook_focus;
+mod notebook_history;
+mod notebook_student;
+mod notebook_summary;
+mod oauth;
+mod oauth_client;
+mod oauth_dpop;
+mod oauth_grant;
+mod oauth_private_jwt;
 mod production_db;
 mod roster_admin;
 mod session_identity;
@@ -26,7 +38,6 @@ mod staff_reads;
 mod student_writes;
 mod telegram_conversations;
 mod telegram_student;
-#[cfg(test)]
 mod telegram_teacher;
 mod writes;
 
@@ -34,11 +45,12 @@ use std::{env, path::PathBuf, sync::Arc, time::Duration};
 
 use axum::{
     Router,
+    body::Body,
     extract::Request,
-    http::{StatusCode, header},
+    http::{Extensions, HeaderMap, StatusCode, Version, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{any, get},
 };
 use futures_util::future::poll_fn;
 use serde::Deserialize;
@@ -48,6 +60,27 @@ use socketioxide::{
     handler::ConnectHandler,
 };
 use tokio_postgres::{AsyncMessage, NoTls};
+use tower::ServiceExt;
+use tower_http::compression::{
+    CompressionLayer, CompressionLevel,
+    predicate::{Predicate, SizeAbove},
+};
+
+#[derive(Clone)]
+struct PrivateProjection;
+
+async fn mark_private_projection(req: Request, next: Next) -> Response {
+    let projection = req.method() == axum::http::Method::GET
+        && matches!(
+            req.uri().path(),
+            "/api/notebook" | "/api/admin" | "/api/student/attendance"
+        );
+    let mut response = next.run(req).await;
+    if projection && response.status() == StatusCode::OK {
+        response.extensions_mut().insert(PrivateProjection);
+    }
+    response
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -120,7 +153,11 @@ async fn listen(database_url: String, io: SocketIo) {
             while let Some(message) = poll_fn(|cx| connection.poll_message(cx)).await {
                 match message {
                     Ok(AsyncMessage::Notification(n)) if n.channel() == "wartaq_workspace_changed" => {
-                        let _ = io.emit("workspace:changed", &[(); 0]).await;
+                        if n.payload() == "ledger" {
+                            let _ = io.emit("workspace:changed", &"ledger").await;
+                        } else {
+                            let _ = io.emit("workspace:changed", &[(); 0]).await;
+                        }
                     }
                     Ok(_) => {},
                     Err(_) => break,
@@ -153,30 +190,20 @@ async fn shutdown_signal() {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port: u16 = env::var("PORT").unwrap_or_else(|_| "3001".into()).parse()?;
-    let hybrid = env::var("WARTAQ_WEB_RUNTIME").as_deref() == Ok("hybrid");
-    let origin = if hybrid {
-        let url = url::Url::parse(&env::var("BETTER_AUTH_URL")?)?;
-        url.origin().ascii_serialization()
-    } else {
-        env::var("WORKSPACE_ORIGIN")?
+    let public_url = env::var("BETTER_AUTH_URL").ok();
+    let production = public_url.is_some();
+    let origin = match public_url {
+        Some(url) => url::Url::parse(&url)?.origin().ascii_serialization(),
+        None => env::var("WORKSPACE_ORIGIN")?,
     };
-    let bun_origin = env::var("BUN_ORIGIN")
-        .ok()
-        .map(|origin| url::Url::parse(&origin))
-        .transpose()?;
     let database_url = env::var("DATABASE_URL")?;
-    let http = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .redirect(reqwest::redirect::Policy::none())
-        .no_proxy()
-        .build()?;
+    let secret = Arc::<str>::from(env::var("BETTER_AUTH_SECRET")?);
+    let telegram_secret = env::var("TELEGRAM_WORKER_SECRET").ok();
     let api = api::create(
         &database_url,
-        origin.clone(),
-        bun_origin.as_ref(),
-        http,
-        env::var("BETTER_AUTH_SECRET").ok(),
-        env::var("TELEGRAM_WORKER_SECRET").ok(),
+        &origin,
+        secret.clone(),
+        telegram_secret.clone(),
     )?;
     let routes = api.router();
     let pool = api.pool().clone();
@@ -204,7 +231,58 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let address = listener.local_addr()?;
     let task = tokio::spawn(listen(database_url, io.clone()));
     let mut app = Router::new().merge(routes);
-    if hybrid {
+    let oauth_routes = oauth::router(
+        pool.clone(),
+        origin.parse()?,
+        secret.clone(),
+        origin.starts_with("https://"),
+    );
+    let public_mcp = {
+        let pool = pool.clone();
+        let origin = origin.clone();
+        let secret = secret.clone();
+        move |request: Request| {
+            let (pool, origin, secret) = (pool.clone(), origin.clone(), secret.clone());
+            async move { mcp_http::public(&pool, &origin, Some(&secret), request).await }
+        }
+    };
+    let page = move |request: Request| {
+        let secret = secret.clone();
+        async move { mcp_consent::page(request, &secret).await }
+    };
+    app = app
+        .merge(oauth_routes.clone())
+        .route("/mcp", any(public_mcp))
+        .route("/mcp/login", any(page.clone()))
+        .route("/mcp/consent", any(page));
+    let discovery = Arc::new(mcp_discovery::Discovery::new(&origin)?);
+    for path in [
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/mcp",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-authorization-server/api/auth",
+    ] {
+        let discovery = discovery.clone();
+        app = app.route(
+            path,
+            any(move |request: Request| async move {
+                discovery
+                    .handle(request.uri().path(), request.method())
+                    .unwrap_or_else(|| StatusCode::NOT_FOUND.into_response())
+            }),
+        );
+    }
+    let tg_pool = pool.clone();
+    let tg_origin = origin.clone();
+    let tg_secret = telegram_secret.map(Arc::<str>::from);
+    app = app.route(
+        "/api/telegram/teacher-mcp",
+        any(move |request: Request| {
+            let (pool, origin, secret) = (tg_pool.clone(), tg_origin.clone(), tg_secret.clone());
+            async move { mcp_http::telegram(&pool, &origin, secret.as_deref(), request).await }
+        }),
+    );
+    if production {
         tokio::spawn(production_db::maintain(pool.clone()));
         app = app.route(
             "/health",
@@ -234,58 +312,69 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 let path = path.to_owned();
                 let method = request.method().clone();
-                tokio::task::spawn_blocking(move || assets::serve(&root, &method, &path))
+                let headers = request.into_parts().0.headers;
+                tokio::task::spawn_blocking(move || assets::serve(&root, &method, &path, &headers))
                     .await
                     .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
             }
         });
         app = app.merge(static_files.layer(tower_http::compression::CompressionLayer::new()));
     }
-    if hybrid {
-        let supervisor = compat_process::CompatProcess::new();
-        let client = compat_http::client()?;
-        app = app.layer(middleware::from_fn(move |request: Request, next: Next| {
-            let supervisor = supervisor.clone();
-            let client = client.clone();
-            async move {
-                let path = request.uri().path();
-                let api = path.starts_with("/api/")
-                    || path == "/mcp"
-                    || path.starts_with("/mcp/")
-                    || path.starts_with("/.well-known/");
-                let native_read = request.method() == axum::http::Method::GET
-                    && matches!(
-                        path,
-                        "/api/me"
-                            | "/api/notebook"
-                            | "/api/admin"
-                            | "/api/student/attendance"
-                            | "/api/auth/get-session"
-                    );
-                if api && !native_read && !api::retired_website_path(path) {
-                    compat_http::forward(&client, &supervisor, request).await
-                } else {
-                    next.run(request).await
+    app = app.layer(middleware::from_fn(move |request: Request, next: Next| {
+        let routes = oauth_routes.clone();
+        async move {
+            let mut response = next.run(request).await;
+            let Some(continuation) = response
+                .extensions_mut()
+                .remove::<auth_browser::OAuthContinuation>()
+            else {
+                return response;
+            };
+            let mut authorize = Request::new(Body::empty());
+            *authorize.uri_mut() = continuation.uri;
+            authorize
+                .headers_mut()
+                .insert(header::COOKIE, continuation.cookie);
+            authorize.headers_mut().insert(
+                header::ACCEPT,
+                axum::http::HeaderValue::from_static("application/json"),
+            );
+            let Ok(mut result) = routes.oneshot(authorize).await;
+            if result.status().is_success() {
+                for cookie in response.headers().get_all(header::SET_COOKIE) {
+                    result
+                        .headers_mut()
+                        .append(header::SET_COOKIE, cookie.clone());
                 }
             }
-        }));
-    }
+            result
+        }
+    }));
+    app = app
+        .layer(middleware::from_fn(mark_private_projection))
+        .layer(
+            CompressionLayer::new()
+                .quality(CompressionLevel::Fastest)
+                .compress_when(SizeAbove::new(1024).and(
+                    |_: StatusCode, _: Version, _: &HeaderMap, extensions: &Extensions| {
+                        extensions.get::<PrivateProjection>().is_some()
+                    },
+                )),
+        );
     let (stop_polls, shutdown) = tokio::sync::watch::channel(());
     let app = app
         .route_service("/socket.io/", socket_service)
         .layer(middleware::from_fn(move |req, next| {
             gate(req, next, origin.clone(), shutdown.clone())
         }));
-    if hybrid {
-        eprintln!("Rust web runtime ready with on-demand Bun compatibility");
-    }
     println!("Listening on http://127.0.0.1:{}", address.port());
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
-            drop(stop_polls);
             task.abort();
-            io.close().await;
+            // Let pending polls consume their Engine.IO close packets before canceling them.
+            let _ = tokio::time::timeout(Duration::from_secs(2), io.close()).await;
+            drop(stop_polls);
         })
         .await?;
     Ok(())

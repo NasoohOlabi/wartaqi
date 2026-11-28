@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
 import { z } from 'zod'
 import { runLabCase } from '../scripts/agent-lab'
 import { labCases, syntheticAccess } from '../scripts/agent-lab-fixtures'
@@ -18,36 +18,33 @@ for (const fixture of labCases) {
 }
 
 test('LM Studio tool protocol uses the permitted functions and no record data', async () => {
-  const request = Object.assign(
-    async (_input: string | URL | Request, init?: RequestInit) => {
-      const body: unknown = JSON.parse(String(init?.body))
-      expect(body).toMatchObject({
-        model: 'test-model',
-        tools: [{ function: { name: 'find_students' } }],
-        messages: [{ role: 'system' }, { role: 'user', content: 'Find student Demo Lina' }],
-      })
-      expect(JSON.stringify(body)).not.toContain('get_my_attendance')
-      expect(init?.signal).toBeDefined()
-      return Response.json({
-        choices: [
-          {
-            message: {
-              tool_calls: [
-                {
-                  type: 'function',
-                  function: {
-                    name: 'find_students',
-                    arguments: '{"query":"Demo Lina"}',
-                  },
+  const request = async (_input: string | URL | Request, init?: RequestInit) => {
+    const body: unknown = JSON.parse(String(init?.body))
+    expect(body).toMatchObject({
+      model: 'test-model',
+      tools: [{ function: { name: 'find_students' } }],
+      messages: [{ role: 'system' }, { role: 'user', content: 'Find student Demo Lina' }],
+    })
+    expect(JSON.stringify(body)).not.toContain('get_my_attendance')
+    expect(init?.signal).toBeDefined()
+    return Response.json({
+      choices: [
+        {
+          message: {
+            tool_calls: [
+              {
+                type: 'function',
+                function: {
+                  name: 'find_students',
+                  arguments: '{"query":"Demo Lina"}',
                 },
-              ],
-            },
+              },
+            ],
           },
-        ],
-      })
-    },
-    { preconnect: fetch.preconnect },
-  )
+        },
+      ],
+    })
+  }
   const model = createAgentModel(
     { url: 'https://model.example/v1/chat/completions', model: 'test-model', key: 'synthetic' },
     request,
@@ -74,23 +71,20 @@ test('private updates use a fresh phone grant and suppress a result if the grant
   const synthetic = syntheticAccess('student', 'normal', calls)
   if (synthetic.kind !== 'student') throw new Error('Expected a student fixture')
   let withdraw = false
-  globalThis.fetch = Object.assign(
-    async (input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(input instanceof Request ? input.url : input)
-      const body: unknown = JSON.parse(String(init?.body))
-      if (url.origin === 'https://api.telegram.org' && url.pathname.endsWith('/sendMessage')) {
-        messages.push(z.object({ text: z.string() }).parse(body).text)
-        return Response.json({ ok: true, result: { message_id: 1 } })
-      }
-      if (url.href === 'https://wartaq.example/api/telegram/student') {
-        expect(body).toEqual({ action: 'attendance', token: 'synthetic-grant' })
-        if (withdraw) worker.store.delete('student:1')
-        return Response.json(await synthetic.call('get_my_attendance', {}))
-      }
-      throw new Error(`Unexpected test request to ${url.origin}`)
-    },
-    { preconnect: original.preconnect },
-  )
+  globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : input)
+    const body: unknown = JSON.parse(String(init?.body))
+    if (url.origin === 'https://api.telegram.org' && url.pathname.endsWith('/sendMessage')) {
+      messages.push(z.object({ text: z.string() }).parse(body).text)
+      return Response.json({ ok: true, result: { message_id: 1 } })
+    }
+    if (url.href === 'https://wartaq.example/api/telegram/student') {
+      expect(body).toEqual({ action: 'attendance', token: 'synthetic-grant' })
+      if (withdraw) worker.store.delete('student:1')
+      return Response.json(await synthetic.call('get_my_attendance', {}))
+    }
+    throw new Error(`Unexpected test request to ${url.origin}`)
+  }
   const send = (id: number, text: string) =>
     worker.process({
       update_id: id,

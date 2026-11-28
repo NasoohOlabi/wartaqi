@@ -38,7 +38,7 @@ import {
   type Course,
   type Enrollment,
 } from '../shared/neon'
-import { projectEvents, type LedgerEvent } from '../shared/ledger'
+import type { Attendance } from '../shared/ledger'
 import { courseAttendance, missingCourseScores, savedGradeResult } from '../shared/courseGrading'
 import { applyGradeChanges, type GradeValues } from '../shared/gradeSync'
 import { gradeAcceptedEvent, gradeScope, queueGradeEdit, useGradeQueue } from './gradeSync'
@@ -435,7 +435,7 @@ export function Courses({
   courses,
   enrollments,
   gradeEnrollments,
-  events,
+  attendance,
   refreshAfterWrite,
   defaultCourse,
   chooseDefault,
@@ -445,7 +445,7 @@ export function Courses({
   courses: Course[]
   enrollments: Enrollment[]
   gradeEnrollments: Enrollment[]
-  events: LedgerEvent[]
+  attendance: { value: Attendance }[]
   refreshAfterWrite: () => Promise<boolean>
   defaultCourse: string
   chooseDefault: (course: string) => void
@@ -1201,7 +1201,7 @@ export function Courses({
               exportEntries={courseEntries}
               students={board.students}
               accounts={board.accounts}
-              events={events}
+              attendance={attendance}
               busy={busy}
               offline={offline}
               ar={ar}
@@ -1228,7 +1228,7 @@ function GradePage({
   exportEntries,
   students,
   accounts,
-  events,
+  attendance,
   busy,
   offline,
   ar,
@@ -1241,7 +1241,7 @@ function GradePage({
   exportEntries: Enrollment[]
   students: Board['students']
   accounts: Board['accounts']
-  events: LedgerEvent[]
+  attendance: { value: Attendance }[]
   busy: boolean
   offline: boolean
   ar: boolean
@@ -1334,7 +1334,6 @@ function GradePage({
     )
   }
   const gradeDirty = entries.some(dirtyGrade)
-  const attendance = projectEvents(events).attendance
   const gradeResult = (entry: Enrollment, ratio: number | null) => {
     if (settingsDirty || dirtyGrade(entry)) return 'pending'
     return savedGradeResult(course, entry, ratio)

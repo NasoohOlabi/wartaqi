@@ -1,2 +1,2 @@
-bun run verify
-bun run security:history
+npm run verify
+npm run security:history

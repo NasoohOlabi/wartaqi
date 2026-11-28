@@ -39,10 +39,6 @@ impl Grant {
     pub(crate) fn is_admin(&self) -> bool {
         self.role == "administrator"
     }
-    #[cfg(test)]
-    pub(crate) fn role(&self) -> &str {
-        &self.role
-    }
     pub(crate) fn is_student(&self) -> bool {
         self.role == "student"
     }
@@ -72,14 +68,23 @@ pub(crate) async fn load(
     tx: &Transaction<'_>,
     subject: &str,
 ) -> Result<Option<Grant>, tokio_postgres::Error> {
+    load_with_lock(tx, subject, true).await
+}
+
+pub(crate) async fn load_with_lock(
+    tx: &Transaction<'_>,
+    subject: &str,
+    lock: bool,
+) -> Result<Option<Grant>, tokio_postgres::Error> {
     let Some(account) = tx
         .query_opt(
-            r#"SELECT role, teacher_id::text, student_id::text, active,
+            &r#"SELECT role, teacher_id::text, student_id::text, active,
                   floor(extract(epoch from expires_at) * 1000)::bigint AS expires_ms,
                   invitation_username IS NOT NULL OR invitation_request_id IS NOT NULL AS invited,
                   verified_phone, invitation_phone, invitation_requires_setup,
                   to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS expiry
-           FROM app_accounts WHERE auth_user_id = $1 FOR UPDATE"#,
+           FROM app_accounts WHERE auth_user_id = $1 FOR UPDATE"#
+                .replace(" FOR UPDATE", if lock { " FOR UPDATE" } else { "" }),
             &[&subject],
         )
         .await?
@@ -103,7 +108,7 @@ pub(crate) async fn load(
         let Some(id) = account.get::<_, Option<String>>("student_id") else {
             return Ok(None);
         };
-        let Some(row) = tx.query_opt("SELECT id::text, name, group_name FROM students WHERE id = $1::text::uuid AND active FOR SHARE", &[&id]).await? else { return Ok(None) };
+        let Some(row) = tx.query_opt(&"SELECT id::text, name, group_name FROM students WHERE id = $1::text::uuid AND active FOR SHARE".replace(" FOR SHARE", if lock { " FOR SHARE" } else { "" }), &[&id]).await? else { return Ok(None) };
         (
             row.get("id"),
             row.get("name"),
@@ -118,12 +123,16 @@ pub(crate) async fn load(
         };
         let Some(row) = tx
             .query_opt(
-                r#"SELECT t.id::text, t.name, t.access_mode, t.active,
+                &r#"SELECT t.id::text, t.name, t.access_mode, t.active,
                       floor(extract(epoch from t.expires_at) * 1000)::bigint AS expires_ms,
                       to_char(LEAST(t.expires_at, a.expires_at) AT TIME ZONE 'UTC',
                         'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS expiry
                FROM teachers t JOIN app_accounts a ON a.auth_user_id = $2
-               WHERE t.id = $1::text::uuid FOR UPDATE OF t"#,
+               WHERE t.id = $1::text::uuid FOR UPDATE OF t"#
+                    .replace(
+                        " FOR UPDATE OF t",
+                        if lock { " FOR UPDATE OF t" } else { "" },
+                    ),
                 &[&id, &subject],
             )
             .await?

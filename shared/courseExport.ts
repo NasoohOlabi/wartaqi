@@ -1,4 +1,4 @@
-import type { projectEvents, Status } from './ledger'
+import type { Attendance, Status } from './ledger'
 import type { Course, Enrollment, neonAdminBoardSchema } from './neon'
 import { courseAttendance, effectiveGradeResult } from './courseGrading'
 
@@ -12,7 +12,7 @@ type Student = Pick<
       'group' | 'active' | 'whatsapp' | 'location' | 'birthYear'
     >
   >
-type Attendance = ReturnType<typeof projectEvents>['attendance']
+type AttendanceRows = { value: Attendance }[]
 export type CourseExportReport = 'full' | 'grades' | 'students' | 'attendance' | 'participants'
 export type CourseExportColumn =
   | 'firstName'
@@ -52,7 +52,7 @@ export type CourseExportInput = {
   course: Course
   entries: Enrollment[]
   students: Student[]
-  attendance: Attendance
+  attendance: AttendanceRows
   ar: boolean
   options?: CourseExportOptions
 }
@@ -127,7 +127,7 @@ export function courseExportRows(input: CourseExportInput): Record<CourseExportC
   const { course, entries, students, attendance, ar } = input
   const options = input.options
   const studentById = new Map(students.map((student) => [student.studentId, student]))
-  const attendanceByEnrollment = new Map<string, Attendance>()
+  const attendanceByEnrollment = new Map<string, AttendanceRows>()
   for (const row of attendance) {
     if (!row.value.enrollmentId) continue
     const rows = attendanceByEnrollment.get(row.value.enrollmentId) ?? []

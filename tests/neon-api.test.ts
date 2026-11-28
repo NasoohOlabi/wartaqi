@@ -1,4 +1,4 @@
-﻿import { describe, expect, test } from 'bun:test'
+﻿import { describe, expect, test } from 'vitest-runner'
 import type { Pool } from 'pg'
 import { createHandler } from '../functions/notebook-service'
 import { eventSchema, type LedgerEvent } from '../shared/ledger'

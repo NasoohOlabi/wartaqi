@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { profileUpdateSchema, validProfileUpdate } from '../server/profile'
 import { saveGradeEdit } from '../server/gradeSync'
 import {
@@ -189,7 +190,7 @@ async function snapshot(
     .parse(
       (
         await db.query(
-          `SELECT e.id, e.actor, e.client_time, e.received_at, e.payload FROM events e JOIN students s ON s.id = e.student_id WHERE ${scope} AND ${visibleLedgerEvent} ORDER BY e.sequence`,
+          `SELECT e.id, e.actor, e.client_time, e.received_at, wartaq_event_payload(e.payload, e.payload_packed, e.student_id, e.enrollment_id) AS payload FROM events e JOIN students s ON s.id = e.student_id WHERE ${scope} AND ${visibleLedgerEvent} ORDER BY e.sequence`,
           values,
         )
       ).rows,
@@ -449,7 +450,7 @@ async function manage(db: PoolClient, path: string, body: unknown, subject: stri
           .parse(
             (
               await db.query(
-                `SELECT e.id, e.actor, e.client_time, e.received_at, e.payload FROM events e WHERE e.student_id = ANY($1::uuid[]) AND ${visibleLedgerEvent} ORDER BY e.sequence`,
+                `SELECT e.id, e.actor, e.client_time, e.received_at, wartaq_event_payload(e.payload, e.payload_packed, e.student_id, e.enrollment_id) AS payload FROM events e WHERE e.student_id = ANY($1::uuid[]) AND ${visibleLedgerEvent} ORDER BY e.sequence`,
                 [students.map((student) => student.id)],
               )
             ).rows,
@@ -750,7 +751,7 @@ async function studentAttendance(db: PoolClient, student: z.infer<typeof student
     .parse(
       (
         await db.query(
-          `SELECT e.id, e.actor, e.client_time, e.received_at, e.payload FROM events e WHERE e.student_id = $1 AND ${visibleLedgerEvent} ORDER BY e.sequence`,
+          `SELECT e.id, e.actor, e.client_time, e.received_at, wartaq_event_payload(e.payload, e.payload_packed, e.student_id, e.enrollment_id) AS payload FROM events e WHERE e.student_id = $1 AND ${visibleLedgerEvent} ORDER BY e.sequence`,
           [student.id],
         )
       ).rows,
@@ -1333,14 +1334,14 @@ export function createHandler(
               ? operation.event.payload
               : {
                   kind: 'contact_receipt',
-                  fingerprint: new Bun.CryptoHasher('sha256')
+                  fingerprint: createHash('sha256')
                     .update(JSON.stringify({ subject, operation }))
                     .digest('hex'),
                 }
           const existing = await db.query('SELECT 1 FROM events WHERE id = $1', [id])
           if (existing.rowCount) {
             const same = await db.query(
-              'SELECT 1 FROM events WHERE id = $1 AND teacher_id = $2 AND student_id = $3 AND client_time = $4 AND payload = $5::jsonb',
+              'SELECT 1 FROM events WHERE id = $1 AND teacher_id = $2 AND student_id = $3 AND client_time = $4 AND wartaq_event_payload(payload, payload_packed, student_id, enrollment_id) = $5::jsonb',
               [id, teacher.id, studentId, clientTime, JSON.stringify(payload)],
             )
             await db.query('COMMIT')
@@ -1455,7 +1456,7 @@ export function createHandler(
             const existing = await db.query('SELECT 1 FROM events WHERE id = $1', [event.id])
             if (existing.rowCount) {
               const same = await db.query(
-                'SELECT 1 FROM events WHERE id = $1 AND teacher_id = $2 AND student_id = $3 AND client_time = $4 AND payload = $5::jsonb AND edit_time IS NOT DISTINCT FROM $6::timestamptz',
+                'SELECT 1 FROM events WHERE id = $1 AND teacher_id = $2 AND student_id = $3 AND client_time = $4 AND wartaq_event_payload(payload, payload_packed, student_id, enrollment_id) = $5::jsonb AND edit_time IS NOT DISTINCT FROM $6::timestamptz',
                 [
                   event.id,
                   teacher.id,
@@ -1583,7 +1584,7 @@ export function createHandler(
             )
             if (!inserted.rowCount) {
               const same = await db.query(
-                'SELECT 1 FROM events WHERE id = $1 AND teacher_id = $2 AND student_id = $3 AND actor = $4 AND client_time = $5 AND payload = $6::jsonb AND (edit_time IS NULL OR edit_time IS NOT DISTINCT FROM $7::timestamptz)',
+                'SELECT 1 FROM events WHERE id = $1 AND teacher_id = $2 AND student_id = $3 AND actor = $4 AND client_time = $5 AND wartaq_event_payload(payload, payload_packed, student_id, enrollment_id) = $6::jsonb AND (edit_time IS NULL OR edit_time IS NOT DISTINCT FROM $7::timestamptz)',
                 [
                   event.id,
                   teacher.id,

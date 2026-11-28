@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
 import { neonAdminStudentSchema } from '../shared/neon'
 
 test('student names validate structured input and retain legacy name-only compatibility', () => {

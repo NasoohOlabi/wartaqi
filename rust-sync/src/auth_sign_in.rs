@@ -1,15 +1,21 @@
 use ring::rand::{SecureRandom, SystemRandom};
 use serde_json::Value;
 
-use crate::credentials;
+use crate::{credentials, device_sessions};
 
 pub(crate) enum SignInOutcome {
     InvalidCredentials,
-    SignedIn {
-        token: String,
-        user: Value,
-        remember: bool,
-    },
+    DeviceLimitReached,
+    SignedIn(Session),
+}
+
+pub(crate) struct Session {
+    pub token: String,
+    pub user: Value,
+    pub user_id: String,
+    pub name: String,
+    pub created_at_ms: i64,
+    pub expires_http: String,
 }
 
 #[derive(Debug)]
@@ -44,8 +50,7 @@ pub(crate) fn session_token() -> Result<String, SignInError> {
     Ok(token)
 }
 
-// The caller validates and normalizes the phone and request body. The transaction
-// shares the existing auth-mutations advisory lock with the Bun server.
+// The transaction shares the auth-mutations lock with password changes and resets.
 pub(crate) async fn sign_in(
     db: &mut tokio_postgres::Client,
     phone: &str,
@@ -53,6 +58,7 @@ pub(crate) async fn sign_in(
     remember: bool,
     ip_address: &str,
     user_agent: &str,
+    held_accounts: &[device_sessions::Account],
 ) -> Result<SignInOutcome, SignInError> {
     let tx = db.transaction().await?;
     tx.execute(
@@ -64,7 +70,7 @@ pub(crate) async fn sign_in(
         SELECT u.id::text, c.password, jsonb_build_object(
           'id', u.id::text, 'name', u.name, 'email', u.email, 'emailVerified', u."emailVerified", 'image', u.image,
           'createdAt', to_char(u."createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),
-          'updatedAt', to_char(u."updatedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+          'updatedAt', to_char(u."updatedAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')), u.name
         FROM app_accounts a JOIN neon_auth."user" u ON u.id::text = a.auth_user_id
         LEFT JOIN LATERAL (SELECT password FROM neon_auth.account
           WHERE "userId" = u.id AND "providerId" = 'credential' AND "accountId" = u.id::text LIMIT 1) c ON true
@@ -82,26 +88,37 @@ pub(crate) async fn sign_in(
     let valid = tokio::task::spawn_blocking(move || credentials::verify_password(&password, &hash))
         .await
         .map_err(|_| SignInError::Worker)?;
-    if !valid || stored.is_none() {
+    let Some(row) = row.filter(|_| valid && stored.is_some()) else {
         tx.commit().await?;
         return Ok(SignInOutcome::InvalidCredentials);
-    }
-    let row = row.expect("a stored credential requires a user row");
+    };
     let user_id: String = row.get(0);
+    let other_accounts = held_accounts
+        .iter()
+        .filter(|account| account.user_id != user_id);
+    if other_accounts.count() >= device_sessions::SLOT_COUNT {
+        tx.commit().await?;
+        return Ok(SignInOutcome::DeviceLimitReached);
+    }
     let user: Value = row.get(2);
     let token = session_token()?;
     let lifetime: i32 = if remember { 604800 } else { 86400 };
-    tx.execute(r#"
+    let session = tx.query_one(r#"
         INSERT INTO neon_auth.session (id, "userId", token, "expiresAt", "createdAt", "updatedAt", "ipAddress", "userAgent")
         VALUES (gen_random_uuid(), $1::text::uuid, $2, date_trunc('milliseconds', statement_timestamp()) + $3::int * interval '1 second',
           date_trunc('milliseconds', statement_timestamp()), date_trunc('milliseconds', statement_timestamp()), $4, $5)
+        RETURNING (extract(epoch FROM "createdAt") * 1000)::bigint,
+          to_char("expiresAt" AT TIME ZONE 'UTC', 'Dy, DD Mon YYYY HH24:MI:SS "GMT"')
     "#, &[&user_id, &token, &lifetime, &ip_address, &user_agent]).await?;
     tx.commit().await?;
-    Ok(SignInOutcome::SignedIn {
+    Ok(SignInOutcome::SignedIn(Session {
         token,
         user,
-        remember,
-    })
+        user_id,
+        name: row.get(3),
+        created_at_ms: session.get(0),
+        expires_http: session.get(1),
+    }))
 }
 
 #[cfg(test)]

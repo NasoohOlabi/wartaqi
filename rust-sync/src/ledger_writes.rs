@@ -63,6 +63,45 @@ fn version(events: &[Value], p: &Value) -> Value {
         json!({"eventId": event["id"], "status": status})
     })
 }
+async fn sync_scope(
+    tx: &Transaction<'_>,
+    grant: &Grant,
+    parsed: &[Value],
+) -> Result<HashSet<(String, String)>, Error> {
+    let students: Vec<&str> = parsed
+        .iter()
+        .map(|e| e["payload"]["studentId"].as_str().unwrap())
+        .collect();
+    let enrollments: Vec<&str> = parsed
+        .iter()
+        .map(|e| e["payload"]["enrollmentId"].as_str().unwrap())
+        .collect();
+    let teacher = grant.id();
+    let admin = grant.is_admin();
+    // Match the snapshot lock order: students, enrollments, then courses.
+    tx.query("SELECT id FROM students WHERE id::text = ANY($1) AND active AND ($2 OR teacher_id=$3::text::uuid) ORDER BY name,id FOR SHARE", &[&students, &admin, &teacher]).await?;
+    let rows = tx.query("SELECT ce.id::text, ce.student_id::text, ce.course_id::text, ce.active FROM course_enrollments ce JOIN students s ON s.id=ce.student_id WHERE ce.id::text = ANY($1) AND s.id::text = ANY($2) AND s.active AND ($3 OR s.teacher_id=$4::text::uuid) ORDER BY ce.id FOR SHARE OF ce", &[&enrollments, &students, &admin, &teacher]).await?;
+    let courses: Vec<String> = rows.iter().map(|r| r.get(2)).collect();
+    let open: HashSet<String> = tx.query("SELECT id::text, open FROM courses WHERE id::text = ANY($1) ORDER BY btrim(name) COLLATE \"en-US-x-icu\", id FOR SHARE", &[&courses]).await?.iter().filter(|r| r.get::<_, bool>(1)).map(|r| r.get(0)).collect();
+    Ok(rows
+        .iter()
+        .filter(|r| r.get::<_, bool>(3) && open.contains(&r.get::<_, String>(2)))
+        .map(|r| (r.get(1), r.get(0)))
+        .collect())
+}
+
+async fn sync_version(tx: &Transaction<'_>, p: &Value) -> Result<Value, Error> {
+    let student = p["studentId"].as_str().unwrap();
+    let enrollment = p["enrollmentId"].as_str().unwrap();
+    let date = p["date"].as_str().unwrap();
+    let rows = tx.query("WITH candidates AS (SELECT id FROM events WHERE student_id=$1::text::uuid AND enrollment_id=$2::text::uuid AND payload->>'kind'='attendance' AND payload->>'date'=$3) SELECT e.id::text AS id, e.actor::text AS actor, to_char(e.client_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS client_time, to_char(e.received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS received_at, wartaq_event_payload(e.payload,e.payload_packed,e.student_id,e.enrollment_id) AS payload FROM events e WHERE e.student_id=$1::text::uuid AND (e.id IN (SELECT id FROM candidates) OR (e.payload->>'kind'='reversal' AND e.payload->>'targetId' IN (SELECT id::text FROM candidates))) ORDER BY e.sequence", &[&student, &enrollment, &date]).await?;
+    let events = rows
+        .iter()
+        .map(crate::ledger::decode_event)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| Error::Other(e.into()))?;
+    Ok(version(&events, p))
+}
 async fn insert(
     tx: &Transaction<'_>,
     grant: &Grant,
@@ -121,7 +160,7 @@ async fn same_event(
     let time = event["clientTime"].as_str().ok_or(Error::Invalid)?;
     let payload = &event["payload"];
     let name = grant.name();
-    let same = tx.query_opt("SELECT 1 FROM events WHERE id=$1::text::uuid AND teacher_id=$2::text::uuid AND student_id=$3::text::uuid AND client_time=$4::text::timestamptz AND payload=$5 AND (NOT $6::boolean OR actor=$7) AND (($6::boolean AND edit_time IS NULL) OR edit_time IS NOT DISTINCT FROM $8::text::timestamptz)", &[&id,&teacher,&student_id,&time,&payload,&actor_check,&name,&edit_time]).await?;
+    let same = tx.query_opt("SELECT 1 FROM events WHERE id=$1::text::uuid AND teacher_id=$2::text::uuid AND student_id=$3::text::uuid AND client_time=$4::text::timestamptz AND wartaq_event_payload(payload, payload_packed, student_id, enrollment_id)=$5 AND (NOT $6::boolean OR actor=$7) AND (($6::boolean AND edit_time IS NULL) OR edit_time IS NOT DISTINCT FROM $8::text::timestamptz)", &[&id,&teacher,&student_id,&time,&payload,&actor_check,&name,&edit_time]).await?;
     Ok(same.is_some())
 }
 async fn stale_edit(
@@ -136,6 +175,89 @@ async fn stale_edit(
     let date = student["date"].as_str().unwrap();
     Ok(tx.query_one("SELECT $1::text::timestamptz > clock_timestamp() + interval '5 minutes' OR EXISTS (SELECT 1 FROM events e LEFT JOIN events target ON e.payload->>'kind' = 'reversal' AND target.id::text = e.payload->>'targetId' WHERE e.student_id = $2::text::uuid AND e.enrollment_id IS NOT DISTINCT FROM $3::text::uuid AND COALESCE(target.payload, e.payload)->>'kind' = 'attendance' AND COALESCE(target.payload, e.payload)->>'date' = $4 AND (COALESCE(e.edit_time, e.received_at), e.id) >= ($1::text::timestamptz, $5::text::uuid))", &[&edit_time, &student_id, &enrollment, &date, &id]).await?.get(0))
 }
+pub(crate) async fn correct(
+    tx: &Transaction<'_>,
+    grant: &Grant,
+    input: Value,
+) -> Result<Value, Error> {
+    if !grant.is_admin() || !grant.can_read() || !grant.can_write() {
+        return Err(Error::Forbidden);
+    }
+    let records = input["events"].as_array().ok_or(Error::Invalid)?;
+    if !(1..=500).contains(&records.len()) {
+        return Err(Error::Invalid);
+    }
+    let mut parsed = Vec::with_capacity(records.len());
+    for record in records {
+        let event = crate::ledger::decode_input(record).map_err(|_| Error::Invalid)?;
+        if event["payload"]["kind"] != "reversal" {
+            return Err(Error::Invalid);
+        }
+        if event["actor"] != grant.name() {
+            return Err(Error::Forbidden);
+        }
+        parsed.push(event);
+    }
+    tx.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended('attendance-ledger', 0))",
+        &[],
+    )
+    .await?;
+    let targets: Vec<&str> = parsed
+        .iter()
+        .map(|e| e["payload"]["targetId"].as_str().unwrap())
+        .collect();
+    // Lock target students in the same order as the legacy snapshot, including inactive rows.
+    tx.query("SELECT s.id FROM students s WHERE EXISTS (SELECT 1 FROM events e WHERE e.id::text=ANY($1) AND (e.student_id=s.id OR wartaq_event_payload(e.payload,e.payload_packed,e.student_id,e.enrollment_id)->>'studentId'=s.id::text)) ORDER BY s.name,s.id FOR SHARE", &[&targets]).await?;
+    let rows = tx.query("SELECT e.id::text AS id, e.actor::text AS actor, to_char(e.client_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS client_time, to_char(e.received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS received_at, wartaq_event_payload(e.payload,e.payload_packed,e.student_id,e.enrollment_id) AS payload, (s.active AND EXISTS (SELECT 1 FROM students assigned WHERE assigned.id::text=wartaq_event_payload(e.payload,e.payload_packed,e.student_id,e.enrollment_id)->>'studentId' AND assigned.active)) AS student_active FROM events e JOIN students s ON s.id=e.student_id WHERE e.id::text=ANY($1)", &[&targets]).await?;
+    let mut targets_by_id = std::collections::HashMap::new();
+    for row in &rows {
+        let event = crate::ledger::decode_event(row).map_err(Error::Other)?;
+        targets_by_id.insert(
+            event["id"].as_str().unwrap().to_owned(),
+            (
+                event["payload"].clone(),
+                row.get::<_, bool>("student_active"),
+            ),
+        );
+    }
+    for event in &parsed {
+        let id = event["id"].as_str().unwrap();
+        let target_id = event["payload"]["targetId"].as_str().unwrap();
+        let (target, active) = targets_by_id.get(target_id).ok_or(Error::Forbidden)?;
+        if !matches!(target["kind"].as_str(), Some("attendance" | "note")) {
+            return Err(Error::Forbidden);
+        }
+        let edit_time = event.get("editTime").and_then(Value::as_str);
+        if let Some(existing) = tx
+            .query_opt("SELECT actor FROM events WHERE id=$1::text::uuid", &[&id])
+            .await?
+        {
+            if existing.get::<_, String>(0) != grant.name()
+                || !same_event(tx, grant, event, target, false, edit_time).await?
+            {
+                return Err(Error::Conflict);
+            }
+            continue;
+        }
+        if !active {
+            return Err(Error::Forbidden);
+        }
+        if target["kind"] == "attendance"
+            && let Some(time) = edit_time
+            && stale_edit(tx, event, target, time).await?
+        {
+            return Err(Error::Conflict);
+        }
+        if insert(tx, grant, event, target, true, edit_time).await? == 0
+            && !same_event(tx, grant, event, target, false, edit_time).await?
+        {
+            return Err(Error::Conflict);
+        }
+    }
+    Ok(json!({"saved": parsed.len()}))
+}
+
 pub(crate) async fn apply(
     tx: &Transaction<'_>,
     path: &str,
@@ -191,16 +313,17 @@ pub(crate) async fn apply(
         &[],
     )
     .await?;
-    let mut snap = crate::staff_reads::snapshot(tx, grant, false)
-        .await
-        .map_err(Error::Other)?;
     if sync {
+        let scope = sync_scope(tx, grant, &parsed).await?;
         let mut outcomes = Vec::new();
         for (event, record) in parsed.iter().zip(records) {
             let p = &event["payload"];
-            let current = version(snap["events"].as_array().unwrap(), p);
+            let current = sync_version(tx, p).await?;
             let edit_time = record.get("editTime").and_then(Value::as_str);
-            if !allowed(p, &snap) {
+            if !scope.contains(&(
+                p["studentId"].as_str().unwrap().to_owned(),
+                p["enrollmentId"].as_str().unwrap().to_owned(),
+            )) {
                 outcomes.push(json!({"id":event["id"],"kind":"forbidden","current":null}));
                 continue;
             }
@@ -233,13 +356,15 @@ pub(crate) async fn apply(
                 continue;
             }
             insert(tx, grant, event, p, false, edit_time).await?;
-            snap["events"].as_array_mut().unwrap().push(event.clone());
             outcomes.push(
                 json!({"id":id,"kind":"saved","current":{"eventId":id,"status":p["status"]}}),
             );
         }
         return Ok(json!({"outcomes":outcomes}));
     }
+    let snap = crate::staff_reads::snapshot(tx, grant, false)
+        .await
+        .map_err(Error::Other)?;
     if parsed.iter().any(|event| event["actor"] != grant.name()) {
         return Err(Error::Forbidden);
     }

@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
 import { sanitizedSearch, viewLinkFrom } from '../src/queryState'
 
 test('view URLs discard unknown parameters including bearer credentials', () => {

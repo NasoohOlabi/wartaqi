@@ -2,17 +2,38 @@ use crate::access::Grant;
 use crate::ledger::{
     InvalidData, VISIBLE_LEDGER_EVENT, decode_event, iso_datetime, js_trim, valid_uuid,
 };
+use futures_util::TryStreamExt;
 use serde_json::{Value, json};
+use std::io::{BufWriter, Write};
 use tokio_postgres::{Row, Transaction};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
+
+pub(crate) struct NotebookSlice {
+    pub(crate) events: Vec<Value>,
+    pub(crate) focus: Value,
+}
 
 fn object(row: &Row) -> Value {
     row.get(0)
 }
 
-pub(crate) async fn notebook(tx: &Transaction<'_>, grant: &Grant) -> Result<Value, Error> {
-    snapshot(tx, grant, true).await
+pub(crate) async fn notebook(
+    tx: &Transaction<'_>,
+    grant: &Grant,
+    gzip: bool,
+    slice: Option<NotebookSlice>,
+) -> Result<Vec<u8>, Error> {
+    if gzip {
+        let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        let mut out = BufWriter::with_capacity(64 * 1024, encoder);
+        encode_snapshot(tx, grant, slice, &mut out).await?;
+        Ok(out.into_inner()?.finish()?)
+    } else {
+        let mut out = Vec::new();
+        encode_snapshot(tx, grant, slice, &mut out).await?;
+        Ok(out)
+    }
 }
 
 pub(crate) async fn snapshot(
@@ -20,33 +41,163 @@ pub(crate) async fn snapshot(
     grant: &Grant,
     include_inactive: bool,
 ) -> Result<Value, Error> {
+    let mut snapshot = json!({"teacher":grant.view()});
+    let teacher_id = grant.id();
+    let params: &[&(dyn tokio_postgres::types::ToSql + Sync)] = if grant.is_admin() {
+        &[]
+    } else {
+        &[&teacher_id]
+    };
+    for (name, shape, sql) in snapshot_queries(grant, include_inactive, true) {
+        let mut values = Vec::new();
+        read_rows(tx, &sql, params, shape, |value| {
+            values.push(value);
+            Ok(())
+        })
+        .await?;
+        snapshot[name] = Value::Array(values);
+    }
+    Ok(snapshot)
+}
+
+#[derive(Clone, Copy)]
+enum Shape {
+    Student,
+    Event,
+    Enrollment,
+    Course,
+}
+
+async fn read_rows(
+    tx: &Transaction<'_>,
+    sql: &str,
+    params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+    shape: Shape,
+    mut read: impl FnMut(Value) -> Result<(), Error> + Send,
+) -> Result<(), Error> {
+    let rows = tx.query_raw(sql, params.iter().copied()).await?;
+    futures_util::pin_mut!(rows);
+    while let Some(row) = rows.try_next().await? {
+        let mut value = if matches!(shape, Shape::Event) {
+            decode_event(&row)?
+        } else {
+            object(&row)
+        };
+        match shape {
+            Shape::Student => snapshot_shapes(std::slice::from_mut(&mut value), &mut [], &mut [])?,
+            Shape::Course => snapshot_shapes(&mut [], std::slice::from_mut(&mut value), &mut [])?,
+            Shape::Enrollment => {
+                snapshot_shapes(&mut [], &mut [], std::slice::from_mut(&mut value))?
+            }
+            Shape::Event => {}
+        }
+        read(value)?;
+    }
+    Ok(())
+}
+
+async fn encode_snapshot(
+    tx: &Transaction<'_>,
+    grant: &Grant,
+    slice: Option<NotebookSlice>,
+    out: &mut (impl Write + Send),
+) -> Result<(), Error> {
+    out.write_all(b"{\"teacher\":")?;
+    serde_json::to_writer(&mut *out, &grant.view())?;
+    let teacher_id = grant.id();
+    let params: &[&(dyn tokio_postgres::types::ToSql + Sync)] = if grant.is_admin() {
+        &[]
+    } else {
+        &[&teacher_id]
+    };
+    for (name, shape, sql) in snapshot_queries(grant, true, false) {
+        write!(out, ",\"{name}\":[")?;
+        if let (Shape::Event, Some(slice)) = (shape, &slice) {
+            for (index, event) in slice.events.iter().enumerate() {
+                if index > 0 {
+                    out.write_all(b",")?;
+                }
+                serde_json::to_writer(&mut *out, event)?;
+            }
+            out.write_all(b"]")?;
+            continue;
+        }
+        let mut first = true;
+        read_rows(tx, &sql, params, shape, |value| {
+            if !first {
+                out.write_all(b",")?;
+            }
+            first = false;
+            serde_json::to_writer(&mut *out, &value)?;
+            Ok(())
+        })
+        .await?;
+        out.write_all(b"]")?;
+    }
+    if let Some(slice) = slice {
+        out.write_all(b",\"focus\":")?;
+        serde_json::to_writer(&mut *out, &slice.focus)?;
+    }
+    out.write_all(b"}")?;
+    Ok(())
+}
+
+fn snapshot_queries(
+    grant: &Grant,
+    include_inactive: bool,
+    lock: bool,
+) -> [(&'static str, Shape, String); 4] {
     let admin = grant.is_admin();
     let scope = if admin {
         if include_inactive { "true" } else { "s.active" }
     } else {
         "s.teacher_id = $1::text::uuid AND s.active"
     };
-    let teacher_id = grant.id();
-    let params: &[&(dyn tokio_postgres::types::ToSql + Sync)] =
-        if admin { &[] } else { &[&teacher_id] };
-    let mut students = tx.query(&format!("SELECT jsonb_build_object('kind','student','studentId',s.id::text,'name',s.name,'group',s.group_name,'active',s.active,'firstName',COALESCE(s.first_name,s.name),'lastName',COALESCE(s.last_name,''),'whatsapp',s.whatsapp,'location',s.location,'birthYear',s.birth_year) FROM students s WHERE {scope} ORDER BY s.name,s.id FOR SHARE"), params).await?.iter().map(object).collect::<Vec<_>>();
-    let events = tx.query(&format!("SELECT e.id::text AS id, e.actor::text AS actor, to_char(e.client_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS client_time, to_char(e.received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS received_at, e.payload FROM events e JOIN students s ON s.id=e.student_id WHERE {scope} AND {VISIBLE_LEDGER_EVENT} ORDER BY e.sequence"), params).await?.iter().map(decode_event).collect::<Result<Vec<_>, _>>()?;
-    let mut enrollments = tx.query(&format!("SELECT jsonb_build_object('id',ce.id::text,'courseId',ce.course_id::text,'studentId',ce.student_id::text,'level',ce.level,'practical',{},'theory',{},'notes',{},'active',ce.active,'handbookReceived',ce.handbook_received,'teacherId',ce.teacher_id::text,'teacherName',(SELECT name FROM teachers WHERE id=ce.teacher_id),'gradeDecisions',{}) FROM course_enrollments ce JOIN students s ON s.id=ce.student_id WHERE {scope} ORDER BY ce.id FOR SHARE OF ce", if admin { "ce.practical::float8" } else { "NULL::float8" }, if admin { "ce.theory::float8" } else { "NULL::float8" }, if admin { "ce.notes" } else { "''::text" }, if admin { "ce.grade_decisions" } else { "'[]'::jsonb" }), params).await?.iter().map(object).collect::<Vec<_>>();
+    let students = format!(
+        "SELECT jsonb_build_object('kind','student','studentId',s.id::text,'name',s.name,'group',s.group_name,'active',s.active,'firstName',COALESCE(s.first_name,s.name),'lastName',COALESCE(s.last_name,''),'whatsapp',s.whatsapp,'location',s.location,'birthYear',s.birth_year) FROM students s WHERE {scope} ORDER BY s.name,s.id{}",
+        if lock { " FOR SHARE" } else { "" }
+    );
+    let events = format!(
+        "SELECT e.id::text AS id, e.actor::text AS actor, to_char(e.client_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS client_time, to_char(e.received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS received_at, wartaq_event_payload(e.payload, e.payload_packed, e.student_id, e.enrollment_id) AS payload FROM events e JOIN students s ON s.id=e.student_id WHERE {scope} AND {VISIBLE_LEDGER_EVENT} ORDER BY e.sequence"
+    );
+    let enrollments = format!(
+        "SELECT jsonb_build_object('id',ce.id::text,'courseId',ce.course_id::text,'studentId',ce.student_id::text,'level',ce.level,'practical',{},'theory',{},'notes',{},'active',ce.active,'handbookReceived',ce.handbook_received,'teacherId',ce.teacher_id::text,'teacherName',(SELECT name FROM teachers WHERE id=ce.teacher_id),'gradeDecisions',{}) FROM course_enrollments ce JOIN students s ON s.id=ce.student_id WHERE {scope} ORDER BY ce.id{}",
+        if admin {
+            "ce.practical::float8"
+        } else {
+            "NULL::float8"
+        },
+        if admin {
+            "ce.theory::float8"
+        } else {
+            "NULL::float8"
+        },
+        if admin { "ce.notes" } else { "''::text" },
+        if admin {
+            "ce.grade_decisions"
+        } else {
+            "'[]'::jsonb"
+        },
+        if lock { " FOR SHARE OF ce" } else { "" }
+    );
     let course_sql = if admin {
         "SELECT jsonb_build_object('id',id::text,'name',name,'open',open,'attendanceMinimum',attendance_minimum::float8,'practicalMinimum',practical_minimum::float8,'theoryMinimum',theory_minimum::float8) FROM courses ORDER BY btrim(name) COLLATE \"en-US-x-icu\", id FOR SHARE"
     } else {
         "SELECT jsonb_build_object('id',c.id::text,'name',c.name,'open',c.open,'attendanceMinimum',70,'practicalMinimum',80,'theoryMinimum',80) FROM courses c WHERE EXISTS (SELECT 1 FROM course_enrollments ce JOIN students s ON s.id=ce.student_id WHERE ce.course_id=c.id AND s.teacher_id=$1::text::uuid AND s.active) ORDER BY btrim(c.name) COLLATE \"en-US-x-icu\", c.id FOR SHARE OF c"
     };
-    let mut courses = tx
-        .query(course_sql, params)
-        .await?
-        .iter()
-        .map(object)
-        .collect::<Vec<_>>();
-    snapshot_shapes(&mut students, &mut courses, &mut enrollments)?;
-    Ok(
-        json!({"teacher": grant.view(), "students": students, "events": events, "courses": courses, "enrollments": enrollments}),
-    )
+    let course_sql = if lock {
+        course_sql.to_owned()
+    } else {
+        course_sql
+            .replace(" FOR SHARE OF c", "")
+            .replace(" FOR SHARE", "")
+    };
+    [
+        ("students", Shape::Student, students),
+        ("events", Shape::Event, events),
+        ("enrollments", Shape::Enrollment, enrollments),
+        ("courses", Shape::Course, course_sql),
+    ]
 }
 
 pub(crate) async fn admin_board(tx: &Transaction<'_>) -> Result<Value, Error> {

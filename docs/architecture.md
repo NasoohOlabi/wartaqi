@@ -1,6 +1,6 @@
 # Architecture and decisions
 
-React calls a same-origin Rust web service backed by Railway Postgres. Rust handles selected reads and Socket.IO. The on-demand Bun process owns the remaining API requests, including writes and Better Auth mutations. See the [runtime map and audit tasks](rust-architecture-audit.md) when changing an endpoint or the database representation. `app_accounts` maps authenticated identities to Administrator, Teacher or Student; `teachers`, `students`, `events`, `courses` and `course_enrollments` hold roster, ledger and course data. The internal `neon_auth` schema and some filenames retain their names for compatibility. See [roles](roles.md) and [Railway setup](railway-setup.md).
+React uses same-origin Better Auth sessions and a Rust API backed by Railway Postgres. `app_accounts` maps authenticated identities to Administrator, Teacher or Student. The `teachers`, `students`, `events`, `courses` and `course_enrollments` tables hold roster, ledger and course data. The internal `neon_auth` schema and some filenames retain their names for compatibility. Consult the [runtime map and audit tasks](rust-architecture-audit.md), [roles](roles.md) and [Railway setup](railway-setup.md).
 
 The server enforces the [role permissions](roles.md), grant expiry and current assignment on each request. Reassignment changes the staff scope of historical events while student access follows the linked student ID.
 
@@ -12,11 +12,19 @@ Attendance has three current statuses: **Present**, **Absent** and **Excused**. 
 
 `shared/ledger.ts` defines validated event payloads: student snapshots, attendance, notes and reversals. Corrections append a reversal referencing a preceding non-reversal event; originals remain in history. Duplicate reversals are harmless; forward references and reversal-of-reversal are invalid. Projection uses database sequence order. The latest surviving attendance for a student/enrollment/date wins; historical unscoped events use a separate student/date namespace. Enrollment IDs are bound to their student by a database foreign key and validated against the active assigned roster before insertion; reversing it can reveal an earlier status. Notes remain separate. Duplicate event IDs count once, with conflicting values flagged. The API serializes validated payload JSON without a transport version field. Strict snapshot validation fails closed on malformed records; projection counts invalid correction references and conflicting IDs.
 
+Migration 023 adds a reader for both attendance layouts while leaving existing payloads intact. Once every web instance uses this reader, migration 025 packs eligible rows by storing each student and enrollment ID once in its relational column. API reads, exact retry checks and backup exports reconstruct the original JSON. Legacy and irregular payloads keep their original representation. PostgreSQL returns space to the filesystem after a separate `VACUUM FULL` on `events`, which locks the table and requires temporary disk space. Measure the database and write-ahead log separately.
+
 ## Delivery
+
+Protected browser requests send the expected account and use the same-origin session cookie. The server checks both with each request. The browser renews an active session through the session endpoint, which can return a refreshed cookie.
+
+The Rust server can validate a repeat read of a notebook, administrator board or student attendance view without rebuilding the response. It checks the current role and uses a consistent PostgreSQL snapshot for the validator and response. The browser holds one conditional response per projection in memory for the active grant. A denial or grant change clears it. Responses remain private and excluded from the service worker.
+
+Administrator notebooks with more than 8,000 events can open a smaller view first. The session view carries the latest six recorded dates and the selected date’s exact mark versions. Summaries carry complete attendance and note counts for their scope, student pages carry that student's ledger, and History loads sequence-ordered pages of 100 records. A limited view is kept in memory. A quick connection can prepare the complete offline notebook in the background. The device continues to use any previously prepared full notebook when opening another view offline.
 
 `src/useLedger.ts` persists a batch before sending and blocks new submissions while delivery is uncertain. Pending operations take a browser-wide Web Lock and the original account lock for compatibility with older open tabs. Retries and discards read the current stored batch again under those locks. Corrupt or unavailable storage and unsupported locks fail closed. A retry reads first and removes already visible IDs. The API enforces unique IDs so a retry cannot create another event for the same ID. The server checks duplicate IDs against the stored actor, assignment, PostgreSQL timestamp and payload. This legacy batch requires explicit retry. Pending storage is private data; reconcile it before clearing. Form drafts are memory-only. Active views also subscribe to workspace changes and revalidate on reconnect.
 
-`bun run verify` checks the code and build; `bun run verify:ui` drives synthetic browser paths. Neither replaces live Railway verification. See the [verification skill](../.agents/skills/verify-halaqa/SKILL.md).
+`npm run verify` checks the code and build; `npm run verify:ui` drives synthetic browser paths. Neither replaces live Railway verification. See the [verification skill](../.agents/skills/verify-halaqa/SKILL.md).
 
 ### Offline teacher notebook
 

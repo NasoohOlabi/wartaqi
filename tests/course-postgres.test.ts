@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
 import { readFile } from 'node:fs/promises'
 import { Pool } from 'pg'
 import { createHandler } from '../functions/notebook-service'

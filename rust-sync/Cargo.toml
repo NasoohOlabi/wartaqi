@@ -6,8 +6,12 @@ edition = "2024"
 [dependencies]
 axum = "0.8"
 base64 = "0.22"
+chacha20poly1305 = "0.10"
 deadpool-postgres = "0.14"
 futures-util = "0.3"
+flate2 = "1"
+httpdate = "1"
+p521 = { version = "0.14", default-features = false, features = ["ecdsa"] }
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 ring = "0.17"
@@ -16,8 +20,10 @@ scrypt = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 socketioxide = "0.18"
-tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "net", "signal", "sync", "time"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time"] }
 tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
+tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.6", features = ["compression-gzip"] }
 unicode-normalization = "0.1"
 url = "2"
+wartaq-common = { path = "../rust-common" }

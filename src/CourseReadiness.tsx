@@ -9,17 +9,25 @@ export function CourseReadiness({
   enrollments,
   students,
   attendance,
+  recordedEnrollmentIds,
   onGrades,
 }: {
   course: Course
   enrollments: Enrollment[]
   students: NeonRosterStudent[]
   attendance: ReturnType<typeof projectEvents>['attendance']
+  recordedEnrollmentIds?: string[]
   onGrades: () => void
 }) {
   const { language } = useLanguage()
   const ar = language === 'ar'
-  const readiness = courseReadiness({ course, enrollments, students, attendance })
+  const readiness = courseReadiness({
+    course,
+    enrollments,
+    students,
+    attendance,
+    recordedEnrollmentIds,
+  })
   const number = new Intl.NumberFormat(language).format
   const groups = [
     {

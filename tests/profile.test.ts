@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest-runner'
 import { validProfileRequest, validProfileUpdate } from '../server/profile'
 
 describe('profile boundary', () => {

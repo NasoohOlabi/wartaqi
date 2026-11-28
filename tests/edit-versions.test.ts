@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, test } from 'vitest-runner'
 import { Pool } from 'pg'
 
 const databaseUrl = process.env.TEST_RAILWAY_DATABASE_URL

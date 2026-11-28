@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'bun:test'
+import { afterAll, expect, test } from 'vitest-runner'
 import { Pool } from 'pg'
 import { z } from 'zod'
 import { neonAdminBoardSchema } from '../shared/neon'
@@ -8,7 +8,7 @@ import { createIdentity } from './integration-identity'
 // Set only to a disposable database with the Railway and application migrations applied.
 const databaseUrl = process.env.TEST_RAILWAY_DATABASE_URL
 const integration = databaseUrl ? test : test.skip
-let server: ReturnType<typeof Bun.spawn> | undefined
+let server: Awaited<ReturnType<typeof startIntegrationServer>> | undefined
 let pool: Pool | undefined
 let userId = ''
 let adminId = ''
@@ -20,7 +20,7 @@ const enrollmentId = crypto.randomUUID()
 const password = 'synthetic-password-12345'
 
 afterAll(async () => {
-  server?.kill()
+  await server?.close()
   if (!pool) return
   await pool.query('DELETE FROM events WHERE student_id = $1', [studentId])
   if (userId) {
@@ -44,8 +44,8 @@ integration(
   async () => {
     if (!databaseUrl) throw new Error('Disposable database is required')
     pool = new Pool({ connectionString: databaseUrl })
-    const { origin, child } = await startIntegrationServer(databaseUrl)
-    server = child
+    server = await startIntegrationServer(databaseUrl)
+    const { origin } = server
     const phone = '+12025550205'
     userId = await createIdentity(pool, 'Synthetic user', password)
     await pool.query(
@@ -63,8 +63,34 @@ integration(
     })
     expect(signUp.status).toBe(200)
     const cookie = signUp.headers.get('set-cookie')?.split(';')[0]
-    await pool.query('DELETE FROM app_accounts WHERE auth_user_id = $1', [userId])
     const headers = { cookie: cookie ?? '', 'x-user-id': userId }
+    const aged = await pool.query(
+      `UPDATE neon_auth.session SET "expiresAt" = now() + interval '5 days'
+       WHERE "userId" = $1 RETURNING "expiresAt"`,
+      [userId],
+    )
+    expect(aged.rowCount).toBe(1)
+    expect((await fetch(`${origin}/api/me`, { headers })).status).toBe(200)
+    const unchanged = await pool.query(
+      'SELECT "expiresAt" FROM neon_auth.session WHERE "userId" = $1',
+      [userId],
+    )
+    expect(unchanged.rows[0].expiresAt).toEqual(aged.rows[0].expiresAt)
+    const renewed = await fetch(`${origin}/api/auth/get-session`, {
+      headers: { cookie: cookie ?? '' },
+    })
+    expect(renewed.status).toBe(200)
+    expect(
+      renewed.headers
+        .getSetCookie()
+        .some((value) => value.startsWith('better-auth.session_token=')),
+    ).toBe(true)
+    const refreshed = await pool.query(
+      'SELECT "expiresAt" FROM neon_auth.session WHERE "userId" = $1',
+      [userId],
+    )
+    expect(refreshed.rows[0].expiresAt.getTime()).toBeGreaterThan(aged.rows[0].expiresAt.getTime())
+    await pool.query('DELETE FROM app_accounts WHERE auth_user_id = $1', [userId])
     expect((await fetch(`${origin}/api/me`, { headers })).status).toBe(403)
     expect(
       (

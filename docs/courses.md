@@ -58,7 +58,7 @@ Grades saved on this device wait for a connection. After sign-out, the same admi
 
 Closing from Courses or Grades advances the current level for active students with an active enrollment, a saved effective Pass and a whole-number course level. A student who enters at level 1 and passes advances to level 2, while the completed course still shows level 1 and their next new enrollment records level 2. A Fail or pending result leaves the current level as is. The result uses saved scores, projected attendance and the latest saved override. Higher current levels and custom labels are preserved. Retrying closure, or reopening and closing again with the same course level, never adds a second level. Previously closed courses receive no automatic backfill.
 
-Apply `bun run db:migrate` through `neon/006-closed-courses.sql` before deployment. Existing and new courses default to open. Version 5 backups preserve course status; older backups restore courses as open and cannot compare successfully with closed courses. Test against a disposable database first.
+Apply `npm run db:migrate` through `neon/006-closed-courses.sql` before deployment. Existing and new courses default to open. Version 5 backups preserve course status; older backups restore courses as open and cannot compare successfully with closed courses. Test against a disposable database first.
 
 Manage students records **Handbook received** independently for each existing enrollment. It defaults to false and survives withdrawal, re-enrollment, level and grade changes.
 

@@ -1,4 +1,4 @@
-use crate::{access, credentials, ledger, session_identity};
+use crate::{access, credentials, ledger, session_identity, writes::Error};
 use axum::{
     Json, Router,
     body::to_bytes,
@@ -189,29 +189,48 @@ async fn save(app: &App, request: Request) -> Response {
         Ok(None) => return error(StatusCode::FORBIDDEN, "Forbidden"),
         Err(_) => return unavailable(),
     }
-    let account = match tx.query_opt("SELECT invitation_username IS NOT NULL OR invitation_request_id IS NOT NULL, invitation_requires_setup, invitation_phone FROM app_accounts WHERE auth_user_id = $1", &[&user_id]).await { Ok(Some(row)) => row, Ok(None) => return error(StatusCode::FORBIDDEN, "Forbidden"), Err(_) => return unavailable() };
-    if !account.get::<_, bool>(0) {
-        return error(StatusCode::FORBIDDEN, "Forbidden");
+    let value = body
+        .map_err(|_| Error::TooLarge)
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).map_err(|_| Error::Invalid));
+    let result = match save_with_access(&tx, &user_id, Some(&session_id), value).await {
+        Ok(result) => result,
+        Err(Error::Invalid) => return error(StatusCode::BAD_REQUEST, "Invalid request"),
+        Err(Error::Forbidden) => return error(StatusCode::FORBIDDEN, "Forbidden"),
+        Err(Error::TooLarge) => return error(StatusCode::PAYLOAD_TOO_LARGE, "Request too large"),
+        Err(_) => return unavailable(),
+    };
+    if tx.commit().await.is_err() {
+        return unavailable();
     }
+    response(StatusCode::OK, result)
+}
+
+/// The caller holds the auth mutation and application account locks.
+pub(crate) async fn save_with_access(
+    tx: &tokio_postgres::Transaction<'_>,
+    user_id: &str,
+    session_id: Option<&str>,
+    value: Result<Value, Error>,
+) -> Result<Value, Error> {
+    let account = tx.query_opt(
+        "SELECT invitation_username IS NOT NULL OR invitation_request_id IS NOT NULL, invitation_requires_setup, invitation_phone FROM app_accounts WHERE auth_user_id = $1",
+        &[&user_id],
+    ).await?.ok_or(Error::Forbidden)?;
     let setup: bool = account.get(1);
+    if !account.get::<_, bool>(0) || (setup && session_id.is_none()) {
+        return Err(Error::Forbidden);
+    }
     let previous_phone: Option<String> = account.get(2);
-    let bytes = match body {
-        Ok(bytes) => bytes,
-        Err(_) => return error(StatusCode::PAYLOAD_TOO_LARGE, "Request too large"),
-    };
-    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
-        return error(StatusCode::BAD_REQUEST, "Invalid request");
-    };
-    let Some(data) = input(&value, setup) else {
-        return error(StatusCode::BAD_REQUEST, "Invalid request");
-    };
-    let row = match tx.query_opt("SELECT password FROM neon_auth.account WHERE \"userId\"::text = $1 AND \"providerId\" = 'credential' LIMIT 1 FOR UPDATE", &[&user_id]).await { Ok(Some(row)) => row, Ok(None) => return error(StatusCode::BAD_REQUEST, "Invalid request"), Err(_) => return unavailable() };
-    let Some(stored) = row.get::<_, Option<String>>(0) else {
-        return error(StatusCode::BAD_REQUEST, "Invalid request");
-    };
+    let value = value?;
+    let data = input(&value, setup).ok_or(Error::Invalid)?;
+    let row = tx.query_opt(
+        r#"SELECT password FROM neon_auth.account WHERE "userId"::text = $1 AND "providerId" = 'credential' LIMIT 1 FOR UPDATE"#,
+        &[&user_id],
+    ).await?.ok_or(Error::Invalid)?;
+    let stored = row.get::<_, Option<String>>(0).ok_or(Error::Invalid)?;
     let current = data.current.map(str::to_owned);
     let new = data.new.map(str::to_owned);
-    let Ok(result) = tokio::task::spawn_blocking(move || {
+    let hash = tokio::task::spawn_blocking(move || {
         if current
             .as_deref()
             .is_some_and(|p| !credentials::verify_password(p, &stored))
@@ -219,34 +238,25 @@ async fn save(app: &App, request: Request) -> Response {
                 .as_deref()
                 .is_some_and(|p| credentials::verify_password(p, &stored))
         {
-            return Ok(None);
+            return Err(Error::Invalid);
         }
-        match new {
-            Some(p) => credentials::hash_password(&p).map(Some),
-            None => Ok(Some(String::new())),
-        }
+        new.map(|password| {
+            credentials::hash_password(&password).map_err(|error| Error::Other(error.into()))
+        })
+        .transpose()
     })
     .await
-    else {
-        return unavailable();
-    };
-    let hash = match result {
-        Ok(Some(hash)) => hash,
-        Ok(None) => return error(StatusCode::BAD_REQUEST, "Invalid request"),
-        Err(_) => return unavailable(),
-    };
+    .map_err(|error| Error::Other(error.into()))??;
     let phone = data.phone.or(previous_phone.as_deref());
-    if tx.execute("UPDATE app_accounts SET invitation_phone = $2, invitation_requires_setup = false WHERE auth_user_id = $1", &[&user_id, &phone]).await.is_err() { return unavailable() }
-    if data.new.is_some() {
-        if tx.execute("UPDATE neon_auth.account SET password = $2, \"updatedAt\" = now() WHERE \"userId\"::text = $1 AND \"providerId\" = 'credential'", &[&user_id, &hash]).await.is_err() { return unavailable() }
-        if tx.execute("DELETE FROM neon_auth.session WHERE \"userId\"::text = $1 AND id IS DISTINCT FROM $2::text::uuid", &[&user_id, &session_id]).await.is_err() { return unavailable() }
+    tx.execute("UPDATE app_accounts SET invitation_phone = $2, invitation_requires_setup = false WHERE auth_user_id = $1", &[&user_id, &phone]).await?;
+    let rotated = hash.is_some();
+    if let Some(hash) = hash {
+        tx.execute(r#"UPDATE neon_auth.account SET password = $2, "updatedAt" = now() WHERE "userId"::text = $1 AND "providerId" = 'credential'"#, &[&user_id, &hash]).await?;
+        tx.execute(r#"DELETE FROM neon_auth.session WHERE "userId"::text = $1 AND id IS DISTINCT FROM $2::text::uuid"#, &[&user_id, &session_id]).await?;
         let suffix = format!(":{user_id}");
-        if tx.execute("DELETE FROM neon_auth.verification WHERE starts_with(identifier, $1) AND right(identifier, length($2)) = $2", &[&"wartaq:telegram:", &suffix]).await.is_err() { return unavailable() }
+        tx.execute("DELETE FROM neon_auth.verification WHERE starts_with(identifier, $1) AND right(identifier, length($2)) = $2", &[&"wartaq:telegram:", &suffix]).await?;
     }
-    if tx.commit().await.is_err() {
-        return unavailable();
-    }
-    response(StatusCode::OK, json!({"saved":true,"sessionRevoked":false}))
+    Ok(json!({"saved":true,"sessionRevoked":rotated && session_id.is_none()}))
 }
 #[cfg(test)]
 mod tests {

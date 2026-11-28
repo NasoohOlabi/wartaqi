@@ -18,15 +18,17 @@ Standard releases use the existing GitHub connection and deployment records. Thi
 
 During the v0.1.0 development release, all changes deploy from `main`. Nightly builds and deployments remain disabled until the owner explicitly requests them. The production project contains the web application, Postgres and the independently deployed [Telegram worker](telegram.md).
 
-`Dockerfile` builds the React assets, the Rust web executable and the frozen Bun production dependencies. Its allowlisted context excludes private inputs and Git history. Configure Docker builds, health path `/health`, and port 3000 on the Railway service. Health verifies database tables. Set server-only `DATABASE_URL` to the private Railway Postgres connection, `BETTER_AUTH_SECRET` to a random value of at least 32 characters, `BETTER_AUTH_URL` to the public HTTPS origin, and `PORT=3000`. No browser endpoint variables are needed. Deploy verified `main` only. Legacy Pages publishing is retired.
+`Dockerfile` builds the React assets, and the Rust web executable. The final image contains the executable and web assets. Its allowlisted context excludes private inputs and Git history. Configure Docker builds, health path `/health`, and port 3000 on the Railway service. Health verifies database tables. Set server-only `DATABASE_URL` to the private Railway Postgres connection, `BETTER_AUTH_SECRET` to a random value of at least 32 characters, `BETTER_AUTH_URL` to the public HTTPS origin, and `PORT=3000`. No browser endpoint variables are needed. Deploy verified `main` only. Legacy Pages publishing is retired.
 
 ### Web runtime and rollback
 
-Use the Dockerfile start command on the existing web service. Rust serves assets, database readiness, Socket.IO and the GET routes for sessions, current accounts, staff notebooks, administration and student attendance. Other API requests, including grade saves, authentication changes and MCP, start a Bun process on loopback inside the same container. It exits after 90 seconds without an active request. Postgres, the public origin and the independently deployed Bun Telegram worker keep their existing configuration.
+The local Docker image serves assets, readiness, Socket.IO, browser authentication, notebook reads and writes, and account administration in Rust. The same executable serves OAuth discovery, authorization, token operations, MCP and the private Telegram APIs. The PostgreSQL schema, public origin and session format stay compatible.
 
-Record the successful production web deployment ID before switching. To roll back, use Railway's rollback action on that web deployment. Keep the existing database, signing secrets and Telegram volume. Verify the deployed SHA in GitHub, open the homepage, check `/health`, the anonymous session and OAuth resource metadata. Compare per-service Railway memory and CPU over equivalent quiet windows and account for the 90-second worker lifetime. The local container benchmark in [the migration plan](rust-backend-pilot.md) covers a different workload.
+Record the successful production web deployment ID before switching. Apply `neon/023-compact-attendance.sql` and `neon/024-ledger-invalidation.sql` on the private database in one transaction before switching. The current deployment still sees the original attendance JSON during the rollout. Verify the new deployed SHA, removal of the prior web deployment, the homepage, `/health`, the anonymous session and OAuth resource metadata. Then apply `neon/025-enable-attendance-packing.sql` in a separate transaction and recheck health. Run the full migration set directly on disposable or empty databases.
 
-Apply the ordered `railway/*.sql` authentication migrations, then ordered `neon/*.sql` application migrations to the new database. These are repeatable; preserve the Neon source data and record any access pause separately. Run `bun run verify:release` before stable promotion. The service's main deployment trigger has **Wait for CI** enabled.
+Before rolling back to an image from before migration 023, drop the `wartaq_pack_event` trigger and unpack the packed rows in a single transaction. Use `UPDATE events SET payload = wartaq_event_payload(payload, payload_packed, student_id, enrollment_id), payload_packed = false WHERE payload_packed`. The current image can read either layout while this runs. Use Railway's rollback action once this transaction commits, then check health and the deployed SHA. Preserve the database, signing secrets and Telegram volume.
+
+Apply the ordered `railway/*.sql` authentication migrations, then ordered `neon/*.sql` application migrations to the new database. These are repeatable; preserve the Neon source data and record any access pause separately. Run `npm run verify:release` before stable promotion. The service's main deployment trigger has **Wait for CI** enabled.
 
 Apply `neon/022-retire-website-telemetry.sql` over the private PostgreSQL connection after the exact web deployment with retired website telemetry passes `/health`. Use `psql` with `ON_ERROR_STOP=1` and a single transaction. Verify that both retired tables are absent and `/health` still passes. Reapply migration 022 after restoring an older full archive. [Website telemetry retirement](website-diagnostics.md) covers compatibility and rollback.
 
@@ -38,7 +40,7 @@ The separate-name student editor requires `neon/004-student-names.sql` before de
 
 The searchable course-membership workflow additionally requires `neon/005-active-enrollments.sql` before deployment. It adds `course_enrollments.active` with an existing-row default of true; the health check requires this column. Membership switches preserve the enrollment ID, attendance and scores. Version 4 backups preserve active/inactive membership; versions 1–3 still import into a compatible empty target. Legacy comparisons refuse to hide inactive target enrollments, and partial membership schemas fail closed.
 
-For local authenticated use, set private server variables against a disposable database and run `bun run build`, then `bun run server/index.ts`. Open port 3000 directly so Auth and notebook share the configured origin. Plain Vite preview supports the public shell; authenticated operation needs Bun.
+For local authenticated use, run the Docker lab against a disposable database, or set the private server variables and `ASSET_DIR=dist`, then run `npm run build` and `cargo run --release --manifest-path rust-sync/Cargo.toml`. Open port 3000 directly so Auth and notebook share the configured origin. Plain Vite preview supports the public shell.
 
 ## Transfer and recovery
 
@@ -51,9 +53,9 @@ The pushed code backup is `backup/neon-current-2026-11-15` at `77cedae`. The dat
 The private transfer CLI uses source `DATABASE_URL_UNPOOLED` for export and destination `MIGRATION_TARGET_DATABASE_URL` for import/compare:
 
 ```powershell
-bun scripts/railway-transfer.ts export .local/neon-backup.json
-bun scripts/railway-transfer.ts import .local/neon-backup.json
-bun scripts/railway-transfer.ts compare .local/neon-backup.json
+node --import tsx scripts/railway-transfer.ts export .local/neon-backup.json
+node --import tsx scripts/railway-transfer.ts import .local/neon-backup.json
+node --import tsx scripts/railway-transfer.ts compare .local/neon-backup.json
 ```
 
 Event sequences are exported as decimal strings to retain PostgreSQL bigint precision. The importer accepts older numeric sequences in the JavaScript safe-integer range and rejects ambiguous values. It locks the destination tables before checking that they are empty.
@@ -87,14 +89,14 @@ Set `DATABASE_URL_UNPOOLED` to the intended Railway database. After migrating th
 To migrate or recover an existing account, use `account phone` with an ignored private JSON file containing `authUserId`, `phone` and `phoneConfirmed: true`. For an unmigrated account, the command also accepts its former `email` in place of `authUserId`. An array of mappings applies in one transaction. The command preserves the account, password and role, replaces its former identifiers with an internal Auth address, and signs out existing sessions when the phone changes. Confirm ownership before using a real number. Keep private inputs out of Git.
 
 ```powershell
-bun run db:migrate
-bun run neon:admin account bootstrap .local/administrator.json
-bun run neon:admin account phone .local/account-phone.json
-bun run neon:admin account grant .local/account-role.json
-bun run neon:admin account disable <auth-user-id>
-bun run neon:admin teacher grant .local/teacher.json
-bun run neon:admin students upsert .local/students.json
-bun run neon:admin teacher disable <teacher-uuid>
+npm run db:migrate
+npm run neon:admin account bootstrap .local/administrator.json
+npm run neon:admin account phone .local/account-phone.json
+npm run neon:admin account grant .local/account-role.json
+npm run neon:admin account disable <auth-user-id>
+npm run neon:admin teacher grant .local/teacher.json
+npm run neon:admin students upsert .local/students.json
+npm run neon:admin teacher disable <teacher-uuid>
 ```
 
 A Teacher input contains `id`, an existing `authUserId`, `name`, and optional ISO `expiresAt`. Existing Teacher accounts use the role's standard permissions regardless of the stored legacy access mode. A Student grant uses `role: "student"`, an `authUserId`, an existing `studentId`, and optional `expiresAt`. A roster input is an array of objects with `id`, `teacherId`, `name`, `group`, and `active`. Preserve stable IDs and keep real identities and records in private files. The browser Settings screen manages other accounts and roster assignments. The acting Administrator manages their own contact details from Profile settings and their sign-in phone through the private CLI.
@@ -117,6 +119,6 @@ For the historical workbook, prepare a new private plan by checking its student 
 
 ```powershell
 python scripts/prepare-enrollment-teachers.py <workbook.xlsx> <historical-plan.json> <before-import.json> <validated-plan.json>
-bun scripts/import-enrollment-teachers.ts dry-run <validated-plan.json>
-bun scripts/import-enrollment-teachers.ts apply <validated-plan.json>
+node --import tsx scripts/import-enrollment-teachers.ts dry-run <validated-plan.json>
+node --import tsx scripts/import-enrollment-teachers.ts apply <validated-plan.json>
 ```

@@ -20,7 +20,10 @@ pub(crate) async fn health(pool: &Pool) -> Response {
         if db.query_opt("SELECT 1 FROM pg_index i JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0] WHERE i.indexrelid = to_regclass('public.app_accounts_verified_phone_idx') AND i.indrelid = 'public.app_accounts'::regclass AND a.attname = 'verified_phone' AND i.indisunique AND i.indisvalid AND i.indisready AND i.indnkeyatts = 1 AND i.indpred IS NULL", &[]).await?.is_none() { return Ok(false); }
         let sync: i32 = db.query_one("SELECT count(*)::int FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE c.relnamespace = 'public'::regnamespace AND t.tgname = 'notify_workspace_changed' AND t.tgenabled IN ('O','A') AND c.relname IN ('app_accounts','teachers','students','courses','course_enrollments','events') AND to_regclass('public.grade_sync_receipts') IS NOT NULL", &[]).await?.get(0);
         let versions: i32 = db.query_one("SELECT count(*)::int FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid WHERE c.relnamespace = 'public'::regnamespace AND t.tgname = 'wartaq_edit_version' AND t.tgenabled IN ('O','A') AND c.relname IN ('students','courses','course_enrollments')", &[]).await?.get(0);
-        db.query("SELECT edit_time FROM public.events LIMIT 0", &[])
+        db.query(
+            "SELECT edit_time, wartaq_event_payload(payload, payload_packed, student_id, enrollment_id) FROM public.events LIMIT 0",
+            &[],
+        )
             .await?;
         Ok(sync == 6 && versions == 3)
     }
@@ -48,11 +51,18 @@ pub(crate) async fn maintain(pool: Pool) {
                 &[],
             )
             .await?;
+            // Leave time for the last second of a proof's accepted clock window.
+            db.execute(
+                r#"DELETE FROM neon_auth.verification WHERE starts_with(identifier, 'dpop-proof:')
+                   AND "expiresAt" < now() - interval '1 minute'"#,
+                &[],
+            )
+            .await?;
             Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
         }
         .await;
         if result.is_err() {
-            eprintln!("Telegram conversation cleanup failed");
+            eprintln!("Database cleanup failed");
         }
     }
 }

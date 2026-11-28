@@ -10,19 +10,19 @@ use axum::{
 };
 use deadpool_postgres::{Manager, Pool, Runtime};
 use futures_util::StreamExt;
-use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_postgres::NoTls;
-use url::Url;
 
 use crate::{
-    access, auth_browser, auth_get_session, auth_invitation_profile, auth_profile, catalog,
-    catalog_legacy, grade_sync, ledger, ledger_writes, roster_admin, session_identity, staff_reads,
+    access, admin_accounts, auth_browser, auth_get_session, auth_invitation_profile, auth_profile,
+    catalog, catalog_legacy, grade_sync, ledger, ledger_writes, notebook_focus, notebook_history,
+    notebook_student, notebook_summary, roster_admin, session_identity, staff_reads,
     student_writes, telegram_conversations, telegram_student, writes::Error,
 };
 
 const WRITE_PATHS: &[&str] = &[
     "/api/events",
+    "/api/events/correct",
     "/api/attendance/sync",
     "/api/student/update",
     "/api/student/sync",
@@ -36,6 +36,7 @@ const WRITE_PATHS: &[&str] = &[
     "/api/admin/enrollments/handbook",
     "/api/admin/enrollments/grades",
     "/api/admin/enrollments/membership",
+    "/api/admin/enrollments/save",
     "/api/admin/enrollments/assignment",
 ];
 const REPLAY_PATH: &str = "/api/diagnostics/replay";
@@ -46,35 +47,24 @@ const TELEGRAM_INGEST_PATH: &str = "/api/telegram/conversations";
 const TELEGRAM_CONVERSATIONS_PATH: &str = "/api/diagnostics/telegram/conversations";
 const TELEGRAM_TURNS_PATH: &str = "/api/diagnostics/telegram/turns";
 
-pub(crate) fn retired_website_path(path: &str) -> bool {
-    matches!(
-        path,
-        REPLAY_PATH | RETIRED_DIAGNOSTICS_PATH | JOURNEYS_PATH | DIAGNOSTIC_EVENTS_PATH
-    )
-}
-
 #[derive(Clone)]
 pub(crate) struct Api {
     pool: Pool,
     origin: HeaderValue,
-    sessions: Sessions,
+    secret: Arc<str>,
+    secure: bool,
     telegram_worker_secret: Option<Arc<str>>,
-}
-
-#[derive(Clone)]
-enum Sessions {
-    Native { secret: Arc<str>, secure: bool },
-    Bun { url: Url, http: reqwest::Client },
 }
 
 pub(crate) fn create(
     database_url: &str,
-    origin: String,
-    bun_origin: Option<&Url>,
-    http: reqwest::Client,
-    secret: Option<String>,
+    origin: &str,
+    secret: Arc<str>,
     telegram_worker_secret: Option<String>,
 ) -> Result<Api, Box<dyn std::error::Error>> {
+    if secret.encode_utf16().count() < 32 {
+        return Err("BETTER_AUTH_SECRET must contain at least 32 characters".into());
+    }
     let mut db: tokio_postgres::Config = database_url.parse()?;
     db.connect_timeout(Duration::from_secs(10))
         .application_name("wartaq-rust-api")
@@ -84,23 +74,11 @@ pub(crate) fn create(
         .wait_timeout(Some(Duration::from_secs(10)))
         .runtime(Runtime::Tokio1)
         .build()?;
-    let sessions = match secret {
-        Some(secret) if secret.encode_utf16().count() >= 32 => Sessions::Native {
-            secret: secret.into(),
-            secure: origin.starts_with("https://"),
-        },
-        Some(_) => return Err("BETTER_AUTH_SECRET must contain at least 32 characters".into()),
-        None => Sessions::Bun {
-            url: bun_origin
-                .ok_or("BUN_ORIGIN is required without BETTER_AUTH_SECRET")?
-                .join("/api/auth/get-session")?,
-            http,
-        },
-    };
     Ok(Api {
         pool,
         origin: origin.parse()?,
-        sessions,
+        secret,
+        secure: origin.starts_with("https://"),
         telegram_worker_secret: telegram_worker_secret.map(Into::into),
     })
 }
@@ -123,36 +101,31 @@ impl Api {
             .route(TELEGRAM_CONVERSATIONS_PATH, any(handle))
             .route(TELEGRAM_TURNS_PATH, any(handle))
             .route("/api/telegram/student", any(telegram_student_request))
-            .route(TELEGRAM_INGEST_PATH, any(telegram_ingest));
-        if matches!(self.sessions, Sessions::Native { .. }) {
-            router = router.route("/api/auth/get-session", get(current_session));
-        }
-        for path in WRITE_PATHS {
+            .route(TELEGRAM_INGEST_PATH, any(telegram_ingest))
+            .route("/api/auth/get-session", get(current_session));
+        for path in WRITE_PATHS.iter().chain(admin_accounts::PATHS) {
             router = router.route(path, any(handle));
         }
-        let router = router.with_state(self.clone());
-        match &self.sessions {
-            Sessions::Native { secret, secure } => router
-                .merge(auth_browser::router(
-                    self.pool.clone(),
-                    self.origin.clone(),
-                    secret.clone(),
-                    *secure,
-                ))
-                .merge(auth_profile::router(
-                    self.pool.clone(),
-                    self.origin.clone(),
-                    secret.clone(),
-                    *secure,
-                ))
-                .merge(auth_invitation_profile::router(
-                    self.pool.clone(),
-                    self.origin.clone(),
-                    secret.clone(),
-                    *secure,
-                )),
-            Sessions::Bun { .. } => router,
-        }
+        router
+            .with_state(self.clone())
+            .merge(auth_browser::router(
+                self.pool.clone(),
+                self.origin.clone(),
+                self.secret.clone(),
+                self.secure,
+            ))
+            .merge(auth_profile::router(
+                self.pool.clone(),
+                self.origin.clone(),
+                self.secret.clone(),
+                self.secure,
+            ))
+            .merge(auth_invitation_profile::router(
+                self.pool.clone(),
+                self.origin.clone(),
+                self.secret.clone(),
+                self.secure,
+            ))
     }
 
     pub(crate) async fn authorize_socket(&self, headers: &HeaderMap, expected: &str) -> bool {
@@ -173,9 +146,6 @@ impl Api {
 }
 
 async fn current_session(State(state): State<Api>, request: Request) -> Response {
-    let Sessions::Native { ref secret, secure } = state.sessions else {
-        return error(StatusCode::NOT_FOUND, "Not found");
-    };
     let disable_refresh =
         url::form_urlencoded::parse(request.uri().query().unwrap_or("").as_bytes())
             .any(|(key, value)| key == "disableRefresh" && !value.is_empty());
@@ -184,8 +154,8 @@ async fn current_session(State(state): State<Api>, request: Request) -> Response
             auth_get_session::get_session(
                 &client,
                 request.headers(),
-                secret,
-                secure,
+                &state.secret,
+                state.secure,
                 disable_refresh,
             )
             .await
@@ -194,43 +164,14 @@ async fn current_session(State(state): State<Api>, request: Request) -> Response
     }
 }
 
-#[derive(Deserialize)]
-struct Session {
-    user: User,
-}
-
-#[derive(Deserialize)]
-struct User {
-    id: String,
-}
-
 async fn subject(
     state: &Api,
     db: &tokio_postgres::Client,
     headers: &HeaderMap,
     expected: &str,
 ) -> Option<String> {
-    let user_id = match &state.sessions {
-        Sessions::Native { secret, secure } => {
-            let token = session_identity::token(headers, secret, *secure)?;
-            session_identity::user_id(db, &token).await.ok()??
-        }
-        Sessions::Bun { url, http } => {
-            let cookie = headers.get(header::COOKIE)?;
-            let session: Session = http
-                .get(url.clone())
-                .header(header::COOKIE, cookie)
-                .send()
-                .await
-                .ok()?
-                .error_for_status()
-                .ok()?
-                .json()
-                .await
-                .ok()?;
-            session.user.id
-        }
-    };
+    let token = session_identity::token(headers, &state.secret, state.secure)?;
+    let user_id = session_identity::user_id(db, &token).await.ok()??;
     (user_id == expected && !expected.is_empty()).then_some(user_id)
 }
 
@@ -301,7 +242,9 @@ async fn handle(State(state): State<Api>, request: Request) -> Response {
             "/api/notebook" => Route::Notebook,
             "/api/student/attendance" => Route::StudentAttendance,
             "/api/admin" => Route::Admin,
-            path if WRITE_PATHS.contains(&path) => Route::Write,
+            path if WRITE_PATHS.contains(&path) || admin_accounts::PATHS.contains(&path) => {
+                Route::Write
+            }
             _ => return error(StatusCode::NOT_FOUND, "Not found"),
         };
         let required = if matches!(route, Route::Write) {
@@ -324,7 +267,7 @@ async fn handle(State(state): State<Api>, request: Request) -> Response {
             .insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, state.origin);
         response
             .headers_mut()
-            .insert(header::VARY, HeaderValue::from_static("Origin"));
+            .append(header::VARY, HeaderValue::from_static("Origin"));
     }
     response
 }
@@ -412,6 +355,150 @@ async fn read_body(body: Body) -> Result<Value, Error> {
     serde_json::from_str(&String::from_utf8_lossy(&bytes)).map_err(|_| Error::Invalid)
 }
 
+fn accepts_gzip(headers: &HeaderMap) -> bool {
+    let mut gzip = None;
+    let mut wildcard = None;
+    for value in headers.get_all(header::ACCEPT_ENCODING) {
+        let Ok(value) = value.to_str() else { continue };
+        for item in value.split(',') {
+            let mut parts = item.trim().split(';');
+            let encoding = parts.next().unwrap_or("").trim();
+            let mut quality = 1.0_f32;
+            for parameter in parts {
+                let Some((name, value)) = parameter.trim().split_once('=') else {
+                    quality = 0.0;
+                    break;
+                };
+                if !name.trim().eq_ignore_ascii_case("q") {
+                    quality = 0.0;
+                    break;
+                }
+                quality = value
+                    .trim()
+                    .parse::<f32>()
+                    .ok()
+                    .filter(|v| (0.0..=1.0).contains(v))
+                    .unwrap_or(0.0);
+            }
+            if encoding.eq_ignore_ascii_case("gzip") {
+                gzip = Some(quality);
+            } else if encoding == "*" {
+                wildcard = Some(quality);
+            }
+        }
+    }
+    gzip.or(wildcard).unwrap_or(0.0) > 0.0
+}
+
+async fn notebook_slice(
+    tx: &tokio_postgres::Transaction<'_>,
+    grant: &access::Grant,
+    query: &str,
+) -> Result<Option<staff_reads::NotebookSlice>, Error> {
+    let mut view = None;
+    let mut date = None;
+    let mut course = None;
+    let mut student = None;
+    let mut before = None;
+    for (name, value) in url::form_urlencoded::parse(query.as_bytes()) {
+        match name.as_ref() {
+            "focusView" if view.is_none() => view = Some(value),
+            "focusDate" if date.is_none() && ledger::date(&value) => date = Some(value),
+            "focusCourse" if course.is_none() && ledger::valid_uuid(&value) => course = Some(value),
+            "focusStudent" if student.is_none() && ledger::valid_uuid(&value) => {
+                student = Some(value)
+            }
+            "focusBefore" if before.is_none() => {
+                before = Some(
+                    value
+                        .parse::<i64>()
+                        .ok()
+                        .filter(|cursor| *cursor > 0)
+                        .ok_or(Error::Invalid)?,
+                )
+            }
+            "focusView" | "focusDate" | "focusCourse" | "focusStudent" | "focusBefore" => {
+                return Err(Error::Invalid);
+            }
+            _ => {}
+        }
+    }
+    let Some(view) = view else {
+        return if date.is_none() && course.is_none() && student.is_none() && before.is_none() {
+            Ok(None)
+        } else {
+            Err(Error::Invalid)
+        };
+    };
+    enum Scope<'a> {
+        Session(&'a str, Option<&'a str>),
+        Summary(Option<&'a str>, bool),
+        Student(&'a str),
+        Catalog,
+        History(Option<&'a str>, Option<&'a str>, Option<i64>),
+    }
+    let scope = match (
+        view.as_ref(),
+        date.as_deref(),
+        course.as_deref(),
+        student.as_deref(),
+        before,
+    ) {
+        ("session", Some(date), course, None, None) => Scope::Session(date, course),
+        ("summary", None, course, None, None) => Scope::Summary(course, false),
+        ("register", None, None, None, None) => Scope::Summary(None, true),
+        ("student", None, None, Some(student), None) => Scope::Student(student),
+        ("catalog", None, None, None, None) => Scope::Catalog,
+        ("history", None, course, student, before) => Scope::History(course, student, before),
+        _ => return Err(Error::Invalid),
+    };
+    if !grant.is_admin()
+        || !tx
+            .query_one(
+                "SELECT EXISTS (SELECT 1 FROM events OFFSET 8000 LIMIT 1)",
+                &[],
+            )
+            .await?
+            .get::<_, bool>(0)
+    {
+        return Ok(None);
+    }
+    let (events, focus) = match scope {
+        Scope::Session(date, course) => {
+            let focused = notebook_focus::events(tx, grant, date, course)
+                .await
+                .map_err(Error::Other)?;
+            (
+                focused.events,
+                json!({"kind":"session","recordedEnrollmentIds":focused.recorded_enrollment_ids}),
+            )
+        }
+        Scope::Summary(course, all_courses) => {
+            let summary = notebook_summary::summary(tx, grant, course, all_courses)
+                .await
+                .map_err(Error::Other)?;
+            (Vec::new(), json!({"kind":view.as_ref(),"summary":summary}))
+        }
+        Scope::Student(student) => {
+            let events = notebook_student::events(tx, grant, student)
+                .await
+                .map_err(Error::Other)?;
+            (events, json!({"kind":"student"}))
+        }
+        Scope::Catalog => (Vec::new(), json!({"kind":"catalog"})),
+        Scope::History(course, student, before) => {
+            let page = notebook_history::history(tx, grant, course, student, before)
+                .await
+                .map_err(Error::Other)?;
+            (
+                page.events,
+                json!({"kind":"history","reversedIds":page.reversed_ids,"nextBefore":page.next_before}),
+            )
+        }
+    };
+    Ok(Some(staff_reads::NotebookSlice { events, focus }))
+}
+
 async fn authorized(
     state: &Api,
     parts: &Parts,
@@ -439,7 +526,29 @@ async fn authorized(
         };
         return Ok(error(StatusCode::UNAUTHORIZED, message));
     };
-    let tx = client.transaction().await?;
+    let conditional_read = matches!(
+        route,
+        Route::Me | Route::Notebook | Route::Admin | Route::StudentAttendance
+    );
+    let tx = if conditional_read {
+        client
+            .build_transaction()
+            .isolation_level(tokio_postgres::IsolationLevel::RepeatableRead)
+            .read_only(true)
+            .start()
+            .await?
+    } else {
+        client.transaction().await?
+    };
+    if admin_accounts::PATHS.contains(&path) {
+        admin_accounts::lock_auth(&tx, path).await?;
+        let Some(token) = session_identity::token(headers, &state.secret, state.secure) else {
+            return Ok(error(StatusCode::UNAUTHORIZED, "Unauthorized"));
+        };
+        if session_identity::user_id(&*tx, &token).await?.as_deref() != Some(&subject) {
+            return Ok(error(StatusCode::UNAUTHORIZED, "Unauthorized"));
+        }
+    }
     if headers.contains_key("x-edit-time") || headers.contains_key("x-edit-id") {
         let field = |name| {
             headers
@@ -464,8 +573,43 @@ async fn authorized(
         }
         tx.query_one("SELECT set_config('wartaq.edit_time', $1, true), set_config('wartaq.edit_id', $2, true)", &[&time, &id]).await?;
     }
-    let Some(grant) = access::load(&tx, &subject).await? else {
+    let Some(grant) = access::load_with_lock(&tx, &subject, !conditional_read).await? else {
         return Ok(error(StatusCode::FORBIDDEN, "Forbidden"));
+    };
+    let allowed = !grant.requires_setup()
+        && match route {
+            Route::Notebook => !grant.is_student() && grant.can_read(),
+            Route::Admin => grant.is_admin() && grant.can_read() && grant.can_write(),
+            Route::StudentAttendance => grant.student_name_and_group().is_some(),
+            _ => false,
+        };
+    let validator = if conditional_read && allowed {
+        // Admin's teacher-active projection also changes when a grant expires without a write.
+        let target = parts
+            .uri
+            .path_and_query()
+            .map_or(path, |target| target.as_str());
+        let row = tx.query_one("SELECT md5('wartaq-private-read-v2:' || $1 || ':' || $2 || ':' || pg_postmaster_start_time()::text || ':' || pg_current_snapshot()::text || ':' || CASE WHEN $3 = '/api/admin' THEN COALESCE((SELECT string_agg(t.id::text || ':' || COALESCE((t.active AND a.role='teacher' AND a.active AND (t.expires_at IS NULL OR t.expires_at>now()) AND (a.expires_at IS NULL OR a.expires_at>now())),false)::text, ',' ORDER BY t.id) FROM teachers t LEFT JOIN app_accounts a ON a.teacher_id=t.id), '') ELSE '' END)", &[&subject, &target, &path]).await?;
+        let tag = format!("W/\"{}\"", row.get::<_, String>(0));
+        if headers
+            .get(header::IF_NONE_MATCH)
+            .and_then(|v| v.to_str().ok())
+            == Some(tag.as_str())
+        {
+            tx.commit().await?;
+            return Ok((
+                StatusCode::NOT_MODIFIED,
+                [
+                    (header::CACHE_CONTROL, "private, no-store"),
+                    (header::ETAG, tag.as_str()),
+                    (header::VARY, "accept-encoding"),
+                ],
+            )
+                .into_response());
+        }
+        Some(tag)
+    } else {
+        None
     };
     let response: Value = match route {
         Route::Me => grant.me(),
@@ -478,9 +622,33 @@ async fn authorized(
             return Ok(telegram_conversations::read(&**client, &parts.method, &parts.uri).await?);
         }
         Route::Notebook if !grant.is_student() && grant.can_read() => {
-            staff_reads::notebook(&tx, &grant)
+            let gzip = accepts_gzip(headers);
+            let slice = notebook_slice(&tx, &grant, parts.uri.query().unwrap_or("")).await?;
+            let bytes = staff_reads::notebook(&tx, &grant, gzip, slice)
                 .await
-                .map_err(Error::Other)?
+                .map_err(Error::Other)?;
+            tx.commit().await?;
+            let mut response = Response::new(Body::from(bytes));
+            let headers = response.headers_mut();
+            headers.insert(
+                header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json;charset=utf-8"),
+            );
+            headers.insert(
+                header::CACHE_CONTROL,
+                HeaderValue::from_static("private, no-store"),
+            );
+            headers.insert(header::VARY, HeaderValue::from_static("accept-encoding"));
+            if gzip {
+                headers.insert(header::CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+            }
+            if let Some(tag) = validator {
+                headers.insert(
+                    header::ETAG,
+                    HeaderValue::from_str(&tag).map_err(|error| Error::Other(error.into()))?,
+                );
+            }
+            return Ok(response);
         }
         Route::Admin if grant.is_admin() && grant.can_read() && grant.can_write() => {
             staff_reads::admin_board(&tx).await.map_err(Error::Other)?
@@ -498,7 +666,16 @@ async fn authorized(
                 return Err(Error::Forbidden);
             }
             let input = read_body(body).await?;
-            if matches!(path, "/api/admin/students" | "/api/admin/students/enroll") {
+            if admin_accounts::PATHS.contains(&path) {
+                admin_accounts::apply(
+                    &tx,
+                    path,
+                    &subject,
+                    input,
+                    admin_accounts::InvitationDelivery::Browser(&state.secret),
+                )
+                .await?
+            } else if matches!(path, "/api/admin/students" | "/api/admin/students/enroll") {
                 roster_admin::apply(&tx, path, input).await?
             } else if matches!(
                 path,
@@ -525,6 +702,7 @@ async fn authorized(
         {
             let input = read_body(body).await?;
             match path {
+                "/api/events/correct" => ledger_writes::correct(&tx, &grant, input).await?,
                 "/api/student/update" => {
                     student_writes::apply(&tx, path, &subject, &grant, input).await?
                 }
@@ -549,5 +727,42 @@ async fn authorized(
         _ => return Err(Error::Forbidden),
     };
     tx.commit().await?;
-    Ok(json_reply(StatusCode::OK, response))
+    let mut response = json_reply(StatusCode::OK, response);
+    if let Some(tag) = validator {
+        response.headers_mut().insert(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("private, no-store"),
+        );
+        response
+            .headers_mut()
+            .insert(header::VARY, HeaderValue::from_static("accept-encoding"));
+        response.headers_mut().insert(
+            header::ETAG,
+            HeaderValue::from_str(&tag).map_err(|error| Error::Other(error.into()))?,
+        );
+    }
+    Ok(response)
+}
+
+#[cfg(test)]
+mod snapshot_encoding_tests {
+    use super::*;
+
+    #[test]
+    fn gzip_negotiation_respects_explicit_refusal_and_wildcard() {
+        let mut headers = HeaderMap::new();
+        assert!(!accepts_gzip(&headers));
+        headers.insert(
+            header::ACCEPT_ENCODING,
+            HeaderValue::from_static("br, gzip;q=0.5"),
+        );
+        assert!(accepts_gzip(&headers));
+        headers.insert(
+            header::ACCEPT_ENCODING,
+            HeaderValue::from_static("*;q=1, gzip;q=0"),
+        );
+        assert!(!accepts_gzip(&headers));
+        headers.insert(header::ACCEPT_ENCODING, HeaderValue::from_static("*;q=0.5"));
+        assert!(accepts_gzip(&headers));
+    }
 }

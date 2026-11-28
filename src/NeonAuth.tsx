@@ -232,7 +232,7 @@ export function NeonAuth({
       }
     }
     if (!navigator.onLine) void refresh()
-    const unsubscribe = subscribeWorkspaceChanges(userId, refresh)
+    const unsubscribe = subscribeWorkspaceChanges(userId, refresh, { skipLedger: true })
     return () => {
       cancelled = true
       unsubscribe()

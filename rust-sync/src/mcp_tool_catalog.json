@@ -1,0 +1,1662 @@
+{
+  "open_invitation_profile": {
+    "name": "open_invitation_profile",
+    "description": "Open your private profile in the browser to change invitation details or password.",
+    "inputSchema": { "type": "object", "properties": {} },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "open_password_reset": {
+    "name": "open_password_reset",
+    "description": "Open account settings in the browser to reset a password privately.",
+    "inputSchema": {
+      "type": "object",
+      "properties": { "authUserId": { "type": "string", "minLength": 1, "maxLength": 256 } },
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "verify_account_phone": {
+    "name": "verify_account_phone",
+    "description": "Change an account sign-in phone after directly confirming ownership with its holder. Set phoneConfirmed to true only after that confirmation. A changed phone revokes the account sessions.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "authUserId": { "type": "string", "minLength": 1 },
+            "phone": { "type": "string", "maxLength": 40 },
+            "phoneConfirmed": { "type": "boolean", "const": true }
+          },
+          "required": ["authUserId", "phone", "phoneConfirmed"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "get_account": {
+    "name": "get_account",
+    "description": "Get the current application account and access permissions.",
+    "inputSchema": { "type": "object", "properties": {} },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "get_profile": {
+    "name": "get_profile",
+    "description": "Get your profile name and image.",
+    "inputSchema": { "type": "object", "properties": {} },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "update_profile": {
+    "name": "update_profile",
+    "description": "Update your profile name and optional image.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+            "image": { "anyOf": [{ "type": "string", "maxLength": 120000 }, { "type": "null" }] }
+          },
+          "required": ["name"],
+          "additionalProperties": false
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "update_invitation_profile": {
+    "name": "update_invitation_profile",
+    "description": "For interactive changes, use open_invitation_profile to enter passwords privately. This direct operation requires your current password.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "phone": { "type": "string", "maxLength": 40, "pattern": "^\\+?[0-9 ()-]+$" },
+            "currentPassword": { "type": "string", "minLength": 1, "maxLength": 128 },
+            "newPassword": { "type": "string", "minLength": 8, "maxLength": 128 }
+          },
+          "required": ["phone", "currentPassword"],
+          "additionalProperties": false
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "list_courses": {
+    "name": "list_courses",
+    "description": "List accessible courses and whether they are open.",
+    "inputSchema": { "type": "object", "properties": {} },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "find_students": {
+    "name": "find_students",
+    "description": "Find accessible students by name, with optional status and course filters. Course filter includes active memberships only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": { "type": "string", "maxLength": 200 },
+        "status": { "default": "all", "type": "string", "enum": ["all", "active", "inactive"] },
+        "courseId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "offset": { "default": 0, "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "limit": { "default": 20, "type": "integer", "minimum": 1, "maximum": 50 }
+      },
+      "required": ["query"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "get_student_details": {
+    "name": "get_student_details",
+    "description": "Get one accessible student profile, enrollments and effective attendance and notes. Optional course scopes attendance and selected level.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "courseId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        }
+      },
+      "required": ["studentId"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "get_course_attendance_view": {
+    "name": "get_course_attendance_view",
+    "description": "Read the session roster and marks for a course and date, including event IDs for sync_attendance. Choose overview for six-session follow-up and all-date totals, or chart for anonymous chart rows and the browser export link. Use none for historical unscoped records.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "courseId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            { "type": "string", "const": "none" }
+          ]
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        "view": {
+          "default": "session",
+          "type": "string",
+          "enum": ["session", "overview", "chart"]
+        },
+        "language": { "default": "en", "type": "string", "enum": ["en", "ar"] }
+      },
+      "required": ["courseId", "date"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "get_notebook": {
+    "name": "get_notebook",
+    "description": "Get your authorized roster, courses, enrollments, event history and notes. Attendance events use enrollment IDs to identify courses.",
+    "inputSchema": { "type": "object", "properties": {} },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "get_attendance_summary": {
+    "name": "get_attendance_summary",
+    "description": "Project your authorized notebook events into current attendance and notes; reversed events are excluded and legacy early/late marks count as present.",
+    "inputSchema": { "type": "object", "properties": {} },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "update_student": {
+    "name": "update_student",
+    "description": "Update an active assigned student’s name and contact details.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "firstName": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "lastName": { "type": "string", "maxLength": 200 },
+        "group": { "type": "string", "maxLength": 100 },
+        "whatsapp": { "anyOf": [{ "type": "string", "maxLength": 40 }, { "type": "null" }] },
+        "location": { "anyOf": [{ "type": "string", "maxLength": 200 }, { "type": "null" }] },
+        "birthYear": {
+          "anyOf": [{ "type": "integer", "minimum": 1900, "maximum": 2026 }, { "type": "null" }]
+        },
+        "studentId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "expected": {
+          "type": "object",
+          "properties": {
+            "firstName": { "type": "string" },
+            "lastName": { "type": "string" },
+            "group": { "type": "string" },
+            "whatsapp": { "type": ["string", "null"] },
+            "location": { "type": ["string", "null"] },
+            "birthYear": {
+              "anyOf": [
+                { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+                { "type": "null" }
+              ]
+            }
+          },
+          "required": ["firstName", "lastName", "group", "whatsapp", "location", "birthYear"],
+          "additionalProperties": false
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "firstName",
+        "lastName",
+        "group",
+        "whatsapp",
+        "location",
+        "birthYear",
+        "studentId",
+        "expected"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "append_events": {
+    "name": "append_events",
+    "description": "Append attendance, tagged notes or corrections. Supply stable IDs and client times for safe retries. New attendance must reference an active enrollment in an open course.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "minItems": 1,
+          "maxItems": 500,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              "clientTime": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "editTime": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "payload": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": { "type": "string", "const": "student" },
+                      "studentId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+                      "group": { "type": "string", "maxLength": 100 },
+                      "active": { "type": "boolean" }
+                    },
+                    "required": ["kind", "studentId", "name", "group", "active"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": { "type": "string", "const": "attendance" },
+                      "studentId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "enrollmentId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                      },
+                      "status": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": ["present", "absent", "excused", "early", "late"]
+                          },
+                          { "type": "null" }
+                        ]
+                      }
+                    },
+                    "required": ["kind", "studentId", "date", "status"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": { "type": "string", "const": "note" },
+                      "studentId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          { "type": "string", "const": "" }
+                        ]
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                      },
+                      "tags": {
+                        "minItems": 1,
+                        "maxItems": 20,
+                        "type": "array",
+                        "items": { "type": "string", "minLength": 1, "maxLength": 60 }
+                      },
+                      "text": { "type": "string", "minLength": 1, "maxLength": 10000 }
+                    },
+                    "required": ["kind", "studentId", "date", "tags", "text"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": { "type": "string", "const": "reversal" },
+                      "targetId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "reason": { "type": "string", "minLength": 1, "maxLength": 1000 }
+                    },
+                    "required": ["kind", "targetId", "reason"]
+                  }
+                ]
+              }
+            },
+            "required": ["id", "clientTime", "payload"]
+          }
+        }
+      },
+      "required": ["events"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "sync_attendance": {
+    "name": "sync_attendance",
+    "description": "Compare and commit attendance records. Supply the expected event ID (or null) and stable event ID/time; returns per-record conflicts.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "records": {
+          "minItems": 1,
+          "maxItems": 500,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "event": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "clientTime": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "editTime": {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                  },
+                  "payload": {
+                    "type": "object",
+                    "properties": {
+                      "kind": { "type": "string", "const": "attendance" },
+                      "studentId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "enrollmentId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      "date": {
+                        "type": "string",
+                        "format": "date",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                      },
+                      "status": { "type": "string", "enum": ["present", "absent", "excused"] }
+                    },
+                    "required": ["kind", "studentId", "enrollmentId", "date", "status"]
+                  }
+                },
+                "required": ["id", "clientTime", "payload"]
+              },
+              "expectedEventId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  { "type": "null" }
+                ]
+              },
+              "expectedRevision": { "type": "string", "const": "unknown" },
+              "editTime": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              }
+            },
+            "required": ["event", "expectedEventId"]
+          }
+        }
+      },
+      "required": ["records"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "sync_student": {
+    "name": "sync_student",
+    "description": "Compare and update a student contact or append a note with stable ID and time.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "kind": { "type": "string", "const": "note" },
+                "event": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "clientTime": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "editTime": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "payload": {
+                      "type": "object",
+                      "properties": {
+                        "kind": { "type": "string", "const": "note" },
+                        "studentId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "date": {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        "tags": {
+                          "minItems": 1,
+                          "maxItems": 20,
+                          "type": "array",
+                          "items": { "type": "string", "minLength": 1, "maxLength": 60 }
+                        },
+                        "text": { "type": "string", "minLength": 1, "maxLength": 10000 }
+                      },
+                      "required": ["kind", "studentId", "date", "tags", "text"]
+                    }
+                  },
+                  "required": ["id", "clientTime", "payload"]
+                }
+              },
+              "required": ["kind", "event"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": { "type": "string", "const": "profile-v1" },
+                "editTime": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "studentId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "clientTime": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                },
+                "expected": {
+                  "type": "object",
+                  "properties": {
+                    "firstName": { "type": "string" },
+                    "lastName": { "type": "string" },
+                    "whatsapp": {
+                      "anyOf": [{ "type": "string", "maxLength": 40 }, { "type": "null" }]
+                    },
+                    "location": { "type": ["string", "null"] },
+                    "birthYear": {
+                      "anyOf": [
+                        {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        { "type": "null" }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "changes": {
+                  "type": "object",
+                  "properties": {
+                    "firstName": { "type": "string", "minLength": 1, "maxLength": 200 },
+                    "lastName": { "type": "string", "maxLength": 200 },
+                    "whatsapp": {
+                      "anyOf": [{ "type": "string", "maxLength": 40 }, { "type": "null" }]
+                    },
+                    "location": {
+                      "anyOf": [{ "type": "string", "maxLength": 200 }, { "type": "null" }]
+                    },
+                    "birthYear": {
+                      "anyOf": [
+                        { "type": "integer", "minimum": 1900, "maximum": 2026 },
+                        { "type": "null" }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": ["kind", "id", "studentId", "clientTime", "expected", "changes"],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": ["operation"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "get_course_workflow": {
+    "name": "get_course_workflow",
+    "description": "Get paginated course membership, grades, or result readiness. Search student names using the notebook matcher. Grades close readiness uses saved data only; manual closure is independent.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "courseId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "view": {
+          "default": "grades",
+          "type": "string",
+          "enum": ["membership", "grades", "readiness"]
+        },
+        "search": { "default": "", "type": "string", "maxLength": 200 },
+        "offset": { "default": 0, "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "limit": { "default": 50, "type": "integer", "minimum": 1, "maximum": 100 },
+        "missingScores": { "default": false, "type": "boolean" }
+      },
+      "required": ["courseId"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "get_notebook_history": {
+    "name": "get_notebook_history",
+    "description": "Read administrator notebook history in server order, newest first. Reversals retain their target and undone records remain visible.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "courseId": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            { "type": "string", "const": "none" }
+          ]
+        },
+        "studentId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "kind": { "type": "string", "enum": ["student", "attendance", "note", "reversal"] },
+        "from": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        "to": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        "offset": { "default": 0, "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "limit": { "default": 50, "type": "integer", "minimum": 1, "maximum": 100 }
+      },
+      "required": ["courseId"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "get_admin_board": {
+    "name": "get_admin_board",
+    "description": "Get accounts, teachers and full student register for administration.",
+    "inputSchema": { "type": "object", "properties": {} },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "export_course_report": {
+    "name": "export_course_report",
+    "description": "Export a saved course report as rows or an Excel workbook. Both formats use the website’s default columns. Request optional columns explicitly, including contact details for full or student reports.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "courseId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "report": {
+          "default": "full",
+          "type": "string",
+          "enum": ["full", "grades", "students", "attendance", "participants"]
+        },
+        "format": { "default": "rows", "type": "string", "enum": ["rows", "xlsx"] },
+        "language": { "default": "en", "type": "string", "enum": ["en", "ar"] },
+        "columns": {
+          "description": "Columns to include in the requested order. Omit to use the website defaults.",
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "firstName",
+              "lastName",
+              "level",
+              "enrolled",
+              "theory",
+              "practical",
+              "present",
+              "absent",
+              "excused",
+              "total",
+              "ratio",
+              "result",
+              "rosterLevel",
+              "studentActive",
+              "teacher",
+              "handbook",
+              "whatsapp",
+              "location",
+              "birthYear",
+              "date",
+              "mark"
+            ]
+          }
+        },
+        "enrollment": { "type": "string", "enum": ["all", "active", "withdrawn"] },
+        "studentId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "level": { "type": "string", "maxLength": 200 },
+        "coverage": {
+          "type": "string",
+          "enum": ["all", "any", "both", "theory", "practical", "none"]
+        },
+        "result": { "type": "string", "enum": ["all", "pass", "fail", "pending"] },
+        "from": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        "to": {
+          "type": "string",
+          "format": "date",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        "mark": {
+          "anyOf": [
+            { "type": "string", "const": "all" },
+            { "type": "string", "enum": ["present", "absent", "excused"] }
+          ]
+        }
+      },
+      "required": ["courseId"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "invite_accounts": {
+    "name": "invite_accounts",
+    "description": "Create invited accounts and open the private invitation message. Set phoneConfirmed to true only after the administrator explicitly confirms they asked each account holder directly. A request ID cannot be reused after success.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "people": {
+              "minItems": 1,
+              "maxItems": 50,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "firstName": { "type": "string", "minLength": 1, "maxLength": 49 },
+                  "lastName": { "type": "string", "minLength": 1, "maxLength": 49 },
+                  "role": { "type": "string", "enum": ["administrator", "teacher", "student"] },
+                  "phone": { "type": "string", "maxLength": 40 },
+                  "phoneConfirmed": { "type": "boolean", "const": true }
+                },
+                "required": ["firstName", "lastName", "role", "phone", "phoneConfirmed"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": ["requestId", "people"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "requestId": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+        },
+        "url": { "type": "string", "format": "uri" }
+      },
+      "required": ["requestId", "url"],
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false
+    },
+    "execution": { "taskSupport": "forbidden" },
+    "_meta": { "ui": { "resourceUri": "ui://wartaq/invitation.html" } }
+  },
+  "grant_account": {
+    "name": "grant_account",
+    "description": "Grant or change an application role and access.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "role": { "type": "string", "const": "administrator" },
+                "authUserId": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "name": { "type": "string", "minLength": 1, "maxLength": 100 }
+              },
+              "required": ["role", "authUserId", "name"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "role": { "type": "string", "const": "teacher" },
+                "authUserId": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+                "expiresAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    { "type": "null" }
+                  ]
+                }
+              },
+              "required": ["role", "authUserId", "name", "expiresAt"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "role": { "type": "string", "const": "student" },
+                "authUserId": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "studentId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "expiresAt": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    { "type": "null" }
+                  ]
+                }
+              },
+              "required": ["role", "authUserId", "studentId", "expiresAt"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "disable_account": {
+    "name": "disable_account",
+    "description": "Disable an application account.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": { "authUserId": { "type": "string", "minLength": 1, "maxLength": 256 } },
+          "required": ["authUserId"],
+          "additionalProperties": false
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "reset_account_password": {
+    "name": "reset_account_password",
+    "description": "For a privately generated password and copyable message, use open_password_reset. This direct operation sets a supplied password and revokes the recipient’s sessions.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "authUserId": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "password": { "type": "string", "minLength": 8, "maxLength": 128 },
+            "passwordConfirmation": { "type": "string" }
+          },
+          "required": ["authUserId", "password", "passwordConfirmation"],
+          "additionalProperties": false
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "save_student": {
+    "name": "save_student",
+    "description": "Create or update a roster student.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "studentId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "teacherId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    { "type": "null" }
+                  ]
+                },
+                "group": { "type": "string", "maxLength": 100 },
+                "active": { "type": "boolean" },
+                "whatsapp": {
+                  "anyOf": [{ "type": "string", "maxLength": 40 }, { "type": "null" }]
+                },
+                "location": {
+                  "anyOf": [{ "type": "string", "maxLength": 200 }, { "type": "null" }]
+                },
+                "birthYear": {
+                  "anyOf": [
+                    { "type": "integer", "minimum": 1900, "maximum": 2026 },
+                    { "type": "null" }
+                  ]
+                },
+                "name": { "type": "string", "minLength": 1, "maxLength": 200 }
+              },
+              "required": ["studentId", "teacherId", "group", "active", "name"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "studentId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "teacherId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    { "type": "null" }
+                  ]
+                },
+                "group": { "type": "string", "maxLength": 100 },
+                "active": { "type": "boolean" },
+                "whatsapp": {
+                  "anyOf": [{ "type": "string", "maxLength": 40 }, { "type": "null" }]
+                },
+                "location": {
+                  "anyOf": [{ "type": "string", "maxLength": 200 }, { "type": "null" }]
+                },
+                "birthYear": {
+                  "anyOf": [
+                    { "type": "integer", "minimum": 1900, "maximum": 2026 },
+                    { "type": "null" }
+                  ]
+                },
+                "firstName": { "type": "string", "minLength": 1, "maxLength": 200 },
+                "lastName": { "type": "string", "maxLength": 200 }
+              },
+              "required": ["studentId", "teacherId", "group", "active", "firstName", "lastName"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "create_student_in_course": {
+    "name": "create_student_in_course",
+    "description": "Atomically create a roster student and enrollment with stable IDs. The enrollment records the student’s initial level.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "student": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "studentId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "teacherId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        { "type": "null" }
+                      ]
+                    },
+                    "group": { "type": "string", "maxLength": 100 },
+                    "active": { "type": "boolean" },
+                    "whatsapp": {
+                      "anyOf": [{ "type": "string", "maxLength": 40 }, { "type": "null" }]
+                    },
+                    "location": {
+                      "anyOf": [{ "type": "string", "maxLength": 200 }, { "type": "null" }]
+                    },
+                    "birthYear": {
+                      "anyOf": [
+                        { "type": "integer", "minimum": 1900, "maximum": 2026 },
+                        { "type": "null" }
+                      ]
+                    },
+                    "name": { "type": "string", "minLength": 1, "maxLength": 200 }
+                  },
+                  "required": ["studentId", "teacherId", "group", "active", "name"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "studentId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "teacherId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        { "type": "null" }
+                      ]
+                    },
+                    "group": { "type": "string", "maxLength": 100 },
+                    "active": { "type": "boolean" },
+                    "whatsapp": {
+                      "anyOf": [{ "type": "string", "maxLength": 40 }, { "type": "null" }]
+                    },
+                    "location": {
+                      "anyOf": [{ "type": "string", "maxLength": 200 }, { "type": "null" }]
+                    },
+                    "birthYear": {
+                      "anyOf": [
+                        { "type": "integer", "minimum": 1900, "maximum": 2026 },
+                        { "type": "null" }
+                      ]
+                    },
+                    "firstName": { "type": "string", "minLength": 1, "maxLength": 200 },
+                    "lastName": { "type": "string", "maxLength": 200 }
+                  },
+                  "required": [
+                    "studentId",
+                    "teacherId",
+                    "group",
+                    "active",
+                    "firstName",
+                    "lastName"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "enrollment": {
+              "type": "object",
+              "properties": {
+                "teacherId": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    { "type": "null" }
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "courseId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "level": { "type": "string", "maxLength": 200 }
+              },
+              "required": ["id", "courseId"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["student", "enrollment"],
+          "additionalProperties": false
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "save_course": {
+    "name": "save_course",
+    "description": "Create or rename a course using a stable ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "name": { "type": "string", "minLength": 1, "maxLength": 200 }
+          },
+          "required": ["id", "name"]
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "set_course_status": {
+    "name": "set_course_status",
+    "description": "Close or reopen a course. Closing may advance eligible student levels.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "open": { "type": "boolean" }
+          },
+          "required": ["id", "open"],
+          "additionalProperties": false
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "set_course_thresholds": {
+    "name": "set_course_thresholds",
+    "description": "Set course attendance, practical and theory thresholds.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "attendanceMinimum": { "type": "number", "minimum": 0, "maximum": 100 },
+            "practicalMinimum": { "type": "number", "minimum": 0, "maximum": 100 },
+            "theoryMinimum": { "type": "number", "minimum": 0, "maximum": 100 }
+          },
+          "required": ["id", "attendanceMinimum", "practicalMinimum", "theoryMinimum"],
+          "additionalProperties": false
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "save_enrollment": {
+    "name": "save_enrollment",
+    "description": "Set membership, teacher and optional course level. Omit level to preserve it or copy the roster level on first enrollment. Withdrawal preserves history and grades.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "teacherId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                { "type": "null" }
+              ]
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "courseId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "studentId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "level": { "type": "string", "maxLength": 200 },
+            "active": { "type": "boolean" }
+          },
+          "required": ["id", "courseId", "studentId", "active"],
+          "additionalProperties": false
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "save_grades": {
+    "name": "save_grades",
+    "description": "Save enrollment scores and optional performance notes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "notes": { "type": "string" },
+            "practical": {
+              "anyOf": [{ "type": "number", "minimum": 0, "maximum": 100 }, { "type": "null" }]
+            },
+            "theory": {
+              "anyOf": [{ "type": "number", "minimum": 0, "maximum": 100 }, { "type": "null" }]
+            }
+          },
+          "required": ["id", "practical", "theory"],
+          "additionalProperties": false
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "save_grade_decision": {
+    "name": "save_grade_decision",
+    "description": "Append an administrator result override or restore the calculated result, with a reason and stable request ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "requestId": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "result": { "type": "string", "enum": ["pass", "fail", "calculated"] },
+            "note": { "type": "string", "minLength": 1, "maxLength": 2000 },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "required": ["requestId", "result", "note", "id"],
+          "additionalProperties": false
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "set_handbook_received": {
+    "name": "set_handbook_received",
+    "description": "Set handbook receipt for an enrollment.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            },
+            "handbookReceived": { "type": "boolean" }
+          },
+          "required": ["id", "handbookReceived"],
+          "additionalProperties": false
+        },
+        "edit": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$",
+              "description": "UTC time when the user made the edit."
+            },
+            "id": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+              "description": "Stable operation UUID. Reuse it with the original time on retry."
+            }
+          },
+          "required": ["time", "id"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["input"],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "complete_invitation_setup": {
+    "name": "complete_invitation_setup",
+    "description": "Open private browser setup for the signed-in account. Do not share passwords with the MCP client.",
+    "inputSchema": { "type": "object", "properties": {} },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  },
+  "get_my_attendance": {
+    "name": "get_my_attendance",
+    "description": "Get your own projected attendance, including course names.",
+    "inputSchema": { "type": "object", "properties": {} },
+    "annotations": { "readOnlyHint": true },
+    "execution": { "taskSupport": "forbidden" }
+  }
+}

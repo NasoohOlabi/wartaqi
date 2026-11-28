@@ -1,4 +1,4 @@
-﻿import { expect, test } from 'bun:test'
+﻿import { expect, test } from 'vitest-runner'
 import { makeEvent, projectEvents } from '../shared/ledger'
 import { courseSchema, enrollmentSchema, neonStudentSchema } from '../shared/neon'
 import { courseReadiness } from '../src/readinessCounts'

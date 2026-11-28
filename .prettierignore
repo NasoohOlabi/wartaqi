@@ -4,5 +4,6 @@ dist/
 .local/
 .artifacts/
 rust-sync/target/
+rust-common/target/
 rust-telegram/target/
 .husky/_/

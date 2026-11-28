@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { setTimeout as sleep } from 'node:timers/promises'
 import { Auth } from './auth'
 import { Storage } from './storage'
 import { createHttp } from './runtime/http'
@@ -89,21 +90,9 @@ export function createWorker(env: Record<string, string | undefined>) {
           }
         } catch {
           ready = false
-          await Bun.sleep(3000)
+          await sleep(3000)
         }
       }
     },
   }
-}
-
-if (import.meta.main) {
-  if (process.argv.includes('--assistant-smoke')) {
-    const ok = await createAssistant(assistantConfig(process.env)).smoke('smoke')
-    process.exit(ok ? 0 : 1)
-  }
-  const worker = createWorker(process.env)
-  const config = assistantConfig(process.env)
-  if (config) void createAssistant(config).smoke('startup')
-  Bun.serve({ port: Number(process.env.PORT ?? 3000), fetch: worker.fetch })
-  await worker.poll()
 }

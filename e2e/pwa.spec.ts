@@ -208,6 +208,16 @@ test('repository-scoped PWA installs its real manifest and opens the public shel
   })
   expect(cachedUrls.every((url) => url.startsWith(origin + prefix))).toBe(true)
   expect(cachedUrls.some((url) => /private|token=|page=|api\//.test(url))).toBe(false)
+  for (const icon of [
+    'maskable-icon-512x512.png',
+    'favicon.ico',
+    'pwa-192x192.png',
+    'pwa-512x512.png',
+    'pwa-64x64.png',
+  ]) {
+    expect(cachedUrls).not.toContain(origin + prefix + icon)
+    expect((await page.request.get(origin + prefix + icon)).ok()).toBe(true)
+  }
   await page.getByRole('combobox', { name: 'المظهر' }).selectOption('dark')
   await context.setOffline(true)
   const bypasses = await page.evaluate(async () =>

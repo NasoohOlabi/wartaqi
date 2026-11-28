@@ -1,9 +1,9 @@
-import type { projectEvents } from './ledger'
+import type { Attendance } from './ledger'
 import type { Course, Enrollment } from './neon'
 
-type Attendance = ReturnType<typeof projectEvents>['attendance']
+type AttendanceRows = { value: Attendance }[]
 
-export function courseAttendance(attendance: Attendance, entry: Enrollment) {
+export function courseAttendance(attendance: AttendanceRows, entry: Enrollment) {
   const rows = attendance.filter(({ value }) => value.enrollmentId === entry.id)
   const present = rows.filter(({ value }) => value.status === 'present').length
   const absent = rows.filter(({ value }) => value.status === 'absent').length

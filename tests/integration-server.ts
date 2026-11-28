@@ -1,31 +1,92 @@
+import { fork } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import type { WebSocketData } from '@socket.io/bun-engine'
+import { once } from 'node:events'
+import { get } from 'node:http'
 import { z } from 'zod'
+import { listenFetch } from '../server/http'
+import { startRustBackend } from './rust-backend-server'
+
+export function navigationRedirect(url: URL, cookie?: string) {
+  return new Promise<string | undefined>((resolve, reject) => {
+    // Node fetch identifies itself as a CORS fetch, which returns OAuth redirect JSON.
+    get(
+      url,
+      {
+        headers: {
+          accept: 'text/html',
+          'sec-fetch-mode': 'navigate',
+          ...(cookie && { cookie }),
+        },
+        signal: AbortSignal.timeout(5000),
+      },
+      (response) => {
+        response.resume()
+        resolve(response.headers.location)
+      },
+    ).once('error', reject)
+  })
+}
 
 export async function startIntegrationServer(
   databaseUrl: string,
   authSecret = randomBytes(32).toString('hex'),
   telegramWorkerSecret?: string,
 ) {
-  const ready = Promise.withResolvers<unknown>()
-  const child = Bun.spawn([process.execPath, 'run', import.meta.path], {
+  if (process.env.TEST_RUST_WEB_BINARY) {
+    const slot = await listenFetch(() => new Response(null, { status: 404 }), {
+      hostname: '127.0.0.1',
+      port: 0,
+    })
+    const port = new URL(slot.origin).port
+    await slot.close()
+    return startRustBackend(
+      process.env.TEST_RUST_WEB_BINARY,
+      databaseUrl,
+      { publicOrigin: slot.origin, port },
+      authSecret,
+      slot.origin,
+      telegramWorkerSecret,
+    )
+  }
+  return startNodeIntegrationServer(databaseUrl, authSecret, telegramWorkerSecret)
+}
+
+export async function startNodeIntegrationServer(
+  databaseUrl: string,
+  authSecret = randomBytes(32).toString('hex'),
+  telegramWorkerSecret?: string,
+) {
+  const child = fork(import.meta.filename, [], {
+    execArgv: ['--import', 'tsx'],
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl,
       BETTER_AUTH_SECRET: authSecret,
       ...(telegramWorkerSecret && { TELEGRAM_WORKER_SECRET: telegramWorkerSecret }),
     },
-    stdout: 'ignore',
-    stderr: 'inherit',
-    ipc: ready.resolve,
+    stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
   })
-  const deadline = AbortSignal.timeout(10000)
-  deadline.addEventListener('abort', () => ready.reject(deadline.reason), { once: true })
+  const exited = new Promise<number | null>((resolve) =>
+    child.once('close', (code) => resolve(code)),
+  )
+  async function close() {
+    if (child.connected)
+      child.send('close', (error) => {
+        if (error) child.kill()
+      })
+    const kill = setTimeout(() => child.kill(), 3000)
+    try {
+      await exited
+    } finally {
+      clearTimeout(kill)
+    }
+  }
 
+  const deadline = AbortSignal.timeout(10000)
   try {
-    const address = await Promise.race([
-      ready.promise,
-      child.exited.then((code) => {
+    const [address] = await Promise.race([
+      once(child, 'message', { signal: deadline }),
+      exited.then((code) => {
         throw new Error(`Integration server exited before startup with code ${code}`)
       }),
     ])
@@ -35,36 +96,34 @@ export async function startIntegrationServer(
       .parse(address)
     const response = await fetch(`${origin}/health`, { signal: deadline })
     if (!response.ok) throw new Error(`Integration server health check returned ${response.status}`)
-    return { origin, child }
+    return { origin, close }
   } catch (error) {
-    child.kill()
+    await close()
     throw error
   }
 }
 
 if (import.meta.main) {
-  type Workspace = ReturnType<typeof import('../server/index').workspaceServer>
-  const handler = Promise.withResolvers<Workspace>()
-  let workspace: Workspace | undefined
-  const server = Bun.serve<WebSocketData>({
+  const handler = Promise.withResolvers<typeof import('../server/index').handle>()
+  const binding = await listenFetch(async (request) => (await handler.promise)(request), {
     hostname: '127.0.0.1',
     port: 0,
-    idleTimeout: 50,
-    fetch: async (request, instance) => (await handler.promise).serve.fetch(request, instance),
-    websocket: {
-      open: (socket) => workspace?.serve.websocket.open(socket),
-      message: (socket, message) => workspace?.serve.websocket.message(socket, message),
-      close: (socket, code, reason) => workspace?.serve.websocket.close(socket, code, reason),
-    },
   })
-  process.env.PORT = String(server.port)
-  process.env.BETTER_AUTH_URL = process.env.TEST_WORKSPACE_ORIGIN ?? server.url.origin
-  workspace = (await import('../server/index')).workspaceServer()
-  handler.resolve(workspace)
+  process.env.PORT = new URL(binding.origin).port
+  process.env.BETTER_AUTH_URL = binding.origin
+  const api = await import('../server/index')
+  const workspace = api.workspaceServer(binding.server)
+  handler.resolve(api.handle)
   process.on('message', (message) => {
-    if (message === 'close') {
-      void Promise.all([workspace?.close(), server.stop(true)]).finally(() => process.exit())
-    }
+    if (message === 'close')
+      void workspace
+        .close()
+        .then(() => binding.close())
+        .then(() => api.closeHttpResources())
+        .then(
+          () => process.exit(0),
+          () => process.exit(1),
+        )
   })
-  process.send?.(server.url.origin)
+  process.send?.(binding.origin)
 }

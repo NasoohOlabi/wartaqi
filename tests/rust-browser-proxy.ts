@@ -32,7 +32,7 @@ export async function startRustBrowserProxy(
       throw new Error('Local browser proxy could not bind')
     }
     const origin = 'http://127.0.0.1:' + address.port
-    const rust = await startRustBackend(binary, databaseUrl, { hybridOrigin: origin }, authSecret)
+    const rust = await startRustBackend(binary, databaseUrl, { publicOrigin: origin }, authSecret)
     rustProxy.target = rust.origin
     return {
       origin,

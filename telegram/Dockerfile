@@ -1,15 +1,11 @@
-FROM oven/bun:1.3.0 AS build
-WORKDIR /app
-COPY package.json bun.lock ./
-COPY patches ./patches
-RUN HUSKY=0 bun install --frozen-lockfile --production --ignore-scripts
-COPY telegram ./telegram
-COPY shared ./shared
-COPY server/profile.ts ./server/profile.ts
-RUN bun build ./telegram/runtime.ts --target=bun --outfile=/app/bot.js
+FROM rust:1.93-bookworm AS build
+WORKDIR /app/rust-telegram
+COPY rust-common /app/rust-common
+COPY rust-telegram/Cargo.toml rust-telegram/Cargo.lock ./
+COPY rust-telegram/src ./src
+RUN cargo build --release --locked
 
-FROM oven/bun:1.3.0
+FROM debian:bookworm-slim
 WORKDIR /app
-COPY --from=build /app/bot.js ./bot.js
-ENV NODE_ENV=production
-CMD ["bun", "/app/bot.js"]
+COPY --from=build /app/rust-telegram/target/release/wartaq-telegram /usr/local/bin/wartaq-telegram
+CMD ["wartaq-telegram"]

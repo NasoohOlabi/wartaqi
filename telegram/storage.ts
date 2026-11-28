@@ -1,16 +1,16 @@
-﻿import { Database } from 'bun:sqlite'
+import { DatabaseSync } from 'node:sqlite'
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import { z } from 'zod'
 
 export class Storage {
-  private db: Database
+  private db: DatabaseSync
   private key: Buffer
 
   constructor(path: string, key: string) {
     this.key = Buffer.from(key, 'base64')
     if (this.key.length !== 32)
       throw new Error('TELEGRAM_STORAGE_KEY must be a base64-encoded 32-byte key')
-    this.db = new Database(path, { create: true })
+    this.db = new DatabaseSync(path)
     this.db.exec(
       'PRAGMA journal_mode = WAL; CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT NOT NULL, expires INTEGER NOT NULL)',
     )
@@ -22,14 +22,14 @@ export class Storage {
     cipher.setAAD(Buffer.from(key))
     const ciphertext = Buffer.concat([cipher.update(JSON.stringify(value), 'utf8'), cipher.final()])
     const encoded = Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString('base64')
-    this.db.query('INSERT OR REPLACE INTO state VALUES (?, ?, ?)').run(key, encoded, expires)
+    this.db.prepare('INSERT OR REPLACE INTO state VALUES (?, ?, ?)').run(key, encoded, expires)
   }
 
   get(key: string): unknown {
     const row = z
       .object({ value: z.string(), expires: z.number() })
       .nullable()
-      .parse(this.db.query('SELECT value, expires FROM state WHERE key = ?').get(key))
+      .parse(this.db.prepare('SELECT value, expires FROM state WHERE key = ?').get(key) ?? null)
     if (!row) return null
     if (row.expires && row.expires <= Date.now()) {
       this.delete(key)
@@ -45,11 +45,11 @@ export class Storage {
   }
 
   prune() {
-    this.db.query('DELETE FROM state WHERE expires > 0 AND expires <= ?').run(Date.now())
+    this.db.prepare('DELETE FROM state WHERE expires > 0 AND expires <= ?').run(Date.now())
   }
 
   delete(key: string) {
-    this.db.query('DELETE FROM state WHERE key = ?').run(key)
+    this.db.prepare('DELETE FROM state WHERE key = ?').run(key)
   }
   close() {
     this.db.close()

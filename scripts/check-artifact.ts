@@ -1,4 +1,4 @@
-import { readdir } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
 async function walk(directory: string): Promise<string[]> {
@@ -15,7 +15,7 @@ for (const file of files) {
   if (!/\.(html|css|js|png|jpg|ico|svg|woff2|txt|webmanifest)$/.test(file))
     throw new Error(`Unexpected deployment file: ${file}`)
   if (/\.(png|jpg|ico|woff2)$/.test(file)) continue
-  const text = await Bun.file(file).text()
+  const text = await readFile(file, 'utf8')
   for (const secret of [
     process.env.DATABASE_URL,
     process.env.DATABASE_URL_UNPOOLED,
@@ -34,7 +34,7 @@ for (const file of files) {
   )
     throw new Error(`Private manager or source map in ${file}`)
 }
-const html = await Bun.file('dist/index.html').text()
+const html = await readFile('dist/index.html', 'utf8')
 if (!html.includes('no-referrer') || !html.includes('Content-Security-Policy'))
   throw new Error('Teacher security policy missing')
 if (/src="\/(?!\/)/.test(html) || /href="\/(?!\/)/.test(html))

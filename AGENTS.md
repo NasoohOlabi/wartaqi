@@ -2,7 +2,7 @@
 
 Implementation and public publication were authorized on 2026-11-13. Preserve historical prototype `2d8fbe5`. Railway replacement of Neon was requested on 2026-11-15: read `docs/railway-setup.md` for current deployment, data transfer and access management; preserve `backup/neon-current-2026-11-15` at `77cedae`; `docs/implementation-plan.md` tracks delivery. Local and synthetic tests never prove live provider behavior.
 
-Independent attendance and tagged-note app. React/TypeScript + Vite frontend, Rust web entry point, on-demand Bun API with Better Auth, and Railway Postgres. Auth tables retain the `neon_auth` schema name for compatibility. Six application tables serve roles, roster and courses: `app_accounts` maps Auth identities to Administrator, Teacher or Student, alongside `teachers`, `students`, `courses`, `course_enrollments` and append-only `events`. Read `docs/courses.md` before changing enrollment or course attendance semantics. Add no further tables without a concrete requirement. Students receive only their own projected attendance, never notes or raw events. Role approval is server-owned; signup grants no application access. Database credentials and signing secrets stay server-side and in the private local environment. Read `docs/architecture.md` before changing event semantics or retries.
+Independent attendance and tagged-note app. React/TypeScript + Vite frontend, Rust web server with Better Auth-compatible sessions, OAuth and Railway Postgres. Auth tables retain the `neon_auth` schema name for compatibility. Six application tables serve roles, roster and courses: `app_accounts` maps Auth identities to Administrator, Teacher or Student, alongside `teachers`, `students`, `courses`, `course_enrollments` and append-only `events`. Read `docs/courses.md` before changing enrollment or course attendance semantics. Add no further tables without a concrete requirement. Students receive only their own projected attendance, never notes or raw events. Role approval is server-owned; signup grants no application access. Database credentials and signing secrets stay server-side and private local environment. Read `docs/architecture.md` before changing event semantics or retries.
 
 Before changing a Rust route, storage format, Telegram worker or release gate, identify the runtime in the target commit and consult the [architecture audit and open tasks](docs/rust-architecture-audit.md). The root Dockerfile and web router establish what ships.
 
@@ -10,7 +10,7 @@ Teacher access and student profile fields are documented in `docs/assigned-roste
 
 For role approval, roster import or access withdrawal, follow the private-input CLI in `docs/railway-setup.md`.
 
-Use PowerShell and Bun. No worktrees without asking. Keep responses concise. This file is the canonical instruction source for every agent; host-specific instruction files only point here.
+Use PowerShell, Bun 1.3.0 for dependencies, and Node.js 24 with npm 11 for scripts. No worktrees without asking. Keep responses concise. This file is the canonical instruction source for every agent; host-specific instruction files only point here.
 
 ## Agent routing
 
@@ -24,7 +24,7 @@ Prefer familiar icons for buttons such as Export. Give icon buttons a localized 
 
 ## Validation and safety
 
-- Run `bun run verify` before completing any repository change. For UI changes use `.agents/skills/verify-halaqa/SKILL.md` and the affected feature map. Run `bun run verify:release` before stable promotion/publication. Fix failed checks; document provider checks that cannot run locally.
+- Run `npm run verify` before completing any repository change. For UI changes use `.agents/skills/verify-halaqa/SKILL.md` and the affected feature map. Run `npm run verify:release` before stable promotion/publication. Fix failed checks; document provider checks that cannot run locally.
 - Append events only. Teacher transport permits GET and POST. Corrections reference existing event IDs. Projection uses database sequence order, never device clocks.
 - Attendance choices and totals are Present, Absent and Excused. Project legacy early/late marks as Present while preserving original event payloads and exact retry identity.
 - Parse external data with Zod. Use named payload variants and derive types from schemas. Single quotes, no semicolons; React functions and hooks; Tailwind for the teacher UI.

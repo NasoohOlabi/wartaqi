@@ -1,5 +1,53 @@
 # Work log
 
+## 2026-11-28 07:24 Asia/Damascus (UTC+03:00) - Drain Socket.IO polling before shutdown
+
+The production-image job timed out in the Rust transport test. A disposable Linux container reproduced a shutdown hang with active long polls. Canceling those polls before Socket.IO closes can prevent Engine.IO from delivering its close packet. Rust now gives Socket.IO two seconds to close before releasing pending HTTP polls. The integration test keeps a polling client connected for the Linux shutdown assertion and bounds fixture cleanup.
+
+The old image hung with ten connected polling clients. The rebuilt Linux image exited with status zero in eight runs of the same scenario. The validation used synthetic sessions and a cloned local database.
+
+## 2026-11-28 07:11 Asia/Damascus (UTC+03:00) - Integrate the Rust architecture audit
+
+Main advanced to `9332fac` before PR #231 merged. The release branch retains the audit and both work-log histories. The Rust web server now registers the existing administrator enrollment-save handler. A release-binary HTTP regression first reproduced the 404, then passed with explicit, blank and omitted course levels, an unchanged roster level and Teacher denial.
+
+Disposable PostgreSQL verification covered the staged migration, exact retries and rollback. The original hybrid image and the native image served identical teacher and student views before activation and after unpacking, including a mark stored after activation. The earlier release verification and the new CI run cover the unchanged browser surface. The new audit retains its remaining follow-up tasks.
+
+## 2026-11-28 06:58 Asia/Damascus (UTC+03:00) - Check asset compression deterministically in CI
+
+The production-image smoke test failed because Linux curl advertised Brotli and gzip, and the Rust server selected Brotli. The smoke test now requests and verifies each encoding explicitly. The disposable PostgreSQL probes use the configured role and database over TCP.
+
+Reproduced the original assertion against the local Rust container with Linux curl. Explicit Brotli and gzip requests passed the encoding and immutable cache checks.
+
+## 2026-11-28 06:45 Asia/Damascus (UTC+03:00) - Prepare the Rust production rollout
+
+The owner authorized publication. The running web image reads the original attendance payload directly. Migration 023 now adds the Rust reader without changing stored payloads. Migration 025 enables packing after the old web image is removed. Migration 024 can run before the switch. The release procedure records the rollback order and leaves any space-reclaiming table rewrite for scheduled maintenance.
+
+The disposable PostgreSQL check passed the staged rollout and repeat application. It verified that the old writer still stores the original payload after the first migration, and that the packed layout preserves the original event sequences, payloads and retry comparisons.
+
+## 2026-11-28 06:37 Asia/Damascus (UTC+03:00) - Restore Bun dependency management
+
+The owner asked to keep Bun for package management. Local setup, CI and the Docker frontend build use the frozen Bun lockfile, native dependency patching and Bun audit. Node.js runs the build, tests and repository scripts. The migration preserved every remaining direct dependency version.
+
+The clean install, `npm run verify` and dependency audit passed. Verification included 158 passing tests and 16 optional tests skipped. The web image built locally with cached Cargo dependencies. A check inside each runtime image confirmed the Rust executable was present and Bun and Node.js were absent. All work stayed local.
+
+## 2026-11-28 06:15 Asia/Damascus (UTC+03:00) - Verify the native runtime images
+
+Both checked-in Dockerfiles built with the locked Cargo cache. The native web image replayed the control traffic, and the 480-student administrator fixture completed dashboard, attendance, summary, correction and history checks over simulated H+. `npm run verify:release` passed 173 automated tests and 264 browser cases, including offline delivery through the Rust web process. It skipped two optional integration tests and six browser cases. The test launcher now takes a public origin directly, with the transitional runtime flag removed. All services in this verification were local or synthetic.
+
+## 2026-11-28 06:07 Asia/Damascus (UTC+03:00) - Move the Telegram worker to Rust
+
+The local Telegram image now runs the native worker with the existing encrypted SQLite state, poll offsets, browser linking, phone grants, menus and assistant approvals. The worker validates approvals against their original Telegram message and current grant, including supported receipts from the previous worker. The web and Telegram crates share their fuzzy matcher. Node.js serves the frontend build and the TypeScript comparison fixtures.
+
+The old and new worker containers matched all three tested HTTP statuses and response bodies on an isolated network. Fifteen native tests passed, including fourteen inside offline Linux Docker and the encrypted TypeScript/Rust state comparison on Windows. The final web pair matched 24 API responses and the OAuth/MCP journey. Seven more integration tests passed against the native web executable, covering OAuth state compatibility, refresh during session deletion, accounts and Telegram grants. All traffic and fixtures were synthetic. Railway and external Telegram and inference services were untouched.
+
+## 2026-11-28 05:52 Asia/Damascus (UTC+03:00) - Move the web runtime to Rust
+
+The owner requested a local Docker comparison before removing Bun. The web image now runs a single Rust executable for the notebook, browser sessions, account administration, Socket.IO, OAuth, MCP and Telegram API endpoints. It preserves the PostgreSQL schema, session cookies and persisted OAuth grants. npm installs the frontend and test toolchain. The separate worker image uses Node.js while its native replacement is verified.
+
+Two loopback web containers replayed 24 matching API responses and a complete OAuth login, consent, PKCE token exchange and MCP initialization against separate copies of one synthetic PostgreSQL fixture. The candidate image contains neither Node.js nor Bun. Both images completed the H+ teacher and student journey with no incomplete responses or HTTP errors. In this pair of H+ runs, web CPU was 1.75 versus 0.66 seconds and peak web container memory was 244 versus 37 MiB. The desktop and mobile suite passed 264 cases. Separate OAuth tests transferred persisted clients and grants in both directions between Rust and the reference server.
+
+The candidate was built in Docker using the locked Cargo cache after crates.io downloads from Docker timed out. The database, images and traffic were local and synthetic. Public CIMD/JWKS network calls and Railway deployment were outside the exercise.
+
 ## 2026-11-27 20:54 Asia/Damascus (UTC+03:00) - Open a dialog to move a course student
 
 The owner asked to replace the group dropdown with an icon button. Manage groups now shows a two-arrow Move icon on the student row with a localized tooltip and accessible name. The dialog names the student and lists available teachers and Unassigned. Choosing a destination saves the course assignment. Cancel and Escape restore keyboard focus to the button. The destination list can scroll while Cancel stays visible.
@@ -2708,6 +2756,30 @@ Railway attributed roughly 99% of project egress charges to the web service. The
 Local Bun verification against disposable Postgres, Rust tests, Rust/Bun parity and transport recovery passed. Chromium verified offline save, reload and student delivery with zero website telemetry requests. Retired Settings bookmarks passed on desktop and mobile in English and Arabic. Verified gzip and cache headers against the running Rust hybrid and verified migration 022 with disposable Postgres. The release still requires CI, exact-commit Railway health and the production purge. Billing savings need a later comparable usage window.
 
 The broader Settings regression needed its expected navigation updated from five links to four. The administrator Settings and bilingual phone-link cases passed on both Playwright projects after the update.
+
+## 2026-11-27 21:44 Asia/Damascus - Build a local performance lab
+
+The owner requested repeated local Docker measurements and at least 30% reductions in requests, bytes, CPU, memory, and PostgreSQL storage. Railway is outside this task. Baseline 7f5ae9a uses disposable PostgreSQL 17 and synthetic fixtures with 2,408 and 120,729 events. The lab counts HTTP and WebSocket traffic at the proxy, records container cgroups, exercises offline sync across browsers and repeats a seven-reader workload.
+
+Both H+ baselines passed and recorded 163–164 requests, 79–80 API and socket requests, and 2.56 MB transferred. LAN and both large stress runs passed. The 56 large reads transferred 403 MB per run. The Docker registry timed out, so both measured images use the same cached runtime dependency layer and the release Rust compiler. The reports are under `.artifacts/performance`. Emulation and the fixture do not establish mobile-carrier or provider billing behavior.
+
+## 2026-11-27 21:47 Asia/Damascus - Remove repeated browser session checks
+
+Protected requests now go directly to the role-checked endpoint. The session endpoint renews a live browser session, and the Bun notebook verifier leaves cookie renewal there. A focused test against disposable Postgres verified that a domain read does not extend the session while the browser endpoint renews the database row and returns the cookie.
+
+Both Docker H+ runs passed. Session requests fell from 33–34 to seven and API and socket calls fell from 79–80 to 55–57. Reconnect delivery fell from about 6.3 seconds to 3.7 seconds. Additional full snapshot reads raised total bytes in this isolation run, so byte reduction still needs a separate change. The synthetic browser also verified the stale account denial.
+
+## 2026-11-27 22:53 Asia/Damascus - Reduce local Docker traffic and resource use
+
+The owner requested repeated local measurements, slower mobile-network verification and no Railway changes. The candidate removes unused precache entries, ships precompressed assets, uses private conditional reads, streams notebook encoding, and serves routine classroom operations in the resident Rust runtime. Ledger-only hints refresh attendance without rechecking an unchanged grant or administrator board. The socket switches to polling when an upgrade stalls.
+
+Large administrator notebooks fetch the selected view. The active session and dashboard preserve effective mark versions and readiness. Summaries preserve all dates and note counts, and History loads the next 100 records without changing raw event identities. A correction returns an acknowledgement with exact retry matching. The browser keeps a scoped view in memory and prepares a complete offline copy on a fast link. An earlier experiment delayed administrator Settings prewarming and failed its browser regression. Restoring prewarming and matching scoped GETs in the fixture passed the regression on both projects.
+
+Two paired H+ runs with fresh containers transferred about 1.60 MB across 113 requests, down from 2.56 MB across 165–166. API and socket requests fell from 81–82 to 39. Two large 56-read stress runs used 2.01–2.06 CPU-seconds and 330–334 MB of sampled working memory, down from 11.18–11.34 CPU-seconds and 687–688 MB. The smaller cold login journey used about 29% less CPU and 3% less working memory. PostgreSQL fell from 69,826,227 to 46,372,531 bytes after equal local rewrites. Both storage trials preserved the ordered digest of all 120,729 canonical event payloads. These are database sizes, distinct from retained WAL and Docker volume footprint.
+
+The large administrator Dashboard failed in both full-response trials. The scoped path passed first open, durable attendance, summary totals, student notes, a correction and older History. The large teacher journey passed offline reload and student delivery. A fast local read prepared the large administrator notebook and opened its summary offline. Docker tests covered exact retries, cross-grant cache invalidation, the database migration and backup round-trips. The comparisons use synthetic data and simulated network timing. The branch and measurements remain local.
+
+After 95 seconds of idle time, the warmed classroom run used 0.30 CPU-seconds and 55 MB of working memory during active work, down from 1.42 CPU-seconds and 211 MB. The journey also passed with WebSocket upgrades silently dropped. The browser case that clears attendance now waits for the matching acknowledgement before reloading. The account-switch fixture opens Students before simulating a different active account and verifies that the next denial closes access, including when a background read arrives first. Both cases passed three focused runs on desktop and mobile.
 
 ## 2026-11-28 06:57 Asia/Damascus - Audit the Rust rewrite
 

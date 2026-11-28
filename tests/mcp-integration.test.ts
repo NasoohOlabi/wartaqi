@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'bun:test'
+import { afterAll, expect, test } from 'vitest-runner'
 import { createHash, randomBytes } from 'node:crypto'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -6,7 +6,7 @@ import { SignJWT, calculateJwkThumbprint, exportJWK, generateKeyPair } from 'jos
 import { Pool } from 'pg'
 import { z } from 'zod'
 import { invitationResponseSchema } from '../shared/invitations'
-import { startIntegrationServer } from './integration-server'
+import { navigationRedirect, startIntegrationServer } from './integration-server'
 import { createIdentity } from './integration-identity'
 
 const databaseUrl = process.env.TEST_RAILWAY_DATABASE_URL
@@ -21,7 +21,7 @@ const enrollmentId = crypto.randomUUID()
 const invitationRequestId = crypto.randomUUID()
 const expiredRequestId = crypto.randomUUID()
 const peerTeacherId = crypto.randomUUID()
-let server: ReturnType<typeof Bun.spawn> | undefined
+let server: Awaited<ReturnType<typeof startIntegrationServer>> | undefined
 let pool: Pool | undefined
 let userId = ''
 let clientId = ''
@@ -31,7 +31,7 @@ const tokens = z.object({ access_token: z.string(), refresh_token: z.string() })
 const continuation = z.object({ url: z.string() })
 
 afterAll(async () => {
-  server?.kill()
+  await server?.close()
   if (!pool) return
   for (const table of [
     'oauthAccessToken',
@@ -79,8 +79,8 @@ integration(
   async () => {
     if (!databaseUrl) throw new Error('A migrated disposable database is required')
     pool = new Pool({ connectionString: databaseUrl })
-    const { origin, child } = await startIntegrationServer(databaseUrl)
-    server = child
+    server = await startIntegrationServer(databaseUrl)
+    const { origin } = server
     const resource = `${origin}/mcp`
     function browserPost(path: string, body: unknown, cookie?: string, expectedUser?: string) {
       return fetch(new URL(path, origin), {
@@ -153,10 +153,8 @@ integration(
     const unsigned = new URL(authorize)
     unsigned.searchParams.delete('code_challenge')
     unsigned.searchParams.delete('code_challenge_method')
-    const pkceRequired = await fetch(unsigned, { redirect: 'manual' })
-    expect(pkceRequired.headers.get('location')).toContain('error=invalid_request')
-    const loginRedirect = await fetch(authorize, { redirect: 'manual' })
-    const login = new URL(loginRedirect.headers.get('location') ?? '', origin)
+    expect(await navigationRedirect(unsigned)).toContain('error=invalid_request')
+    const login = new URL((await navigationRedirect(authorize)) ?? '', origin)
     expect(login.pathname).toBe('/mcp/login')
     expect((await fetch(login)).status).toBe(200)
     expect((await fetch(`${origin}/mcp/login?client_id=forged`)).status).toBe(400)
@@ -661,10 +659,10 @@ integration(
         .sign(privateKey)
     const dpopAuthorize = new URL(authorize)
     dpopAuthorize.searchParams.set('dpop_jkt', await calculateJwkThumbprint(jwk))
-    const dpopRedirect = await fetch(dpopAuthorize, { redirect: 'manual', headers: { cookie } })
-    const dpopCode = new URL(dpopRedirect.headers.get('location') ?? '', origin).searchParams.get(
-      'code',
-    )
+    const dpopCode = new URL(
+      (await navigationRedirect(dpopAuthorize, cookie)) ?? '',
+      origin,
+    ).searchParams.get('code')
     expect(dpopCode).toBeTruthy()
     const dpopIssue = await form(
       provider.token_endpoint,

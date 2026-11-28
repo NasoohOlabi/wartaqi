@@ -60,6 +60,11 @@ export function useQueryState() {
     all: query.get('all') === '1',
     missingScores: query.get('missing') === '1',
     unmarked: query.get('unmarked') === '1',
+    before:
+      z
+        .string()
+        .regex(/^[1-9]\d{0,18}$/)
+        .safeParse(query.get('before')).data ?? '',
   }
 }
 const allowedKeys = new Set([
@@ -83,6 +88,7 @@ const allowedKeys = new Set([
   'missing',
   'unmarked',
   'tables',
+  'before',
 ])
 export function sanitizedSearch(search: string) {
   const query = new URLSearchParams(search)
@@ -118,6 +124,12 @@ export function currentViewLink() {
 
 export function queryHref(values: Record<string, string>) {
   const query = sanitizedSearch(window.location.search)
+  if (
+    ['view', 'tab', 'course', 'courseView', 'student', 'q', 'group'].some(
+      (key) => key in values && (query.get(key) ?? '') !== values[key],
+    )
+  )
+    query.delete('before')
   for (const [key, value] of Object.entries(values)) {
     if (!allowedKeys.has(key)) continue
     if (value) query.set(key, value)

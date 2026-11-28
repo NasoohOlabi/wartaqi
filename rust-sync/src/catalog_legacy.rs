@@ -282,7 +282,7 @@ async fn close(tx: &Transaction<'_>, id: &str) -> Result<(), Error> {
     }
     let ids: Vec<&str> = students.iter().map(|row| row.get(0)).collect();
     let sql = format!(
-        "SELECT e.id::text AS id, e.actor::text AS actor, to_char(e.client_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS client_time, to_char(e.received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS received_at, e.payload FROM events e WHERE e.student_id = ANY(SELECT unnest($1::text[])::uuid) AND {} ORDER BY e.sequence",
+        "SELECT e.id::text AS id, e.actor::text AS actor, to_char(e.client_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS client_time, to_char(e.received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS received_at, wartaq_event_payload(e.payload, e.payload_packed, e.student_id, e.enrollment_id) AS payload FROM events e WHERE e.student_id = ANY(SELECT unnest($1::text[])::uuid) AND {} ORDER BY e.sequence",
         ledger::VISIBLE_LEDGER_EVENT
     );
     let events = tx

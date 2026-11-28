@@ -19,6 +19,7 @@ if ('prism-ml/bonsai-27b' -notin @($models.data.id)) {
 
 $root = Split-Path -Parent $PSScriptRoot
 $containerName = 'wartaq-agent-test-' + [guid]::NewGuid().ToString('N')
+$reportPath = Join-Path ([IO.Path]::GetTempPath()) "$containerName.json"
 $containerId = $null
 $variables = @('DATABASE_URL_UNPOOLED', 'TEST_RAILWAY_DATABASE_URL', 'TEST_LM_STUDIO_ORIGIN', 'TEST_TELEGRAM_AGENT_QUESTION')
 $previous = @{}
@@ -53,14 +54,14 @@ try {
   $env:TEST_RAILWAY_DATABASE_URL = $env:DATABASE_URL_UNPOOLED
   $env:TEST_LM_STUDIO_ORIGIN = $modelOriginValue
   [Environment]::SetEnvironmentVariable('TEST_TELEGRAM_AGENT_QUESTION', $Question, 'Process')
-  & bun ./scripts/neon-admin.ts migrate
+  & npm run db:migrate
   if ($LASTEXITCODE -ne 0) { throw 'Application migrations failed.' }
 
-  # Bun reports its test summary on stderr. Capture it to verify the gated test ran.
+  # The JSON report distinguishes a passing test from a suite skipped by its environment gate.
   $errorPreference = $ErrorActionPreference
   $ErrorActionPreference = 'Continue'
   try {
-    $output = & bun test tests/telegram-agent-live-integration.test.ts 2>&1
+    $output = & npm test -- tests/telegram-agent-live-integration.test.ts --reporter=default --reporter=json "--outputFile.json=$reportPath" 2>&1
     $testExitCode = $LASTEXITCODE
   } finally {
     $ErrorActionPreference = $errorPreference
@@ -69,13 +70,16 @@ try {
     $line = $_.ToString()
     if ($line -and $line -ne 'System.Management.Automation.RemoteException') { Write-Host $line }
   }
-  $summary = $output -join "`n"
-  if ($testExitCode -ne 0 -or $summary -notmatch '(?m)^\s*1 pass\s*$' -or
-      $summary -notmatch '(?m)^\s*0 fail\s*$' -or $summary -match '(?im)^\s*[1-9]\d* skip(?:ped)?\b') {
+  if ($testExitCode -ne 0 -or -not (Test-Path -LiteralPath $reportPath)) {
+    throw 'Headless integration failed or did not produce a test report.'
+  }
+  $summary = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
+  if ($summary.numTotalTests -ne 1 -or $summary.numPassedTests -ne 1) {
     throw 'Headless integration failed or did not run exactly one test.'
   }
   Write-Host 'Headless Telegram agent integration passed.'
 } finally {
+  Remove-Item -LiteralPath $reportPath -ErrorAction SilentlyContinue
   foreach ($name in $variables) {
     [Environment]::SetEnvironmentVariable($name, $previous[$name], 'Process')
   }

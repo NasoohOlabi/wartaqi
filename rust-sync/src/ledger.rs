@@ -36,7 +36,7 @@ pub(crate) fn valid_uuid(s: &str) -> bool {
             && matches!(b[14], b'1'..=b'8')
             && matches!(b[19], b'8' | b'9' | b'a' | b'b' | b'A' | b'B')
 }
-fn date(s: &str) -> bool {
+pub(crate) fn date(s: &str) -> bool {
     let b = s.as_bytes();
     if b.len() != 10
         || b[4] != b'-'
@@ -261,7 +261,7 @@ pub(crate) async fn student_attendance(
     group: &str,
 ) -> Result<Value, Error> {
     let sql = format!(
-        "SELECT e.id::text AS id, e.actor::text AS actor, to_char(e.client_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS client_time, to_char(e.received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS received_at, e.payload FROM events e WHERE e.student_id = $1::text::uuid AND {VISIBLE_LEDGER_EVENT} ORDER BY e.sequence"
+        "SELECT e.id::text AS id, e.actor::text AS actor, to_char(e.client_time AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS client_time, to_char(e.received_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.MS\"Z\"') AS received_at, wartaq_event_payload(e.payload, e.payload_packed, e.student_id, e.enrollment_id) AS payload FROM events e WHERE e.student_id = $1::text::uuid AND {VISIBLE_LEDGER_EVENT} ORDER BY e.sequence"
     );
     let rows = tx.query(&sql, &[&student_id]).await?;
     let events = rows

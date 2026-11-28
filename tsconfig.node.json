@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/node.tsbuildinfo",
-    "target": "ES2023",
-    "lib": ["ES2023", "DOM"],
-    "types": ["bun"],
+    "target": "ES2024",
+    "lib": ["ES2024", "DOM"],
+    "types": ["node"],
     "skipLibCheck": true,
     "module": "ESNext",
     "moduleResolution": "bundler",
@@ -17,6 +17,7 @@
   },
   "include": [
     "vite.config.ts",
+    "vitest.config.ts",
     "playwright.config.ts",
     "functions/**/*.ts",
     "server/**/*.ts",

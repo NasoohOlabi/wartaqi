@@ -5,12 +5,20 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+const legacyIcons = new Set([
+  'favicon.ico',
+  'maskable-icon-512x512.png',
+  'pwa-192x192.png',
+  'pwa-512x512.png',
+  'pwa-64x64.png',
+])
+
 function publicAssets(directory: string, prefix = ''): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const name = prefix + entry.name
     return entry.isDirectory()
       ? publicAssets(join(directory, entry.name), `${name}/`)
-      : /\.(?:js|png|jpg|ico|svg|woff2|webmanifest)$/.test(name)
+      : !legacyIcons.has(name) && /\.(?:js|png|jpg|ico|svg|woff2|webmanifest)$/.test(name)
         ? [name]
         : []
   })
@@ -37,7 +45,7 @@ const prefix = 'wartaq-' + encodeURIComponent(scope.pathname) + '-'
 const cacheName = prefix + ${JSON.stringify(version)}
 const urls = ${JSON.stringify(files)}.map((file) => new URL(file, scope).href)
 const index = new URL('index.html', scope).href
-const appNavigationKeys = new Set(['page', 'view', 'settingsSection', 'tab', 'course', 'date', 'from', 'to', 'courseView', 'all', 'missing', 'unmarked', 'tables', 'q', 'group', 'student', 'account'])
+const appNavigationKeys = new Set(['page', 'view', 'settingsSection', 'tab', 'course', 'date', 'from', 'to', 'courseView', 'all', 'missing', 'unmarked', 'tables', 'q', 'group', 'student', 'account', 'before'])
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(cacheName).then((cache) => cache.addAll(urls)).then(() => self.skipWaiting()))
 })

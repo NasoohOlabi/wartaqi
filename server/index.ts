@@ -1,4 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import type { Server as HttpServer } from 'node:http'
+import { extname } from 'node:path'
 import { verifyOAuthQueryParams } from '@better-auth/oauth-provider'
 import { betterAuth } from 'better-auth'
 import { Pool } from 'pg'
@@ -14,7 +17,7 @@ import {
   telegramTeacherGrantBinding,
 } from '../shared/telegram-grants'
 import { diagnostics } from './diagnostics'
-import { ingestTelegramConversation, pruneTelegramConversations } from './telegramConversations'
+import { ingestTelegramConversation } from './telegramConversations'
 import { telegramConversationIngestPath } from '../shared/telegram-conversations'
 import { createMcpHandler } from './mcp'
 import { invitationReceipts } from './mcp-invitation'
@@ -201,7 +204,11 @@ const notebook = createHandler(
   },
   [origin],
   async (request) => {
-    const session = await auth.api.getSession({ headers: request.headers })
+    // Only the browser's session endpoint can return a renewed cookie.
+    const session = await auth.api.getSession({
+      headers: request.headers,
+      query: { disableRefresh: true },
+    })
     if (!session?.user.id || request.headers.get('x-user-id') !== session.user.id)
       throw new Error('Unauthorized')
     return { subject: session.user.id, sessionId: session.session.id }
@@ -558,7 +565,9 @@ export async function handle(request: Request): Promise<Response> {
            AND t.tgenabled IN ('O','A') AND c.relname IN ('students','courses','course_enrollments')`,
       )
       if (versions.rows[0]?.triggers !== 3) throw new Error('Edit version migration required')
-      await pool.query('SELECT edit_time FROM public.events LIMIT 0')
+      await pool.query(
+        'SELECT edit_time, wartaq_event_payload(payload, payload_packed, student_id, enrollment_id) FROM public.events LIMIT 0',
+      )
       return Response.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } })
     } catch {
       return Response.json({ ok: false }, { status: 503, headers: { 'Cache-Control': 'no-store' } })
@@ -778,10 +787,28 @@ export async function handle(request: Request): Promise<Response> {
   }
   if (path.includes('..') || path.includes('\\') || path.includes('\0'))
     return new Response('Not found', { status: 404 })
-  const file = Bun.file(`dist${path === '/' ? '/index.html' : path}`)
-  if (!(await file.exists())) return new Response('Not found', { status: 404 })
-  return new Response(file, {
-    headers: { 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache' },
+  const file = `dist${path === '/' ? '/index.html' : path}`
+  const bytes = await readFile(file).catch(() => undefined)
+  if (!bytes) return new Response('Not found', { status: 404 })
+  const contentTypes: Record<string, string> = {
+    '.css': 'text/css; charset=utf-8',
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.json': 'application/json',
+    '.webmanifest': 'application/manifest+json',
+    '.svg': 'image/svg+xml',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.ico': 'image/x-icon',
+    '.woff2': 'font/woff2',
+  }
+  return new Response(request.method === 'HEAD' ? null : new Uint8Array(bytes), {
+    headers: {
+      'Content-Type': contentTypes[extname(file)] ?? 'application/octet-stream',
+      'Content-Length': String(bytes.byteLength),
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'no-cache',
+    },
   })
 }
 
@@ -791,11 +818,11 @@ export async function closeHttpResources() {
   await Promise.all([pool.end(), authPool.end()])
 }
 
-export function workspaceServer() {
+export function workspaceServer(server: HttpServer) {
   return createWorkspaceSync({
     databaseUrl: config.DATABASE_URL,
     origin,
-    handle,
+    server,
     async authorize(headers, userId) {
       // Use the same grant, expiry and role checks as the normal notebook requests.
       headers.set('x-user-id', userId)
@@ -811,26 +838,4 @@ export function workspaceServer() {
       return grant.success && !grant.data.account.invitationProfile?.requiresSetup
     },
   })
-}
-
-if (import.meta.main) {
-  const cleanup = () => {
-    void pruneTelegramConversations(pool).catch(() =>
-      console.warn('Telegram conversation cleanup failed'),
-    )
-  }
-  cleanup()
-  const cleanupTimer = setInterval(cleanup, 60 * 60 * 1000).unref()
-  const workspace = workspaceServer()
-  const server = Bun.serve({ port: config.PORT, hostname: '0.0.0.0', ...workspace.serve })
-  let shuttingDown = false
-  const shutdown = async () => {
-    if (shuttingDown) return
-    shuttingDown = true
-    clearInterval(cleanupTimer)
-    await Promise.all([server.stop(true), workspace.close()])
-    await closeHttpResources()
-  }
-  process.once('SIGINT', () => void shutdown())
-  process.once('SIGTERM', () => void shutdown())
 }

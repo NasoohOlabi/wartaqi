@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from 'bun:test'
+import { afterAll, expect, test } from 'vitest-runner'
 import { Pool } from 'pg'
 import { z } from 'zod'
 import { invitationResponseSchema } from '../shared/invitations'
@@ -12,10 +12,10 @@ const requestId = crypto.randomUUID()
 const teacherId = crypto.randomUUID()
 let adminId = ''
 let pool: Pool | undefined
-let server: ReturnType<typeof Bun.spawn> | undefined
+let server: Awaited<ReturnType<typeof startIntegrationServer>> | undefined
 
 afterAll(async () => {
-  server?.kill()
+  await server?.close()
   if (!pool) return
   const accounts = await pool.query(
     'SELECT auth_user_id, teacher_id, student_id FROM app_accounts WHERE invitation_request_id = $1 OR auth_user_id = $2',
@@ -43,8 +43,8 @@ integration(
   async () => {
     if (!databaseUrl) throw new Error('Disposable database required')
     pool = new Pool({ connectionString: databaseUrl })
-    const { origin, child } = await startIntegrationServer(databaseUrl)
-    server = child
+    server = await startIntegrationServer(databaseUrl)
+    const { origin } = server
 
     // Apply Set-Cookie responses as a browser does, including deletion and replacement.
     const cookies = new Map<string, string>()

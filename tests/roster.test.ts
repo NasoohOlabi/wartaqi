@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest-runner'
 import { assignedEvents, validateAssignedPayloads } from '../shared/roster'
 import { makeEvent, type Student } from '../shared/ledger'
 const studentA = '20000000-0000-4000-8000-000000000001'

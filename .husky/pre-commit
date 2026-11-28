@@ -1,5 +1,5 @@
-bunx lint-staged
-bun run security:staged
-bun run typecheck
-bun run test
-bun run lint
+npx --no-install lint-staged
+npm run security:staged
+npm run typecheck
+npm run test
+npm run lint

@@ -1,4 +1,4 @@
-﻿import { expect, test } from 'bun:test'
+﻿import { expect, test } from 'vitest-runner'
 import { z } from 'zod'
 import { createWorker } from '../telegram/runtime'
 
@@ -33,61 +33,58 @@ test('worker approves an exact write once and binds it to the originating messag
   let failWrite = false
   let holdModel: Promise<void> | undefined
   let modelStarted: (() => void) | undefined
-  globalThis.fetch = Object.assign(
-    async (input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(input instanceof Request ? input.url : input)
-      const body = z.record(z.string(), z.unknown()).parse(JSON.parse(String(init?.body)))
-      if (url.origin === 'https://api.telegram.org') {
-        if (url.pathname.endsWith('/sendMessage')) {
-          const markup = z
-            .object({ inline_keyboard: z.array(z.array(z.object({ callback_data: z.string() }))) })
-            .optional()
-            .parse(body.reply_markup)
-          sent.push({
-            text: z.string().parse(body.text),
-            message_id: sent.length + 1,
-            data: markup?.inline_keyboard[0]?.[0]?.callback_data,
-          })
-          return Response.json({ ok: true, result: { message_id: sent.length } })
-        }
-        return Response.json({ ok: true, result: true })
-      }
-      if (url.origin === 'https://model.example') {
-        modelStarted?.()
-        await holdModel
-        return Response.json({
-          choices: [
-            {
-              message: {
-                role: 'assistant',
-                content: null,
-                tool_calls: [
-                  {
-                    id: 'call',
-                    type: 'function',
-                    function: {
-                      name: 'update_profile',
-                      arguments: JSON.stringify({ name: 'Synthetic' }),
-                    },
-                  },
-                ],
-              },
-            },
-          ],
+  globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : input)
+    const body = z.record(z.string(), z.unknown()).parse(JSON.parse(String(init?.body)))
+    if (url.origin === 'https://api.telegram.org') {
+      if (url.pathname.endsWith('/sendMessage')) {
+        const markup = z
+          .object({ inline_keyboard: z.array(z.array(z.object({ callback_data: z.string() }))) })
+          .optional()
+          .parse(body.reply_markup)
+        sent.push({
+          text: z.string().parse(body.text),
+          message_id: sent.length + 1,
+          data: markup?.inline_keyboard[0]?.[0]?.callback_data,
         })
+        return Response.json({ ok: true, result: { message_id: sent.length } })
       }
-      if (url.origin === 'https://wartaq.example') {
-        if (body.method === 'tools/list') return Response.json({ result: { tools: [tool] } })
-        if (body.method === 'tools/call') {
-          calls.push(body.params)
-          if (failWrite) throw new Error('Lost response')
-          return Response.json({ result: { structuredContent: { ok: true } } })
-        }
+      return Response.json({ ok: true, result: true })
+    }
+    if (url.origin === 'https://model.example') {
+      modelStarted?.()
+      await holdModel
+      return Response.json({
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call',
+                  type: 'function',
+                  function: {
+                    name: 'update_profile',
+                    arguments: JSON.stringify({ name: 'Synthetic' }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      })
+    }
+    if (url.origin === 'https://wartaq.example') {
+      if (body.method === 'tools/list') return Response.json({ result: { tools: [tool] } })
+      if (body.method === 'tools/call') {
+        calls.push(body.params)
+        if (failWrite) throw new Error('Lost response')
+        return Response.json({ result: { structuredContent: { ok: true } } })
       }
-      throw new Error('Unexpected request')
-    },
-    { preconnect: original.preconnect },
-  )
+    }
+    throw new Error('Unexpected request')
+  }
   const worker = createWorker(env)
   worker.store.set('teacher:1', 'synthetic-grant')
   const message = (id: number, text: string) =>
@@ -187,31 +184,28 @@ test('attendance conflict is never reported as saved', async () => {
     lang: 'en',
     args: { records: [{ event: { id } }] },
   })
-  globalThis.fetch = Object.assign(
-    async (_input: string | URL | Request, init?: RequestInit) => {
-      const body = z.object({ method: z.string() }).parse(JSON.parse(String(init?.body)))
-      if (body.method === 'tools/list')
-        return Response.json({
-          result: {
-            tools: [
-              {
-                name: 'sync_attendance',
-                description: '',
-                inputSchema: {
-                  type: 'object',
-                  properties: { records: { type: 'array' } },
-                  required: ['records'],
-                },
-              },
-            ],
-          },
-        })
+  globalThis.fetch = async (_input: string | URL | Request, init?: RequestInit) => {
+    const body = z.object({ method: z.string() }).parse(JSON.parse(String(init?.body)))
+    if (body.method === 'tools/list')
       return Response.json({
-        result: { structuredContent: { outcomes: [{ id, kind: 'conflict', current: null }] } },
+        result: {
+          tools: [
+            {
+              name: 'sync_attendance',
+              description: '',
+              inputSchema: {
+                type: 'object',
+                properties: { records: { type: 'array' } },
+                required: ['records'],
+              },
+            },
+          ],
+        },
       })
-    },
-    { preconnect: original.preconnect },
-  )
+    return Response.json({
+      result: { structuredContent: { outcomes: [{ id, kind: 'conflict', current: null }] } },
+    })
+  }
   try {
     const delivery = createAgentDelivery(env.WARTAQI_ORIGIN, auth, null, store, telegramApi('test'))
     await delivery.callback('1', 1, 7, 'agent:c:handle', 'en', async (_chat, text) => {
@@ -231,59 +225,56 @@ test('worker sends a model-selected read through the teacher MCP and returns the
   let modelCalls = 0
   let toolCalls = 0
   const sent: string[] = []
-  globalThis.fetch = Object.assign(
-    async (input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(input instanceof Request ? input.url : input)
-      const body = z.record(z.string(), z.unknown()).parse(JSON.parse(String(init?.body)))
-      if (url.origin === 'https://api.telegram.org') {
-        sent.push(z.string().parse(body.text))
-        return Response.json({ ok: true, result: { message_id: 1 } })
-      }
-      if (url.origin === 'https://model.example') {
-        modelCalls++
+  globalThis.fetch = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : input)
+    const body = z.record(z.string(), z.unknown()).parse(JSON.parse(String(init?.body)))
+    if (url.origin === 'https://api.telegram.org') {
+      sent.push(z.string().parse(body.text))
+      return Response.json({ ok: true, result: { message_id: 1 } })
+    }
+    if (url.origin === 'https://model.example') {
+      modelCalls++
+      return Response.json({
+        choices: [
+          {
+            message:
+              modelCalls === 1
+                ? {
+                    role: 'assistant',
+                    content: null,
+                    tool_calls: [
+                      {
+                        id: 'read',
+                        type: 'function',
+                        function: { name: 'list_courses', arguments: '{}' },
+                      },
+                    ],
+                  }
+                : { role: 'assistant', content: 'Demo course is open.' },
+          },
+        ],
+      })
+    }
+    if (url.pathname === '/api/telegram/teacher-mcp') {
+      if (body.method === 'tools/list')
         return Response.json({
-          choices: [
-            {
-              message:
-                modelCalls === 1
-                  ? {
-                      role: 'assistant',
-                      content: null,
-                      tool_calls: [
-                        {
-                          id: 'read',
-                          type: 'function',
-                          function: { name: 'list_courses', arguments: '{}' },
-                        },
-                      ],
-                    }
-                  : { role: 'assistant', content: 'Demo course is open.' },
-            },
-          ],
+          result: {
+            tools: [
+              {
+                name: 'list_courses',
+                description: '',
+                inputSchema: { type: 'object', additionalProperties: false },
+              },
+            ],
+          },
         })
-      }
-      if (url.pathname === '/api/telegram/teacher-mcp') {
-        if (body.method === 'tools/list')
-          return Response.json({
-            result: {
-              tools: [
-                {
-                  name: 'list_courses',
-                  description: '',
-                  inputSchema: { type: 'object', additionalProperties: false },
-                },
-              ],
-            },
-          })
-        toolCalls++
-        return Response.json({
-          result: { structuredContent: [{ name: 'Demo course', open: true }] },
-        })
-      }
-      throw new Error('Unexpected request')
-    },
-    { preconnect: original.preconnect },
-  )
+      toolCalls++
+      return Response.json({
+        result: { structuredContent: [{ name: 'Demo course', open: true }] },
+      })
+    }
+    throw new Error('Unexpected request')
+  }
   const worker = createWorker(env)
   worker.store.set('teacher:1', 'synthetic-grant')
   try {

@@ -31,7 +31,7 @@ export default defineConfig({
     { name: 'mobile', use: { ...devices['iPhone 13'], defaultBrowserType: 'chromium' } },
   ],
   webServer: {
-    command: `bun run preview -- --mode verification --port ${port} --strictPort`,
+    command: `npm run preview -- --mode verification --port ${port} --strictPort`,
     url: origin,
     reuseExistingServer: false,
   },

@@ -1,4 +1,6 @@
-import { mkdir, chmod } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
+import { mkdir, chmod, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 
 const version = '8.30.1'
@@ -29,22 +31,22 @@ const expected = checksums
   .map((line) => line.trim().split(/\s+/))
   .find((parts) => parts[1] === asset)?.[0]
 const content = await (await download(asset)).arrayBuffer()
-const actual = new Bun.CryptoHasher('sha256').update(content).digest('hex')
+const actual = createHash('sha256').update(Buffer.from(content)).digest('hex')
 if (!expected || actual !== expected) throw new Error('Gitleaks checksum mismatch')
 const archive = join(directory, asset)
-await Bun.write(archive, content)
+await writeFile(archive, Buffer.from(content))
 const result =
   os === 'windows'
-    ? Bun.spawnSync(
+    ? spawnSync(
+        'powershell',
         [
-          'powershell',
           '-NoProfile',
           '-Command',
           'Expand-Archive -LiteralPath $env:GITLEAKS_ARCHIVE -DestinationPath $env:GITLEAKS_DIRECTORY -Force',
         ],
         { env: { ...process.env, GITLEAKS_ARCHIVE: archive, GITLEAKS_DIRECTORY: directory } },
       )
-    : Bun.spawnSync(['tar', '-xzf', archive, '-C', directory])
-if (result.exitCode !== 0) throw new Error('Could not extract security tool')
+    : spawnSync('tar', ['-xzf', archive, '-C', directory])
+if (result.status !== 0) throw new Error('Could not extract security tool')
 if (os !== 'windows') await chmod(join(directory, 'gitleaks'), 0o755)
 console.info(`Installed checksum-verified Gitleaks ${version}`)
