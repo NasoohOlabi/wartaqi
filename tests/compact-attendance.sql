@@ -21,18 +21,32 @@ CREATE TEMP TABLE original AS SELECT id, sequence, payload FROM events;
 BEGIN;
 \ir ../neon/023-compact-attendance.sql
 COMMIT;
+INSERT INTO events (id, teacher_id, student_id, actor, client_time, enrollment_id, payload)
+SELECT '10000000-0000-4000-8000-000000000008', teacher_id, student_id, actor, client_time, enrollment_id, payload
+FROM events WHERE id = '10000000-0000-4000-8000-000000000001';
+DO $$ BEGIN
+  IF EXISTS (SELECT FROM events WHERE payload_packed) OR
+    EXISTS (SELECT FROM events e JOIN original o USING (id) WHERE e.sequence <> o.sequence OR e.payload <> o.payload) OR
+    EXISTS (SELECT FROM events WHERE wartaq_event_payload(payload, payload_packed, student_id, enrollment_id) <> payload) THEN
+    RAISE EXCEPTION 'reader setup changed the legacy layout';
+  END IF;
+END $$;
+BEGIN;
+\ir ../neon/025-enable-attendance-packing.sql
+COMMIT;
 BEGIN;
 \ir ../neon/001-notebook.sql
 \ir ../neon/003-courses.sql
 \ir ../neon/021-edit-versions.sql
 \ir ../neon/023-compact-attendance.sql
+\ir ../neon/025-enable-attendance-packing.sql
 COMMIT;
 INSERT INTO events (id, teacher_id, student_id, actor, client_time, enrollment_id, payload)
 SELECT '10000000-0000-4000-8000-000000000007', teacher_id, student_id, actor, client_time, enrollment_id, original.payload
 FROM events JOIN original USING (id) WHERE id = '10000000-0000-4000-8000-000000000001';
 DO $$ BEGIN
   IF EXISTS (SELECT FROM events e JOIN original o USING (id) WHERE e.sequence <> o.sequence OR wartaq_event_payload(e.payload, e.payload_packed, e.student_id, e.enrollment_id) <> o.payload) THEN RAISE EXCEPTION 'roundtrip changed'; END IF;
-  IF (SELECT count(*) FROM events WHERE payload_packed) <> 3 THEN RAISE EXCEPTION 'wrong packed count'; END IF;
+  IF (SELECT count(*) FROM events WHERE payload_packed) <> 4 THEN RAISE EXCEPTION 'wrong packed count'; END IF;
   IF NOT EXISTS (SELECT FROM events e JOIN original o USING (id) WHERE e.id = '10000000-0000-4000-8000-000000000001' AND wartaq_event_payload(e.payload, e.payload_packed, e.student_id, e.enrollment_id) = o.payload) THEN RAISE EXCEPTION 'same retry differs'; END IF;
   IF EXISTS (SELECT FROM events e JOIN original o USING (id) WHERE e.id = '10000000-0000-4000-8000-000000000001' AND wartaq_event_payload(e.payload, e.payload_packed, e.student_id, e.enrollment_id) = jsonb_set(o.payload, '{status}', '"absent"')) THEN RAISE EXCEPTION 'changed retry matched'; END IF;
 END $$;

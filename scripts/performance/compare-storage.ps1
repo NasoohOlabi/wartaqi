@@ -24,8 +24,10 @@ try {
     }
     $baseline = Measure-Layout $created[0] 'payload'
     $migration = '/tmp/wartaq-compare-storage.sql'
-    Invoke-LabDocker cp neon/023-compact-attendance.sql "$($database):$migration"
-    Invoke-LabDocker exec $database psql -U postgres -d $created[1] -v ON_ERROR_STOP=1 -1 -q -f $migration
+    foreach ($file in @('neon/023-compact-attendance.sql', 'neon/025-enable-attendance-packing.sql')) {
+        Invoke-LabDocker cp $file "$($database):$migration"
+        Invoke-LabDocker exec $database psql -U postgres -d $created[1] -v ON_ERROR_STOP=1 -1 -q -f $migration
+    }
     $candidate = Measure-Layout $created[1] 'wartaq_event_payload(payload,payload_packed,student_id,enrollment_id)'
     if ($baseline.events -ne $candidate.events -or $baseline.digest -ne $candidate.digest) {
         throw 'The canonical event ledger changed.'

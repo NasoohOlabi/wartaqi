@@ -1,5 +1,11 @@
 # Work log
 
+## 2026-11-28 06:45 Asia/Damascus (UTC+03:00) - Prepare the Rust production rollout
+
+The owner authorized publication. The running web image reads the original attendance payload directly. Migration 023 now adds the Rust reader without changing stored payloads. Migration 025 enables packing after the old web image is removed. Migration 024 can run before the switch. The release procedure records the rollback order and leaves any space-reclaiming table rewrite for scheduled maintenance.
+
+The disposable PostgreSQL check passed the staged rollout and repeat application. It verified that the old writer still stores the original payload after the first migration, and that the packed layout preserves the original event sequences, payloads and retry comparisons.
+
 ## 2026-11-28 06:37 Asia/Damascus (UTC+03:00) - Restore Bun dependency management
 
 The owner asked to keep Bun for package management. Local setup, CI and the Docker frontend build use the frozen Bun lockfile, native dependency patching and Bun audit. Node.js runs the build, tests and repository scripts. The migration preserved every remaining direct dependency version.

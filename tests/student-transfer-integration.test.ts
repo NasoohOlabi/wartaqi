@@ -236,6 +236,7 @@ integration(
       await source.query('UPDATE course_enrollments SET level = level WHERE id = $1', [enrollmentA])
       run('compare', files[13], urls[0], false)
       await migrate(source, 'neon/023-compact-attendance.sql')
+      await migrate(source, 'neon/025-enable-attendance-packing.sql')
       expect(
         (await source.query('SELECT count(*)::int AS count FROM events WHERE payload_packed'))
           .rows[0].count,
@@ -278,7 +279,10 @@ integration(
           if (index === 14) run('import', files[index], urls[index + 1], false)
           await migrate(targets[index], 'neon/021-edit-versions.sql')
         }
-        if (index === 14) await migrate(targets[index], 'neon/023-compact-attendance.sql')
+        if (index === 14) {
+          await migrate(targets[index], 'neon/023-compact-attendance.sql')
+          await migrate(targets[index], 'neon/025-enable-attendance-packing.sql')
+        }
         run('import', files[index], urls[index + 1])
         run('compare', files[index], urls[index + 1])
       }
